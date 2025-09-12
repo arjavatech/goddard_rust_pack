@@ -21,14 +21,21 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
     let path = event.uri().path();
     let method = event.method().as_str();
     
-    tracing::info!("Method: {}, Path: {}", method, path);
+    // Strip stage name from path if present (e.g., "/prod/health" -> "/health")
+    let clean_path = if path.starts_with("/prod") {
+        path.strip_prefix("/prod").unwrap_or("/")
+    } else {
+        path
+    };
     
-    match (method, path) {
+    tracing::info!("Method: {}, Original Path: {}, Clean Path: {}", method, path, clean_path);
+    
+    match (method, clean_path) {
         ("GET", "/") => {
             let response = HelloResponse {
                 message: "Hello from Rust Lambda!".to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
-                path: path.to_string(),
+                path: clean_path.to_string(),
             };
             Ok(Response::builder()
                 .status(200)
@@ -54,7 +61,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
             let response = HelloResponse {
                 message: format!("Hello, {}! Welcome to Rust Lambda", name),
                 timestamp: chrono::Utc::now().to_rfc3339(),
-                path: path.to_string(),
+                path: clean_path.to_string(),
             };
             Ok(Response::builder()
                 .status(200)
@@ -74,7 +81,7 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
         _ => {
             let error_response = serde_json::json!({
                 "error": "Not Found",
-                "message": format!("Path {} not found", path),
+                "message": format!("Path {} not found", clean_path),
                 "timestamp": chrono::Utc::now().to_rfc3339()
             });
             Ok(Response::builder()

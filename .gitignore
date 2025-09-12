@@ -31,3 +31,8 @@ node_modules/
 # Rust build artifacts
 target/
 */target/
+
+# CDK build artifacts
+cdk.out/
+*/cdk.out/
+infrastructure/cdk.out/

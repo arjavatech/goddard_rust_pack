@@ -50,11 +50,12 @@ export class RustLambdaStack extends cdk.Stack {
       proxy: true,
     });
 
-    // Create proxy resource that handles all paths and methods
-    const proxyResource = api.root.addProxy({
-      defaultIntegration: lambdaIntegration,
-      anyMethod: true,
-    });
+    // Handle root path
+    api.root.addMethod('ANY', lambdaIntegration);
+    
+    // Create proxy resource for all other paths
+    const proxyResource = api.root.addResource('{proxy+}');
+    proxyResource.addMethod('ANY', lambdaIntegration);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {

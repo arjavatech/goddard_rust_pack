@@ -37,7 +37,10 @@ export class RustLambdaStack extends cdk.Stack {
       environment: {
         RUST_LOG: 'info',
       },
-      logRetention: logs.RetentionDays.ONE_WEEK,
+      logGroup: new logs.LogGroup(this, 'RustLambdaLogGroup', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
       description: 'Rust Lambda function with Hello World API',
     });
 

@@ -1,0 +1,7 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+// Test setup file
+require("jest");
+// Global test configuration
+jest.setTimeout(30000);
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoic2V0dXAuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi90ZXN0L3NldHVwLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7O0FBQUEsa0JBQWtCO0FBQ2xCLGdCQUFjO0FBRWQsNEJBQTRCO0FBQzVCLElBQUksQ0FBQyxVQUFVLENBQUMsS0FBSyxDQUFDLENBQUMiLCJzb3VyY2VzQ29udGVudCI6WyIvLyBUZXN0IHNldHVwIGZpbGVcbmltcG9ydCAnamVzdCc7XG5cbi8vIEdsb2JhbCB0ZXN0IGNvbmZpZ3VyYXRpb25cbmplc3Quc2V0VGltZW91dCgzMDAwMCk7Il19

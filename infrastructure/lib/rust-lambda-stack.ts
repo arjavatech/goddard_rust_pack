@@ -36,8 +36,6 @@ export class RustLambdaStack extends cdk.Stack {
       deployOptions: {
         stageName: 'prod',
         tracingEnabled: true,
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
-        dataTraceEnabled: true,
         metricsEnabled: true,
       },
       defaultCorsPreflightOptions: {
@@ -47,20 +45,16 @@ export class RustLambdaStack extends cdk.Stack {
       },
     });
 
-    // Lambda integration
+    // Lambda integration with proxy
     const lambdaIntegration = new apigateway.LambdaIntegration(rustLambda, {
-      requestTemplates: { 'application/json': '{ "statusCode": "200" }' },
+      proxy: true,
     });
 
-    // API routes
-    api.root.addMethod('GET', lambdaIntegration);
-    
-    const helloResource = api.root.addResource('hello');
-    const nameResource = helloResource.addResource('{name}');
-    nameResource.addMethod('GET', lambdaIntegration);
-    
-    const healthResource = api.root.addResource('health');
-    healthResource.addMethod('GET', lambdaIntegration);
+    // Create proxy resource that handles all paths and methods
+    const proxyResource = api.root.addProxy({
+      defaultIntegration: lambdaIntegration,
+      anyMethod: true,
+    });
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {

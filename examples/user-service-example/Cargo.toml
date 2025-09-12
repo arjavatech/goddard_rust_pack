@@ -1,0 +1,37 @@
+[package]
+name = "user-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Lambda runtime
+lambda_runtime = { workspace = true }
+lambda_web = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# HTTP and API
+reqwest = { workspace = true, features = ["json"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# AWS SDK
+aws-sdk-dynamodb = { workspace = true }
+aws-config = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Shared library
+shared = { path = "../shared" }
+
+[[bin]]
+name = "bootstrap"
+path = "src/main.rs"

@@ -262,5 +262,17 @@
     "cpuLoad": 0.537890625,
     "platform": "darwin",
     "uptime": 128920
+  },
+  {
+    "timestamp": 1757710566308,
+    "memoryTotal": 68719476736,
+    "memoryUsed": 51572768768,
+    "memoryFree": 17146707968,
+    "memoryUsagePercent": 75.04825592041016,
+    "memoryEfficiency": 24.951744079589844,
+    "cpuCount": 10,
+    "cpuLoad": 0.41689453125,
+    "platform": "darwin",
+    "uptime": 128950
   }
 ]

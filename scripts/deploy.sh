@@ -29,5 +29,6 @@ echo ""
 echo "📊 Stack Outputs:"
 aws cloudformation describe-stacks \
     --stack-name RustLambdaStack \
+    --profile ${AWS_PROFILE:-default} \
     --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
-    --output table 2>/dev/null || echo "Run 'aws cloudformation describe-stacks --stack-name RustLambdaStack' to see outputs"
+    --output table 2>/dev/null || echo "Run 'aws cloudformation describe-stacks --stack-name RustLambdaStack --profile ${AWS_PROFILE:-default}' to see outputs"

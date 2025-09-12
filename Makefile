@@ -1,10 +1,16 @@
 .PHONY: help install build test test-local deploy destroy clean synth
 
+# AWS Profile Configuration
+AWS_PROFILE ?= default
+
 help: ## Show this help message
-	@echo 'Usage: make [target]'
+	@echo 'Usage: make [target] [AWS_PROFILE=profile-name]'
 	@echo ''
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo ''
+	@echo 'Environment variables:'
+	@echo '  AWS_PROFILE     AWS profile to use (default: default)'
 
 install: ## Install all dependencies
 	@echo "📦 Installing Rust dependencies..."
@@ -33,17 +39,17 @@ test-local: ## Run Lambda locally for testing
 
 deploy: ## Deploy to AWS
 	chmod +x scripts/deploy.sh
-	./scripts/deploy.sh
+	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy.sh
 
 synth: ## Synthesize CDK stack
-	cd infrastructure && npm run synth
+	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run synth
 
 destroy: ## Destroy AWS resources
 	@echo "⚠️  WARNING: This will delete all AWS resources!"
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo ""; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		cd infrastructure && npm run destroy; \
+		cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run destroy; \
 	fi
 
 clean: ## Clean build artifacts
@@ -53,7 +59,7 @@ clean: ## Clean build artifacts
 	@echo "✅ Clean complete!"
 
 bootstrap: ## Bootstrap CDK (first time setup)
-	cd infrastructure && npx cdk bootstrap
+	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npx cdk bootstrap
 
 diff: ## Show CDK diff
-	cd infrastructure && npm run diff
+	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run diff

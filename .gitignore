@@ -12,6 +12,7 @@ memory/agents/*
 coordination/memory_bank/*
 coordination/subtasks/*
 coordination/orchestration/*
+.claude-flow/metrics/system-metrics.json
 *.db
 *.db-journal
 *.db-wal

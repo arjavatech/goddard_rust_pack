@@ -15,22 +15,7 @@ export class RustLambdaStack extends cdk.Stack {
       architecture: lambda.Architecture.ARM_64,
       handler: 'bootstrap',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/hello-world/target/lambda/hello-world'), {
-        bundling: {
-          image: lambda.Runtime.PROVIDED_AL2023.bundlingImage,
-          command: [
-            'bash', '-c',
-            [
-              'cd /asset-input',
-              'cargo lambda build --release --arm64',
-              'cp target/lambda/hello-world/bootstrap /asset-output/'
-            ].join(' && ')
-          ],
-          environment: {
-            CARGO_HOME: '/tmp/cargo-home',
-            RUSTUP_HOME: '/tmp/rustup-home',
-          },
-          user: 'root',
-        },
+        exclude: ['**', '!bootstrap'],
       }),
       memorySize: 256,
       timeout: cdk.Duration.seconds(30),

@@ -23,8 +23,8 @@ install: ## Install all dependencies
 
 build: ## Build Rust Lambda for ARM64 and CDK
 	@echo "🔨 Building project for ARM64 architecture..."
-	chmod +x docs/scripts/build.sh
-	./docs/scripts/build.sh
+	chmod +x scripts/build.sh
+	./scripts/build.sh
 
 test: ## Run tests
 	@echo "🧪 Running Rust tests..."
@@ -34,12 +34,12 @@ test: ## Run tests
 	@echo "✅ All tests complete!"
 
 test-local: ## Run Lambda locally for testing
-	chmod +x docs/scripts/test-local.sh
-	./docs/scripts/test-local.sh
+	chmod +x scripts/test-local.sh
+	./scripts/test-local.sh
 
 deploy: ## Deploy to AWS
-	chmod +x docs/scripts/deploy.sh
-	AWS_PROFILE=$(AWS_PROFILE) ./docs/scripts/deploy.sh
+	chmod +x scripts/deploy.sh
+	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy.sh
 
 synth: ## Synthesize CDK stack
 	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run synth
@@ -55,7 +55,10 @@ destroy: ## Destroy AWS resources
 clean: ## Clean build artifacts
 	@echo "🧹 Cleaning build artifacts..."
 	cd lambda/goddard && cargo clean
-	rm -rf infrastructure/node_modules infrastructure/lib infrastructure/cdk.out
+	rm -rf infrastructure/node_modules infrastructure/cdk.out infrastructure/dist
+	find infrastructure -name "*.js" -not -path "*/node_modules/*" -delete
+	find infrastructure -name "*.d.ts" -not -path "*/node_modules/*" -delete
+	find infrastructure -name "*.js.map" -not -path "*/node_modules/*" -delete
 	@echo "✅ Clean complete!"
 
 bootstrap: ## Bootstrap CDK (first time setup)
@@ -65,5 +68,5 @@ diff: ## Show CDK diff
 	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run diff
 
 validate: ## Validate ARM64 architecture configuration
-	chmod +x docs/scripts/validate-architecture.sh
-	./docs/scripts/validate-architecture.sh
+	chmod +x scripts/validate-architecture.sh
+	./scripts/validate-architecture.sh

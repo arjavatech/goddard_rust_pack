@@ -56,8 +56,8 @@ make build
 make validate
 
 # Or run scripts directly
-./docs/scripts/build.sh
-./docs/scripts/validate-architecture.sh
+./scripts/build.sh
+./scripts/validate-architecture.sh
 ```
 
 ### Manual Build

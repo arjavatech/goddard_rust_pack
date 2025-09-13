@@ -18,8 +18,8 @@
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
     "typeRoots": ["./node_modules/@types"],
-    "outDir": "lib",
+    "outDir": "dist",
     "rootDir": "."
   },
-  "exclude": ["node_modules", "cdk.out", "lib"]
+  "exclude": ["node_modules", "cdk.out", "dist"]
 }

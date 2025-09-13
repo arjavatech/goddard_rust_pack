@@ -76,11 +76,16 @@ clean_nodejs() {
             print_status "Removed cdk.out"
         fi
         
-        # Remove TypeScript build artifacts
-        if [ -d "lib" ]; then
-            rm -rf "lib"
-            print_status "Removed lib directory"
+        # Remove TypeScript outDir (dist)
+        if [ -d "dist" ]; then
+            rm -rf "dist"
+            print_status "Removed dist directory"
         fi
+        
+        # Remove compiled TypeScript outputs (preserve source TS in lib/ if any)
+        find lib -type f -name "*.js" -delete 2>/dev/null || true
+        find lib -type f -name "*.d.ts" -delete 2>/dev/null || true
+        find lib -type f -name "*.js.map" -delete 2>/dev/null || true
         
         # Remove compiled JS files
         find . -name "*.js" -not -path "./node_modules/*" -delete 2>/dev/null || true
@@ -266,3 +271,5 @@ case "$1" in
         main
         ;;
 esac
+
+

@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LAMBDA_DIR="$PROJECT_ROOT/lambda/hello-world"
+LAMBDA_DIR="$PROJECT_ROOT/lambda/goddard"
 INFRASTRUCTURE_DIR="$PROJECT_ROOT/infrastructure"
 
 # Function to print colored output
@@ -40,7 +40,7 @@ echo "=================================================="
 validate_binary() {
     print_status "Checking Lambda binary architecture..."
     
-    BINARY_PATH="$LAMBDA_DIR/target/lambda/hello-world/bootstrap"
+    BINARY_PATH="$LAMBDA_DIR/target/lambda/goddard-backend/bootstrap"
     
     if [ ! -f "$BINARY_PATH" ]; then
         print_error "Bootstrap binary not found at: $BINARY_PATH"

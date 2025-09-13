@@ -4,7 +4,7 @@ set -e
 echo "🦀 Building Rust Lambda function..."
 
 # Navigate to lambda directory
-cd lambda/hello-world
+cd lambda/goddard
 
 # Install cargo-lambda if not already installed
 if ! command -v cargo-lambda &> /dev/null; then

@@ -14,7 +14,7 @@ help: ## Show this help message
 
 install: ## Install all dependencies
 	@echo "📦 Installing Rust dependencies..."
-	cd lambda/hello-world && cargo fetch
+	cd lambda/goddard && cargo fetch
 	@echo "📦 Installing cargo-lambda..."
 	pip3 install cargo-lambda || cargo install cargo-lambda
 	@echo "📦 Installing CDK dependencies..."
@@ -28,7 +28,7 @@ build: ## Build Rust Lambda for ARM64 and CDK
 
 test: ## Run tests
 	@echo "🧪 Running Rust tests..."
-	cd lambda/hello-world && cargo test
+	cd lambda/goddard && cargo test
 	@echo "🧪 Running CDK tests..."
 	cd infrastructure && npm test || true
 	@echo "✅ All tests complete!"
@@ -54,7 +54,7 @@ destroy: ## Destroy AWS resources
 
 clean: ## Clean build artifacts
 	@echo "🧹 Cleaning build artifacts..."
-	cd lambda/hello-world && cargo clean
+	cd lambda/goddard && cargo clean
 	rm -rf infrastructure/node_modules infrastructure/lib infrastructure/cdk.out
 	@echo "✅ Clean complete!"
 

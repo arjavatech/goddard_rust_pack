@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LAMBDA_DIR="$PROJECT_ROOT/lambda/hello-world"
+LAMBDA_DIR="$PROJECT_ROOT/lambda/goddard"
 INFRASTRUCTURE_DIR="$PROJECT_ROOT/infrastructure"
 
 # Function to print colored output
@@ -177,7 +177,7 @@ show_info() {
     
     echo
     print_status "Useful Commands:"
-    echo "  View logs: aws logs tail /aws/lambda/rust-hello-world-api --follow"
+    echo "  View logs: aws logs tail /aws/lambda/GoddardLambda --follow"
     echo "  Update stack: ./scripts/deploy.sh"
     echo "  Destroy stack: ./scripts/cleanup.sh"
     echo "  Test local: ./scripts/test-local.sh"

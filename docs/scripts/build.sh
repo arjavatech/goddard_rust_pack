@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LAMBDA_DIR="$PROJECT_ROOT/lambda/hello-world"
+LAMBDA_DIR="$PROJECT_ROOT/lambda/goddard"
 INFRASTRUCTURE_DIR="$PROJECT_ROOT/infrastructure"
 
 # Function to print colored output
@@ -81,10 +81,10 @@ build_lambda() {
         print_success "Rust Lambda ARM64 build completed"
         
         # Validate the binary architecture
-        if [ -f "target/lambda/hello-world/bootstrap" ]; then
+        if [ -f "target/lambda/goddard-backend/bootstrap" ]; then
             print_status "Validating binary architecture..."
             if command -v file >/dev/null 2>&1; then
-                ARCH_INFO=$(file target/lambda/hello-world/bootstrap)
+                ARCH_INFO=$(file target/lambda/goddard-backend/bootstrap)
                 if echo "$ARCH_INFO" | grep -q "aarch64\|ARM"; then
                     print_success "✅ Binary verified as ARM64/aarch64"
                 else

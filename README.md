@@ -7,7 +7,7 @@ A production-ready Rust Lambda function deployed using AWS CDK and Cargo Lambda.
 ```
 goddard-backend/
 ├── lambda/
-│   └── hello-world/         # Rust Lambda function
+│   └── goddard/             # Rust Lambda function
 │       ├── src/
 │       │   └── main.rs      # Lambda handler
 │       ├── Cargo.toml       # Rust dependencies
@@ -92,7 +92,7 @@ make diff         # Show CDK diff
 
 ## 🏃 Development Workflow
 
-1. **Make changes** to Rust code in `lambda/hello-world/src/`
+1. **Make changes** to Rust code in `lambda/goddard/src/`
 2. **Test locally** with `make test-local`
 3. **Run tests** with `make test`
 4. **Deploy** with `make deploy`
@@ -108,7 +108,7 @@ After deployment, you can:
 
 ```bash
 # Run Rust unit tests
-cd lambda/hello-world && cargo test
+cd lambda/goddard && cargo test
 
 # Test deployed API
 API_URL=$(aws cloudformation describe-stacks \
@@ -125,7 +125,7 @@ curl $API_URL/health
 
 ### Adding New Endpoints
 
-1. Edit `lambda/hello-world/src/main.rs` to add new handlers
+1. Edit `lambda/goddard/src/main.rs` to add new handlers
 2. Update the router in `create_app()` function
 3. Add corresponding routes in `infrastructure/lib/rust-lambda-stack.ts`
 4. Deploy with `make deploy`

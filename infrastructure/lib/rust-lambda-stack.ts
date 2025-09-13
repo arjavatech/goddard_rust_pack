@@ -10,9 +10,11 @@ export class RustLambdaStack extends cdk.Stack {
     super(scope, id, props);
 
     // Lambda function for Rust code
+    // Using ARM64 architecture for up to 34% better price performance and 19% better performance
+    // See: https://aws.amazon.com/blogs/compute/migrating-aws-lambda-functions-to-arm-based-aws-graviton2-processors/
     const rustLambda = new lambda.Function(this, 'RustHelloWorldLambda', {
-      runtime: lambda.Runtime.PROVIDED_AL2023,
-      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.PROVIDED_AL2023, // Amazon Linux 2023 supports ARM64
+      architecture: lambda.Architecture.ARM_64, // AWS Graviton2 processor (ARM64)
       handler: 'bootstrap',
       code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/hello-world/target/lambda/hello-world'), {
         exclude: ['**', '!bootstrap'],

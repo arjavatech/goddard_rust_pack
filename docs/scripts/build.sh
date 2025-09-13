@@ -12,8 +12,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LAMBDA_DIR="$PROJECT_ROOT/lambda"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LAMBDA_DIR="$PROJECT_ROOT/lambda/hello-world"
 INFRASTRUCTURE_DIR="$PROJECT_ROOT/infrastructure"
 
 # Function to print colored output
@@ -65,18 +65,39 @@ build_lambda() {
     # Clean previous builds
     cargo clean
     
-    # Build for AWS Lambda (using cargo-lambda)
+    # Build for AWS Lambda ARM64 architecture (using cargo-lambda)
     if command -v cargo-lambda >/dev/null 2>&1; then
-        print_status "Using cargo-lambda for optimized build..."
-        cargo lambda build --release
+        print_status "Using cargo-lambda for optimized ARM64 build..."
+        cargo lambda build --release --arm64
     else
-        print_warning "cargo-lambda not found, using standard cargo build"
-        cargo build --release --target x86_64-unknown-linux-musl
+        print_error "cargo-lambda is required for ARM64 Lambda builds"
+        print_error "Install with: cargo install cargo-lambda"
+        print_error "Then run this script again"
+        exit 1
     fi
     
     # Check if build was successful
     if [ $? -eq 0 ]; then
-        print_success "Rust Lambda build completed"
+        print_success "Rust Lambda ARM64 build completed"
+        
+        # Validate the binary architecture
+        if [ -f "target/lambda/hello-world/bootstrap" ]; then
+            print_status "Validating binary architecture..."
+            if command -v file >/dev/null 2>&1; then
+                ARCH_INFO=$(file target/lambda/hello-world/bootstrap)
+                if echo "$ARCH_INFO" | grep -q "aarch64\|ARM"; then
+                    print_success "✅ Binary verified as ARM64/aarch64"
+                else
+                    print_warning "⚠️  Binary architecture: $ARCH_INFO"
+                    print_warning "Expected ARM64/aarch64, but may still work"
+                fi
+            else
+                print_warning "Cannot verify architecture - 'file' command not available"
+            fi
+        else
+            print_error "Bootstrap binary not found at expected location"
+            exit 1
+        fi
     else
         print_error "Rust Lambda build failed"
         exit 1
@@ -106,6 +127,18 @@ build_infrastructure() {
     # Check if build was successful
     if [ $? -eq 0 ]; then
         print_success "CDK infrastructure build completed"
+        
+        # Validate CDK configuration for ARM64
+        print_status "Validating CDK Lambda architecture configuration..."
+        if grep -q "Architecture\.ARM_64" lib/*.js 2>/dev/null; then
+            print_success "✅ CDK configured for ARM64 architecture"
+        elif grep -q "Architecture\.X86_64" lib/*.js 2>/dev/null; then
+            print_error "❌ CDK configured for X86_64 but binary is ARM64"
+            print_error "Update CDK stack to use Architecture.ARM_64"
+            exit 1
+        else
+            print_warning "⚠️  Could not verify CDK architecture configuration"
+        fi
     else
         print_error "CDK infrastructure build failed"
         exit 1

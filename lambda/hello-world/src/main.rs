@@ -1,6 +1,14 @@
-use lambda_http::{run, service_fn, Error, Request, Response, Body};
-use lambda_runtime::tracing;
+use axum::{
+    extract::Path,
+    http::{HeaderValue, Method, StatusCode},
+    middleware::{self},
+    response::IntoResponse,
+    routing::{get, post},
+    Router,
+};
+use lambda_http::{run, Error};
 use serde::{Deserialize, Serialize};
+use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Serialize, Deserialize)]
 struct HelloResponse {
@@ -15,86 +23,63 @@ struct HealthResponse {
     service: String,
 }
 
-async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
-    tracing::info!("Processing request: {}", event.uri());
-    
-    let path = event.uri().path();
-    let method = event.method().as_str();
-    
-    // Strip stage name from path if present (e.g., "/prod/health" -> "/health")
-    let clean_path = if path.starts_with("/prod") {
-        path.strip_prefix("/prod").unwrap_or("/")
-    } else {
-        path
+async fn hello_world() -> impl IntoResponse {
+    tracing::info!("Hello world endpoint called!");
+    let response = HelloResponse {
+        message: "Hello from Rust Lambda!".to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        path: "/".to_string(),
     };
+    (StatusCode::OK, axum::Json(response))
+}
+
+async fn health_check() -> impl IntoResponse {
+    tracing::info!("Health check endpoint called!");
+    let response = HealthResponse {
+        status: "healthy".to_string(),
+        service: "hello-world-lambda".to_string(),
+    };
+    (StatusCode::OK, axum::Json(response))
+}
+
+async fn hello_name(Path(name): Path<String>) -> impl IntoResponse {
+    tracing::info!("Hello name endpoint called with name: {}", name);
+    let response = HelloResponse {
+        message: format!("Hello, {}! Welcome to Rust Lambda", name),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        path: format!("/hello/{}", name),
+    };
+    (StatusCode::OK, axum::Json(response))
+}
+
+
+// Middleware to add request ID
+async fn request_id_middleware(
+    mut req: axum::extract::Request,
+    next: middleware::Next,
+) -> impl IntoResponse {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    tracing::info!("Request ID: {}", request_id);
     
-    tracing::info!("Method: {}, Original Path: {}, Clean Path: {}", method, path, clean_path);
+    // Add request ID to request extensions
+    req.extensions_mut().insert(request_id.clone());
     
-    match (method, clean_path) {
-        ("GET", "/") => {
-            let response = HelloResponse {
-                message: "Hello from Rust Lambda!".to_string(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                path: clean_path.to_string(),
-            };
-            Ok(Response::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .header("access-control-allow-origin", "*")
-                .header("access-control-allow-methods", "GET, POST, OPTIONS")
-                .header("access-control-allow-headers", "Content-Type")
-                .body(serde_json::to_string(&response)?.into())?)
-        },
-        ("GET", "/health") => {
-            let response = HealthResponse {
-                status: "healthy".to_string(),
-                service: "hello-world-lambda".to_string(),
-            };
-            Ok(Response::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .header("access-control-allow-origin", "*")
-                .body(serde_json::to_string(&response)?.into())?)
-        },
-        ("GET", path) if path.starts_with("/hello/") => {
-            let name = path.strip_prefix("/hello/").unwrap_or("World");
-            let response = HelloResponse {
-                message: format!("Hello, {}! Welcome to Rust Lambda", name),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                path: clean_path.to_string(),
-            };
-            Ok(Response::builder()
-                .status(200)
-                .header("content-type", "application/json")
-                .header("access-control-allow-origin", "*")
-                .body(serde_json::to_string(&response)?.into())?)
-        },
-        ("OPTIONS", _) => {
-            // Handle CORS preflight requests
-            Ok(Response::builder()
-                .status(200)
-                .header("access-control-allow-origin", "*")
-                .header("access-control-allow-methods", "GET, POST, OPTIONS")
-                .header("access-control-allow-headers", "Content-Type")
-                .body("".into())?)
-        },
-        _ => {
-            let error_response = serde_json::json!({
-                "error": "Not Found",
-                "message": format!("Path {} not found", clean_path),
-                "timestamp": chrono::Utc::now().to_rfc3339()
-            });
-            Ok(Response::builder()
-                .status(404)
-                .header("content-type", "application/json")
-                .header("access-control-allow-origin", "*")
-                .body(error_response.to_string().into())?)
-        }
+    // Process the request
+    let mut response = next.run(req).await;
+    
+    // Add request ID to response headers
+    if let Ok(header_value) = HeaderValue::from_str(&request_id) {
+        response.headers_mut().insert("X-Request-ID", header_value);
     }
+    
+    response
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // Configure lambda_http to ignore stage in path (e.g., /prod/health -> /health)
+    std::env::set_var("AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH", "true");
+    
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -104,7 +89,22 @@ async fn main() -> Result<(), Error> {
         .without_time()
         .init();
 
-    run(service_fn(function_handler)).await
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_origin(Any)
+        .allow_headers(vec![
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ]);
+
+    let app = Router::new()
+        .route("/", get(hello_world))
+        .route("/health", get(health_check))
+        .route("/hello/:name", get(hello_name))
+        .layer(middleware::from_fn(request_id_middleware))
+        .layer(cors);
+
+    run(app).await
 }
 
 #[cfg(test)]

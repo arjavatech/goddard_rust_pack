@@ -21,10 +21,10 @@ install: ## Install all dependencies
 	cd infrastructure && npm install
 	@echo "✅ All dependencies installed!"
 
-build: ## Build Rust Lambda and CDK
-	@echo "🔨 Building project..."
-	chmod +x scripts/build.sh
-	./scripts/build.sh
+build: ## Build Rust Lambda for ARM64 and CDK
+	@echo "🔨 Building project for ARM64 architecture..."
+	chmod +x docs/scripts/build.sh
+	./docs/scripts/build.sh
 
 test: ## Run tests
 	@echo "🧪 Running Rust tests..."
@@ -34,12 +34,12 @@ test: ## Run tests
 	@echo "✅ All tests complete!"
 
 test-local: ## Run Lambda locally for testing
-	chmod +x scripts/test-local.sh
-	./scripts/test-local.sh
+	chmod +x docs/scripts/test-local.sh
+	./docs/scripts/test-local.sh
 
 deploy: ## Deploy to AWS
-	chmod +x scripts/deploy.sh
-	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy.sh
+	chmod +x docs/scripts/deploy.sh
+	AWS_PROFILE=$(AWS_PROFILE) ./docs/scripts/deploy.sh
 
 synth: ## Synthesize CDK stack
 	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run synth
@@ -63,3 +63,7 @@ bootstrap: ## Bootstrap CDK (first time setup)
 
 diff: ## Show CDK diff
 	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run diff
+
+validate: ## Validate ARM64 architecture configuration
+	chmod +x docs/scripts/validate-architecture.sh
+	./docs/scripts/validate-architecture.sh

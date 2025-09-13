@@ -1,16 +1,48 @@
-.PHONY: help install build test test-local deploy destroy clean synth
+# =============================================
+# Goddard School Enrollment Management System
+# Makefile for Database and Development Operations
+# =============================================
+
+# Load environment variables if .env exists
+-include .env
+export
+
+# PostgreSQL path
+PSQL := /opt/homebrew/opt/postgresql@14/bin/psql
+
+# Colors for output
+RED=\033[0;31m
+GREEN=\033[0;32m
+YELLOW=\033[1;33m
+BLUE=\033[0;34m
+NC=\033[0m # No Color
 
 # AWS Profile Configuration
 AWS_PROFILE ?= default
 
-help: ## Show this help message
-	@echo 'Usage: make [target] [AWS_PROFILE=profile-name]'
-	@echo ''
-	@echo 'Available targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ''
-	@echo 'Environment variables:'
-	@echo '  AWS_PROFILE     AWS profile to use (default: default)'
+.PHONY: help install build test test-local deploy destroy clean synth db-setup db-reset db-status env-setup
+
+# Default target
+.DEFAULT_GOAL := help
+
+# =============================================
+# HELP
+# =============================================
+
+help: ## 📋 Display this help message
+	@echo ""
+	@echo "$(BLUE)🏫 Goddard School Enrollment Management System$(NC)"
+	@echo "$(BLUE)================================================$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Database Commands:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E 'db-|database' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$(YELLOW)Development Commands:$(NC)"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -v -E 'db-|database|help' | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$(YELLOW)Environment Variables:$(NC)"
+	@echo "  $(GREEN)AWS_PROFILE$(NC)     AWS profile to use (default: default)"
+	@echo "  $(GREEN)DATABASE_URL$(NC)    PostgreSQL connection string"
 
 install: ## Install all dependencies
 	@echo "📦 Installing Rust dependencies..."
@@ -70,3 +102,93 @@ diff: ## Show CDK diff
 validate: ## Validate ARM64 architecture configuration
 	chmod +x scripts/validate-architecture.sh
 	./scripts/validate-architecture.sh
+
+# =============================================
+# DATABASE COMMANDS
+# =============================================
+
+db-setup: ## 🚀 Complete database setup with full audit system
+	@chmod +x scripts/db-setup.sh
+	@./scripts/db-setup.sh
+
+db-clear: ## 🗑️  Clear all tables (keep structure, remove data)
+	@echo "$(YELLOW)⚠️  WARNING: This will delete all table structures!$(NC)"
+	@echo "$(YELLOW)Type 'yes' to continue:$(NC)"
+	@read confirm && [ "$$confirm" = "yes" ] || (echo "$(BLUE)Operation cancelled.$(NC)" && exit 1)
+	@echo "$(YELLOW)🗑️  Dropping all tables...$(NC)"
+	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "\
+		DO \$$\$$ \
+		DECLARE \
+			r RECORD; \
+		BEGIN \
+			FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP \
+				EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; \
+			END LOOP; \
+		END \$$\$$;" -q >/dev/null 2>&1
+	@echo "$(GREEN)✅ All tables cleared!$(NC)"
+
+db-reset: ## ⚠️  Reset database (DANGER: Drops all data)
+	@echo "$(RED)⚠️  WARNING: This will destroy ALL data in the database!$(NC)"
+	@echo "$(YELLOW)Type 'yes' to continue:$(NC)"
+	@read confirm && [ "$$confirm" = "yes" ] || (echo "$(BLUE)Operation cancelled.$(NC)" && exit 1)
+	@echo "$(YELLOW)🗑️  Dropping and recreating schema...$(NC)"
+	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" -q >/dev/null 2>&1
+	@echo "$(YELLOW)🔧 Recreating database structure...$(NC)"
+	@make db-setup
+	@echo "$(GREEN)✅ Database reset completed!$(NC)"
+
+db-status: ## 📊 Check database status and table counts
+	@echo "$(BLUE)📊 Database Status$(NC)"
+	@echo "$(BLUE)==================$(NC)"
+	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "\
+		SELECT \
+			COUNT(*) as total_tables, \
+			STRING_AGG(table_name, ', ' ORDER BY table_name) as tables \
+		FROM information_schema.tables \
+		WHERE table_schema = 'public';" 2>/dev/null || echo "$(RED)❌ Could not connect to database$(NC)"
+	@echo ""
+	@echo "$(BLUE)📈 Table Statistics:$(NC)"
+	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "\
+		SELECT \
+			tablename, \
+			n_live_tup as rows \
+		FROM pg_stat_user_tables \
+		ORDER BY tablename;" 2>/dev/null || echo "$(RED)❌ Could not get table statistics$(NC)"
+
+db-backup: ## 💾 Create database backup
+	@echo "$(BLUE)💾 Creating database backup...$(NC)"
+	@mkdir -p backups
+	@pg_dump $(DATABASE_URL) > backups/goddard_backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@echo "$(GREEN)✅ Backup created in backups/ directory$(NC)"
+
+db-console: ## 🖥️  Open database console
+	@echo "$(BLUE)🖥️  Opening database console...$(NC)"
+	@$(PSQL) $(DATABASE_URL)
+
+
+# =============================================
+# ENVIRONMENT COMMANDS
+# =============================================
+
+env-setup: ## ⚙️  Setup environment configuration
+	@if [ ! -f .env ]; then \
+		echo "$(YELLOW)📝 Creating .env file from template...$(NC)"; \
+		cp .env.example .env; \
+		echo "$(GREEN)✅ .env file created!$(NC)"; \
+		echo "$(YELLOW)⚠️  Please edit .env file with your configuration$(NC)"; \
+	else \
+		echo "$(BLUE)ℹ️  .env file already exists$(NC)"; \
+	fi
+
+env-validate: ## ✅ Validate environment configuration
+	@echo "$(BLUE)✅ Validating environment configuration...$(NC)"
+	@if [ -z "$(DATABASE_URL)" ]; then echo "$(RED)❌ DATABASE_URL not set$(NC)"; else echo "$(GREEN)✅ DATABASE_URL set$(NC)"; fi
+	@if [ -z "$(JWT_SECRET)" ]; then echo "$(YELLOW)⚠️  JWT_SECRET not set$(NC)"; else echo "$(GREEN)✅ JWT_SECRET set$(NC)"; fi
+	@if [ -z "$(NODE_ENV)" ]; then echo "$(YELLOW)⚠️  NODE_ENV not set$(NC)"; else echo "$(GREEN)✅ NODE_ENV: $(NODE_ENV)$(NC)"; fi
+
+quick-start: env-setup db-setup install ## 🚀 Quick start setup (env + db + install)
+	@echo "$(GREEN)🎉 Quick start completed!$(NC)"
+	@echo "$(BLUE)Next steps:$(NC)"
+	@echo "  1. Edit .env file with your configuration"
+	@echo "  2. Run 'make dev' to start development server"
+	@echo "  3. Visit http://localhost:3000"

@@ -1,3 +1,5 @@
+pub mod schema;
+
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 

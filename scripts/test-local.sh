@@ -1,25 +1,48 @@
 #!/bin/bash
-set -e
 
-echo "🧪 Starting local testing environment..."
+# =============================================
+# Goddard School Local Testing Script
+# =============================================
 
-cd lambda/goddard
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Install cargo-lambda if not already installed
+echo -e "${BLUE}🏫 Goddard School Local Testing${NC}"
+echo -e "${BLUE}================================${NC}"
+
+# Check if cargo-lambda is installed
 if ! command -v cargo-lambda &> /dev/null; then
-    echo "📦 Installing cargo-lambda..."
-    pip3 install cargo-lambda
+    echo -e "${RED}❌ cargo-lambda not found${NC}"
+    echo -e "${YELLOW}Installing cargo-lambda...${NC}"
+    cargo install cargo-lambda
 fi
 
-# Start local Lambda runtime
-echo "🚀 Starting cargo-lambda watch..."
-echo "📡 Server will be available at http://localhost:9000"
-echo ""
-echo "Test endpoints:"
-echo "  GET http://localhost:9000/"
-echo "  GET http://localhost:9000/hello/YourName"
-echo "  GET http://localhost:9000/health"
-echo ""
-echo "Press Ctrl+C to stop"
+echo -e "${YELLOW}🔨 Building Lambda function...${NC}"
+cd lambda/goddard
 
-cargo lambda watch
+# Build the Lambda function for local testing
+cargo lambda build --release
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Build successful!${NC}"
+else
+    echo -e "${RED}❌ Build failed${NC}"
+    exit 1
+fi
+
+echo -e "${YELLOW}🚀 Starting local Lambda server...${NC}"
+echo -e "${BLUE}Server will be available at: http://localhost:9000${NC}"
+echo -e "${BLUE}To test endpoints:${NC}"
+echo -e "${GREEN}  GET  http://localhost:9000/health${NC}"
+echo -e "${GREEN}  GET  http://localhost:9000/schools${NC}"
+echo -e "${GREEN}  POST http://localhost:9000/schools${NC}"
+echo -e "${GREEN}  GET  http://localhost:9000/users${NC}"
+echo -e "${BLUE}Press Ctrl+C to stop the server${NC}"
+echo ""
+
+# Start the local Lambda server
+cargo lambda start --release

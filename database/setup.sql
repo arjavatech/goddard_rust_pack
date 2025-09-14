@@ -787,6 +787,30 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================
+-- INITIAL SEED DATA
+-- =============================================
+
+-- Insert a default system user that can be used for creating schools
+-- This solves the foreign key constraint issue when creating the first school
+INSERT INTO users (
+    id,
+    email,
+    role,
+    metadata,
+    is_active,
+    created_at,
+    updated_at
+) VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    'system@goddard.local',
+    'super_admin',
+    '{"type": "system", "name": "System User", "description": "Default system user for initial operations"}',
+    true,
+    NOW(),
+    NOW()
+) ON CONFLICT (id) DO NOTHING;
+
+-- =============================================
 -- INITIAL DATA & CONSTRAINTS
 -- =============================================
 

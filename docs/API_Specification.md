@@ -822,10 +822,138 @@ ORDER BY ft.form_name, ft.status;
 
 ---
 
+## 5. Class Form Overrides Management APIs
 
-## 5. Student Form Assignments Management APIs
+### 5.1 Create Class Form Override (Protected - Admin/SuperAdmin)
+```
+POST /api/class-form-overrides
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
 
-### 5.1 Create Student Form Assignment (Protected - Admin/SuperAdmin)
+Request Body:
+{
+  "school_id": "uuid",
+  "classroom_id": "uuid",
+  "form_template_id": "uuid"
+}
+
+Authorization Logic:
+- Extract user_id, role, school_id from JWT
+- Allow if role === "SuperAdmin" OR (role === "Admin" AND jwt.school_id === request.school_id)
+- Verify classroom and form template belong to school
+- Reject with 403 if insufficient permissions
+
+Response (201):
+{
+  "id": "uuid",
+  "school_id": "uuid",
+  "classroom_id": "uuid",
+  "form_template_id": "uuid",
+  "action": null,
+  "is_required": null,
+  "is_active": true,
+  "created_at": "2024-01-15T10:30:00Z"
+}
+
+Error Responses:
+- 400: Invalid school_id, classroom_id, or form_template_id
+- 403: Insufficient permissions
+- 404: Classroom or form template not found
+- 409: Override already exists for this classroom/form combination
+- 422: Validation errors
+```
+
+**Database Operations:**
+```sql
+-- Create class form override record (action, is_required default to null, is_active defaults to true)
+INSERT INTO class_form_overrides (
+  id, school_id, classroom_id, form_template_id, action, is_required, created_at, is_active
+)
+VALUES (
+  gen_random_uuid(), $1, $2, $3, null, null, NOW(), true
+)
+RETURNING id, school_id, classroom_id, form_template_id, action, is_required, is_active, created_at;
+
+-- Validation queries
+-- Check classroom belongs to school
+SELECT id FROM classrooms WHERE id = $2 AND school_id = $1 AND (is_active = true OR is_active IS NULL);
+
+-- Check form template belongs to school
+SELECT id FROM form_templates WHERE id = $3 AND school_id = $1 AND (is_active = true OR is_active IS NULL);
+
+-- Check for existing override (to prevent duplicates)
+SELECT id FROM class_form_overrides
+WHERE school_id = $1 AND classroom_id = $2 AND form_template_id = $3 AND (is_active = true OR is_active IS NULL);
+```
+
+### 5.2 Delete Class Form Override (Protected - Admin/SuperAdmin)
+```
+DELETE /api/class-form-overrides?id=uuid
+Authorization: Bearer <jwt_token>
+
+Authorization Logic:
+- Extract user_id, role, school_id from JWT
+- Verify override exists and belongs to user's school
+- Allow if role === "SuperAdmin" OR (role === "Admin" AND override.school_id === jwt.school_id)
+- Soft delete by setting is_active = false
+- Reject with 403 if insufficient permissions
+
+Response (200):
+{
+  "message": "Class form override successfully deleted",
+  "id": "uuid",
+  "school_id": "uuid",
+  "classroom_id": "uuid",
+  "form_template_id": "uuid"
+}
+
+Error Responses:
+- 400: Missing or invalid id parameter
+- 403: Insufficient permissions
+- 404: Override not found
+```
+
+**Database Operations:**
+```sql
+-- Get override details for authorization check
+SELECT school_id, classroom_id, form_template_id
+FROM class_form_overrides
+WHERE id = $1 AND (is_active = true OR is_active IS NULL);
+
+-- Soft delete class form override
+UPDATE class_form_overrides
+SET is_active = false, updated_at = NOW()
+WHERE id = $1 AND (is_active = true OR is_active IS NULL)
+RETURNING id, school_id, classroom_id, form_template_id;
+```
+
+**Business Logic Flow:**
+
+#### 5.1 Create Override:
+1. **Validate Input**: Check all required fields are provided
+2. **Authorization Check**: Verify admin has permission for this school
+3. **Validate References**: Ensure classroom and form template exist and belong to school
+4. **Check Duplicates**: Prevent creating duplicate overrides
+5. **Create Record**: Insert with null action/is_required, is_active=true
+6. **Return Response**: Include all created fields with defaults
+
+#### 5.2 Delete Override:
+1. **Validate Input**: Check id parameter is provided
+2. **Get Override Details**: Query to get school_id for authorization
+3. **Authorization Check**: Verify admin has permission for this school
+4. **Soft Delete**: Update is_active to false instead of hard delete
+5. **Return Response**: Confirm deletion with override details
+
+**Use Cases:**
+- **Create**: Add class-specific form requirements or exclusions
+- **Delete**: Remove class-specific overrides (revert to school defaults)
+- **Audit Trail**: Maintain history of override changes through soft deletion
+
+---
+
+## 6. Student Form Assignments Management APIs
+
+### 6.1 Create Student Form Assignment (Protected - Admin/SuperAdmin)
 ```
 POST /api/student-form-assignments
 Authorization: Bearer <jwt_token>
@@ -873,7 +1001,7 @@ VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, COALESCE($6, 'incomplete'), COALE
 RETURNING id, school_id, enrollment_id, child_id, form_template_id, assignment_source, status, is_required, assigned_at;
 ```
 
-### 5.2 Get All Student Form Assignments by School (Protected - School Context)
+### 6.2 Get All Student Form Assignments by School (Protected - School Context)
 ```
 GET /api/student-form-assignments?school_id=uuid
 Authorization: Bearer <jwt_token>
@@ -924,7 +1052,7 @@ WHERE school_id = $1 AND (is_active = true OR is_active IS NULL)
 ORDER BY assigned_at DESC;
 ```
 
-### 5.3 Update Student Form Assignment (Protected - Admin/SuperAdmin)
+### 6.3 Update Student Form Assignment (Protected - Admin/SuperAdmin)
 ```
 PUT /api/student-form-assignments
 Authorization: Bearer <jwt_token>
@@ -984,7 +1112,7 @@ WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL)
 RETURNING id, school_id, enrollment_id, child_id, form_template_id, assignment_source, status, is_required, assigned_at, updated_at;
 ```
 
-### 5.4 Delete Student Form Assignment (Protected - Admin/SuperAdmin)
+### 6.4 Delete Student Form Assignment (Protected - Admin/SuperAdmin)
 ```
 DELETE /api/student-form-assignments?assignment_id=uuid&school_id=uuid
 Authorization: Bearer <jwt_token>
@@ -1017,9 +1145,9 @@ WHERE id = $1 AND school_id = $2;
 ```
 
 
-## 6. Form Submissions Management APIs (Version Control)
+## 7. Form Submissions Management APIs (Version Control)
 
-### 6.1 Create Form Submission (Webhook from Fillout)
+### 7.1 Create Form Submission (Webhook from Fillout)
 ```
 POST /api/form-submissions/webhook
 Authorization: Bearer <webhook_secret>
@@ -1092,7 +1220,7 @@ RETURNING id, school_id, enrollment_id, student_form_assignment_id,
          submitted_at, processed_at;
 ```
 
-### 6.2 Get Latest Form Submission (Most Recent Version)
+### 7.2 Get Latest Form Submission (Most Recent Version)
 ```
 GET /api/form-submissions/latest?school_id=uuid&enrollment_id=uuid&form_template_id=uuid
 Authorization: Bearer <jwt_token>
@@ -1145,7 +1273,7 @@ ORDER BY submitted_at DESC
 LIMIT 1;
 ```
 
-### 6.3 Get All Form Submission Versions (Version History)
+### 7.3 Get All Form Submission Versions (Version History)
 ```
 GET /api/form-submissions/versions?school_id=uuid&enrollment_id=uuid&form_template_id=uuid
 Authorization: Bearer <jwt_token>
@@ -1238,7 +1366,7 @@ WHERE school_id = $1
 ORDER BY submitted_at DESC;
 ```
 
-### 6.4 Get Form Submission by ID
+### 7.4 Get Form Submission by ID
 ```
 GET /api/form-submissions/{submission_id}
 Authorization: Bearer <jwt_token>
@@ -1284,7 +1412,7 @@ FROM form_submissions
 WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL);
 ```
 
-### 6.5 Update Form Submission Status (Protected - Admin/SuperAdmin)
+### 7.5 Update Form Submission Status (Protected - Admin/SuperAdmin)
 ```
 PUT /api/form-submissions/{submission_id}/status
 Authorization: Bearer <jwt_token>
@@ -1326,9 +1454,9 @@ RETURNING id, processed_at, updated_at;
 
 ---
 
-## 7. Enrollment Child-Based Management APIs
+## 8. Enrollment Child-Based Management APIs
 
-### 7.1 Parent Invite for Child Enrollment (Protected - Admin/SuperAdmin)
+### 8.1 Parent Invite for Child Enrollment (Protected - Admin/SuperAdmin)
 ```
 POST /api/enrollments/parent-invite
 Authorization: Bearer <jwt_token>
@@ -1489,7 +1617,7 @@ POST /api/emails/send-invitation
 9. **Send Sign-up Email**: Send invitation email to parent using invite_id from users table
 10. **Return Complete Response**: Include all created records and assigned forms
 
-### 7.2 Resend Parent Invitation (Protected - Admin/SuperAdmin)
+### 8.2 Resend Parent Invitation (Protected - Admin/SuperAdmin)
 ```
 POST /api/enrollments/resend-invitation
 Authorization: Bearer <jwt_token>
@@ -1584,7 +1712,7 @@ POST /api/emails/send-invitation-reminder
 - Admin wants to send reminder after period of inactivity
 - Parent requested new invitation link
 
-### 7.3 Add Additional Child (Protected - Admin/SuperAdmin)
+### 8.3 Add Additional Child (Protected - Admin/SuperAdmin)
 ```
 POST /api/enrollments/add-child
 Authorization: Bearer <jwt_token>
@@ -1728,7 +1856,7 @@ RETURNING id, form_template_id, assignment_source, status, is_required, assigned
 - Parent verification status can be either true or false
 - Simpler transaction without user table INSERT
 
-### 7.4 Get All Enrollment Form Details by School (Protected - School Context)
+### 8.4 Get All Enrollment Form Details by School (Protected - School Context)
 ```
 GET /api/enrollments/school-forms?school_id=uuid
 Authorization: Bearer <jwt_token>
@@ -1886,7 +2014,7 @@ WHERE sfa.enrollment_id = $1
 - May need pagination for schools with many enrollments
 - Forms aggregation can be done in application layer if DB performance is an issue
 
-### 7.5 Get Class-wise Child Count Details (Protected - School Context)
+### 8.5 Get Class-wise Child Count Details (Protected - School Context)
 ```
 GET /api/enrollments/class-wise-count?school_id=uuid
 Authorization: Bearer <jwt_token>
@@ -2041,7 +2169,7 @@ ORDER BY c.id;
 - JSON aggregation functions may impact performance on large datasets
 
 
-### 7.6 Get Enrollment Children with Form Assignments (Protected - School Context)
+### 8.6 Get Enrollment Children with Form Assignments (Protected - School Context)
 ```
 GET /api/enrollments/children-forms?school_id=uuid
 Authorization: Bearer <jwt_token>
@@ -2202,7 +2330,7 @@ WHERE sfa.enrollment_id = $1
 - May need pagination for schools with large enrollments
 - Filter by active status across all joined tables
 
-### 7.7 Get Parent Details by School (Protected - School Context)
+### 8.7 Get Parent Details by School (Protected - School Context)
 ```
 GET /api/parents/details?school_id=uuid
 Authorization: Bearer <jwt_token>
@@ -2290,136 +2418,140 @@ ORDER BY u.created_at DESC, u.email;
 
 ---
 
-## 8. Class Form Overrides Management APIs
+## 9. Reports and Analytics APIs
 
-### 8.1 Create Class Form Override (Protected - Admin/SuperAdmin)
+### 9.1 School Enrollment Summary Report (Protected - Admin/SuperAdmin)
 ```
-POST /api/class-form-overrides
+GET /api/reports/enrollment-summary?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
-Request Body:
-{
-  "school_id": "uuid",
-  "classroom_id": "uuid",
-  "form_template_id": "uuid"
-}
-
 Authorization Logic:
 - Extract user_id, role, school_id from JWT
-- Allow if role === "SuperAdmin" OR (role === "Admin" AND jwt.school_id === request.school_id)
-- Verify classroom and form template belong to school
-- Reject with 403 if insufficient permissions
-
-Response (201):
-{
-  "id": "uuid",
-  "school_id": "uuid",
-  "classroom_id": "uuid",
-  "form_template_id": "uuid",
-  "action": null,
-  "is_required": null,
-  "is_active": true,
-  "created_at": "2024-01-15T10:30:00Z"
-}
-
-Error Responses:
-- 400: Invalid school_id, classroom_id, or form_template_id
-- 403: Insufficient permissions
-- 404: Classroom or form template not found
-- 409: Override already exists for this classroom/form combination
-- 422: Validation errors
-```
-
-**Database Operations:**
-```sql
--- Create class form override record (action, is_required default to null, is_active defaults to true)
-INSERT INTO class_form_overrides (
-  id, school_id, classroom_id, form_template_id, action, is_required, created_at, is_active
-)
-VALUES (
-  gen_random_uuid(), $1, $2, $3, null, null, NOW(), true
-)
-RETURNING id, school_id, classroom_id, form_template_id, action, is_required, is_active, created_at;
-
--- Validation queries
--- Check classroom belongs to school
-SELECT id FROM classrooms WHERE id = $2 AND school_id = $1 AND (is_active = true OR is_active IS NULL);
-
--- Check form template belongs to school
-SELECT id FROM form_templates WHERE id = $3 AND school_id = $1 AND (is_active = true OR is_active IS NULL);
-
--- Check for existing override (to prevent duplicates)
-SELECT id FROM class_form_overrides
-WHERE school_id = $1 AND classroom_id = $2 AND form_template_id = $3 AND (is_active = true OR is_active IS NULL);
-```
-
-### 8.2 Delete Class Form Override (Protected - Admin/SuperAdmin)
-```
-DELETE /api/class-form-overrides?id=uuid
-Authorization: Bearer <jwt_token>
-
-Authorization Logic:
-- Extract user_id, role, school_id from JWT
-- Verify override exists and belongs to user's school
-- Allow if role === "SuperAdmin" OR (role === "Admin" AND override.school_id === jwt.school_id)
-- Soft delete by setting is_active = false
-- Reject with 403 if insufficient permissions
+- Allow if role === "SuperAdmin" OR (role === "Admin" AND jwt.school_id === query.school_id)
+- Reject with 403 if school access denied
 
 Response (200):
 {
-  "message": "Class form override successfully deleted",
-  "id": "uuid",
   "school_id": "uuid",
-  "classroom_id": "uuid",
-  "form_template_id": "uuid"
+  "school_name": "The Goddard School - Downtown",
+  "total_children": 150,
+  "total_enrollments": 145,
+  "active_enrollments": 140,
+  "pending_enrollments": 5,
+  "classrooms": [
+    {
+      "classroom_id": "uuid",
+      "classroom_name": "Infant Room A",
+      "capacity": 12,
+      "enrolled_count": 10,
+      "available_spots": 2
+    },
+    {
+      "classroom_id": "uuid",
+      "classroom_name": "Toddler Room B",
+      "capacity": 15,
+      "enrolled_count": 15,
+      "available_spots": 0
+    }
+  ],
+  "form_completion_stats": {
+    "total_forms_assigned": 580,
+    "completed_forms": 520,
+    "pending_forms": 60,
+    "completion_rate": "89.7%"
+  },
+  "generated_at": "2024-01-15T10:30:00Z"
 }
 
 Error Responses:
-- 400: Missing or invalid id parameter
-- 403: Insufficient permissions
-- 404: Override not found
+- 400: Missing or invalid school_id parameter
+- 403: Access denied to school
+- 404: School not found
 ```
 
-**Database Operations:**
+**Database Query (Complex Aggregation):**
 ```sql
--- Get override details for authorization check
-SELECT school_id, classroom_id, form_template_id
-FROM class_form_overrides
-WHERE id = $1 AND (is_active = true OR is_active IS NULL);
-
--- Soft delete class form override
-UPDATE class_form_overrides
-SET is_active = false, updated_at = NOW()
-WHERE id = $1 AND (is_active = true OR is_active IS NULL)
-RETURNING id, school_id, classroom_id, form_template_id;
+-- Get comprehensive enrollment summary for a school
+WITH enrollment_stats AS (
+  SELECT
+    e.status,
+    COUNT(*) as count
+  FROM enrollments e
+  WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)
+  GROUP BY e.status
+),
+classroom_stats AS (
+  SELECT
+    c.id as classroom_id,
+    c.name as classroom_name,
+    c.capacity,
+    COUNT(e.id) as enrolled_count,
+    (c.capacity - COUNT(e.id)) as available_spots
+  FROM classrooms c
+  LEFT JOIN enrollments e ON c.id = e.classroom_id
+    AND (e.is_active = true OR e.is_active IS NULL)
+    AND e.status = 'active'
+  WHERE c.school_id = $1 AND (c.is_active = true OR c.is_active IS NULL)
+  GROUP BY c.id, c.name, c.capacity
+),
+form_stats AS (
+  SELECT
+    COUNT(*) as total_assigned,
+    COUNT(CASE WHEN sfa.status = 'completed' THEN 1 END) as completed,
+    COUNT(CASE WHEN sfa.status != 'completed' THEN 1 END) as pending
+  FROM student_form_assignments sfa
+  WHERE sfa.school_id = $1 AND (sfa.is_active = true OR sfa.is_active IS NULL)
+)
+SELECT
+  s.id as school_id,
+  s.name as school_name,
+  (SELECT COUNT(*) FROM children WHERE school_id = $1 AND status = 'active') as total_children,
+  (SELECT COUNT(*) FROM enrollments WHERE school_id = $1 AND (is_active = true OR is_active IS NULL)) as total_enrollments,
+  COALESCE((SELECT count FROM enrollment_stats WHERE status = 'active'), 0) as active_enrollments,
+  COALESCE((SELECT count FROM enrollment_stats WHERE status = 'pending'), 0) as pending_enrollments,
+  json_agg(
+    json_build_object(
+      'classroom_id', cs.classroom_id,
+      'classroom_name', cs.classroom_name,
+      'capacity', cs.capacity,
+      'enrolled_count', cs.enrolled_count,
+      'available_spots', cs.available_spots
+    )
+  ) as classrooms,
+  (
+    SELECT json_build_object(
+      'total_forms_assigned', fs.total_assigned,
+      'completed_forms', fs.completed,
+      'pending_forms', fs.pending,
+      'completion_rate', ROUND((fs.completed::numeric / NULLIF(fs.total_assigned, 0) * 100), 1) || '%'
+    )
+    FROM form_stats fs
+  ) as form_completion_stats
+FROM schools s
+CROSS JOIN classroom_stats cs
+WHERE s.id = $1
+GROUP BY s.id, s.name;
 ```
 
 **Business Logic Flow:**
-
-#### 8.1 Create Override:
-1. **Validate Input**: Check all required fields are provided
-2. **Authorization Check**: Verify admin has permission for this school
-3. **Validate References**: Ensure classroom and form template exist and belong to school
-4. **Check Duplicates**: Prevent creating duplicate overrides
-5. **Create Record**: Insert with null action/is_required, is_active=true
-6. **Return Response**: Include all created fields with defaults
-
-#### 8.2 Delete Override:
-1. **Validate Input**: Check id parameter is provided
-2. **Get Override Details**: Query to get school_id for authorization
-3. **Authorization Check**: Verify admin has permission for this school
-4. **Soft Delete**: Update is_active to false instead of hard delete
-5. **Return Response**: Confirm deletion with override details
+1. **Validate Request**: Check school_id is provided and valid UUID
+2. **Authorization Check**: Verify admin has access to this school's data
+3. **Aggregate Data**: Collect enrollment, classroom, and form completion statistics
+4. **Calculate Metrics**: Compute completion rates and availability
+5. **Format Response**: Build comprehensive report with all statistics
+6. **Return Report**: Complete enrollment summary with analytics
 
 **Use Cases:**
-- **Create**: Add class-specific form requirements or exclusions
-- **Delete**: Remove class-specific overrides (revert to school defaults)
-- **Audit Trail**: Maintain history of override changes through soft deletion
+- Admin dashboard overview
+- Enrollment capacity planning
+- Form completion tracking
+- School performance monitoring
+- Regulatory compliance reporting
 
 ---
 
-## 9. Future API Sections (Planned)
+## 10. Future API Sections (Planned)
 - Children Management
 - Enrollment Process
 - Document Upload

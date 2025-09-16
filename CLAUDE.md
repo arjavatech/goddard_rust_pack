@@ -271,3 +271,4 @@ ALWAYS prefer editing an existing file to creating a new one.
 NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 Never save working files, text/mds and tests to the root folder.
 - memorie the school_controller.rs file ans Makefile
+- memorize this file API_Planning_Specification.md. now all api planning good. now i want to add in further context

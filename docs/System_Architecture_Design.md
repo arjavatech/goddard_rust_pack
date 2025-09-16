@@ -168,8 +168,14 @@ erDiagram
     USERS {
         uuid id PK
         uuid school_id FK
+        uuid invite_id FK
+        string first_name
+        string last_name
         string email UK
         string role
+        boolean id_signed
+        uuid created_by FK
+        timestamp created_at
         jsonb metadata
     }
     
@@ -190,11 +196,13 @@ erDiagram
     CHILDREN {
         uuid id PK
         uuid parent_id FK
+        uuid secondary_parent_id FK "-- Optional, references USERS table"
         uuid school_id FK
         string first_name
         string last_name
         date birth_date
-        jsonb medical_info
+        string gender "-- Optional"
+        string status "-- Default: Active"
     }
     
     ENROLLMENTS ||--o{ STUDENT_FORM_ASSIGNMENTS : has
@@ -204,6 +212,7 @@ erDiagram
         uuid school_id FK
         uuid classroom_id FK
         string status
+        jsonb application_status "-- Optional, initially null"
         jsonb progress
         timestamp submitted_at
     }
@@ -244,6 +253,7 @@ erDiagram
         string action
         boolean is_required
         timestamp created_at
+        boolean is_active "-- Default: true"
     }
     
     STUDENT_FORM_ASSIGNMENTS ||--|| FORM_SUBMISSIONS : completed_via
@@ -253,20 +263,21 @@ erDiagram
         uuid enrollment_id FK
         uuid child_id FK
         uuid form_template_id FK
-        string assignment_source
+        string assignment_source "-- school_default, class_override, manual"
+        string status "-- incomplete, in_progress, completed, archived"
         boolean is_required
         timestamp assigned_at
     }
-    
+
     FORM_SUBMISSIONS {
         uuid id PK
         uuid school_id FK
         uuid enrollment_id FK
-        uuid student_form_assignment_id FK
+        uuid student_form_assignment_id FK "-- Links to assignment"
         uuid form_template_id FK
-        string fillout_submission_id UK
-        jsonb form_data
-        jsonb metadata
+        string fillout_submission_id UK "-- Unique ID from Fillout webhook"
+        jsonb form_data "-- Actual form responses"
+        jsonb metadata "-- Submission metadata"
         timestamp submitted_at
         timestamp processed_at
     }

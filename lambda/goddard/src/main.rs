@@ -33,14 +33,17 @@ use controllers::{
     form_template_controller::{
         create_form_template, get_form_templates_by_school, update_form_template, delete_form_template
     },
+    class_form_override_controller::{
+        create_class_form_override, delete_class_form_override
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::DatabaseConfig;
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, /* UserDao, EnrollmentDao */
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, /* UserDao, EnrollmentDao */
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, /* UserService, EnrollmentService */
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, /* UserService, EnrollmentService */
 };
 use middleware::auth::{api_key_middleware};
 use std::sync::Arc;
@@ -66,6 +69,7 @@ async fn main() -> Result<(), Error> {
     let school_dao = SchoolDao::new(pool.clone());
     let classroom_dao = ClassroomDao::new(pool.clone());
     let form_template_dao = FormTemplateDao::new(pool.clone());
+    let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -76,6 +80,7 @@ async fn main() -> Result<(), Error> {
     let school_service = Arc::new(SchoolService::new(school_dao));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
+    let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -127,6 +132,11 @@ async fn main() -> Result<(), Error> {
         .route("/form-templates", put(update_form_template).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/form-templates", delete(delete_form_template).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(form_template_service)
+
+        // Class Form Overrides Management APIs (API Key Protected for Testing)
+        .route("/class-form-overrides", post(create_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/class-form-overrides", delete(delete_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(class_form_override_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

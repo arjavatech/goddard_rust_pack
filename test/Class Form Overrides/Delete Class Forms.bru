@@ -1,0 +1,23 @@
+meta {
+  name: Delete Class Forms
+  type: http
+  seq: 4
+}
+
+delete {
+  url: http:localhost:9000/class-form-overrides?id=c4f0a1b7-d4ff-48c4-aa98-bd38dd5955fb
+  body: none
+  auth: inherit
+}
+
+params:query {
+  id: c4f0a1b7-d4ff-48c4-aa98-bd38dd5955fb
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+settings {
+  encodeUrl: true
+}

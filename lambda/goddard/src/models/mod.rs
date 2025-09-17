@@ -2,6 +2,7 @@ pub mod schema;
 pub mod school;
 pub mod classroom;
 pub mod form_template;
+pub mod class_form_override;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

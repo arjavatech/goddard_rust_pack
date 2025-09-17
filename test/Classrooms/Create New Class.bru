@@ -1,0 +1,28 @@
+meta {
+  name: Create New Class
+  type: http
+  seq: 2
+}
+
+post {
+  url: http:localhost:9000/classrooms
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+    
+    "school_id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
+    "class_name": "Class-B"
+  
+  }
+}
+
+settings {
+  encodeUrl: true
+}

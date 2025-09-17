@@ -1,0 +1,36 @@
+meta {
+  name: Update School
+  type: http
+  seq: 2
+}
+
+put {
+  url: http:localhost:9000/schools
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+      "id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
+      "name": "Goddard School Sammamish",
+      "subdomain": "sammamish",
+      "settings": {
+        "age_groups": [
+          "infants",
+          "toddlers",
+          "preschool",
+          "pre-k"
+        ],
+        "enrollment_capacity": 250,
+        "timezone": "America/New_York"
+      }}
+}
+
+settings {
+  encodeUrl: true
+}

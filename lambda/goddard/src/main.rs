@@ -27,16 +27,19 @@ use controllers::{
     school_controller::{
         create_school, get_all_schools, update_school, delete_school
     },
+    classroom_controller::{
+        create_classroom, get_classrooms_by_school, update_classroom, delete_classroom
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::DatabaseConfig;
 use dao::{
-    AuthDao, SchoolDao, /* UserDao, ClassroomDao, FormTemplateDao, EnrollmentDao */
+    AuthDao, SchoolDao, ClassroomDao, /* UserDao, FormTemplateDao, EnrollmentDao */
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, /* UserService, ClassroomService, FormTemplateService, EnrollmentService */
+    AuthService, SupabaseClient, SchoolService, ClassroomService, /* UserService, FormTemplateService, EnrollmentService */
 };
-use middleware::auth::api_key_middleware;
+use middleware::auth::{api_key_middleware};
 use std::sync::Arc;
 
 
@@ -58,6 +61,7 @@ async fn main() -> Result<(), Error> {
     // Initialize DAOs
     let auth_dao = AuthDao::new(pool.clone());
     let school_dao = SchoolDao::new(pool.clone());
+    let classroom_dao = ClassroomDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -66,6 +70,7 @@ async fn main() -> Result<(), Error> {
     // Initialize services
     let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client.clone()));
     let school_service = Arc::new(SchoolService::new(school_dao));
+    let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -103,6 +108,13 @@ async fn main() -> Result<(), Error> {
         .route("/schools", put(update_school).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/schools/:id", delete(delete_school).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(school_service)
+
+        // Classroom Management APIs (API Key Protected for Testing)
+        .route("/classrooms", post(create_classroom).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms", get(get_classrooms_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms", put(update_classroom).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms", delete(delete_classroom).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(classroom_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

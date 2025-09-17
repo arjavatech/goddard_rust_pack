@@ -119,3 +119,60 @@ pub fn check_permission_superadmin_only(auth: &AuthContext) -> Result<(), AppErr
         _ => Err(AppError::Authorization("SuperAdmin access required".to_string())),
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct SchoolContext {
+    pub school_id: Uuid,
+}
+
+pub async fn school_header_middleware(
+    headers: HeaderMap,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // Try to get school_id from X-School-ID header first
+    let school_id = if let Some(school_header) = headers.get("X-School-ID") {
+        // Parse school_id from header
+        let school_id_str = school_header.to_str()
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        Uuid::parse_str(school_id_str)
+            .map_err(|_| StatusCode::BAD_REQUEST)?
+    } else {
+        // Fallback to AuthContext school_id from JWT
+        let auth_context = request.extensions()
+            .get::<AuthContext>()
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+
+        auth_context.school_id
+    };
+
+    let school_context = SchoolContext { school_id };
+    request.extensions_mut().insert(school_context);
+
+    Ok(next.run(request).await)
+}
+
+pub fn extract_school_context(request: &Request) -> Result<&SchoolContext, AppError> {
+    request
+        .extensions()
+        .get::<SchoolContext>()
+        .ok_or_else(|| AppError::Authorization("School context required".to_string()))
+}
+
+// Simplified permission checks that use school context
+pub fn check_admin_or_superadmin_permission(auth: &AuthContext, school_context: &SchoolContext) -> Result<(), AppError> {
+    match auth.role {
+        UserRole::SuperAdmin => Ok(()),
+        UserRole::Admin if auth.school_id == school_context.school_id => Ok(()),
+        _ => Err(AppError::Authorization("Insufficient permissions".to_string())),
+    }
+}
+
+pub fn check_school_access_permission(auth: &AuthContext, school_context: &SchoolContext) -> Result<(), AppError> {
+    match auth.role {
+        UserRole::SuperAdmin => Ok(()),
+        _ if auth.school_id == school_context.school_id => Ok(()),
+        _ => Err(AppError::Authorization("Access denied to school".to_string())),
+    }
+}

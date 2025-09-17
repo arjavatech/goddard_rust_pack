@@ -1,0 +1,29 @@
+meta {
+  name: Update Class
+  type: http
+  seq: 3
+}
+
+put {
+  url: http:localhost:9000/classrooms
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+    
+    "school_id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
+    "class_name": "Class-Test-B",
+    "class_id": "d69671a4-6a5a-493a-bae6-dbd9758e3754"
+  
+  }
+}
+
+settings {
+  encodeUrl: true
+}

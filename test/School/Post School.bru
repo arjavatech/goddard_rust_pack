@@ -1,0 +1,31 @@
+meta {
+  name: Post School
+  type: http
+  seq: 2
+}
+
+post {
+  url: http:localhost:9000/schools
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+        "name": "Goddard School, Lynnwood",
+        "subdomain": "lynnwood",
+        "settings": {
+          "timezone": "America/New_York",
+          "enrollment_capacity": 200,
+          "age_groups": ["infants", "toddlers", "preschool", "pre-k"]
+  }
+  }
+}
+
+settings {
+  encodeUrl: true
+}

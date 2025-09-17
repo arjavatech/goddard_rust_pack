@@ -862,6 +862,10 @@
                   },
                   "form_name": {
                     "type": "string"
+                  },
+                  "fillout_form_id": {
+                    "type": "string",
+                    "nullable": true
                   }
                 }
               }

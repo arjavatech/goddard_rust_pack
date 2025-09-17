@@ -464,7 +464,8 @@ Content-Type: application/json
 Request Body:
 {
   "school_id": "uuid",
-  "form_name": "Student Registration Form"
+  "form_name": "Student Registration Form",
+  "fillout_form_id": "www.google.com"
 }
 
 Authorization Logic:
@@ -478,7 +479,7 @@ Response (201):
   "school_id": "uuid",
   "form_name": "Student Registration Form",
   "form_type": "school_form",
-  "fillout_form_id": null,
+  "fillout_form_id": "www.google.com",
   "fillout_form_url": null,
   "status": "school_default",
   "is_required": null,
@@ -495,8 +496,8 @@ Error Responses:
 **Database Operations:**
 ```sql
 -- Create form template record
-INSERT INTO form_templates (id, school_id, form_name, form_type, status)
-VALUES (gen_random_uuid(), $1, $2, 'school_form', 'school_default')
+INSERT INTO form_templates (id, school_id, form_name, form_type, fillout_form_id, status)
+VALUES (gen_random_uuid(), $1, $2, 'school_form', $3, 'school_default')
 RETURNING id, school_id, form_name, form_type, fillout_form_id, fillout_form_url, status, is_required, display_order, created_at;
 ```
 

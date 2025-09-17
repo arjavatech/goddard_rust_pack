@@ -18,7 +18,7 @@
 
 ### 1.1 Create School (Protected - API Key)
 ```
-POST /api/schools
+POST /schools
 X-API-Key: <owner_api_key>
 Content-Type: application/json
 
@@ -45,7 +45,7 @@ Response (201):
 
 ### 1.2 Get All Schools (Public)
 ```
-GET /api/schools
+GET /schools
 Content-Type: application/json
 
 Response (200):
@@ -73,7 +73,7 @@ ORDER BY created_at DESC
 
 ### 1.3 Update School (Protected - API Key Only)
 ```
-PUT /api/schools
+PUT /schools
 X-API-Key: <owner_api_key>
 Content-Type: application/json
 
@@ -125,7 +125,7 @@ RETURNING id, name, subdomain, settings, updated_at;
 
 ### 1.4 Delete School (Protected - API Key Only)
 ```
-DELETE /api/schools/:id
+DELETE /schools/:id
 X-API-Key: <owner_api_key>
 Content-Type: application/json
 
@@ -172,7 +172,7 @@ Role Permissions:
 
 ### 2.2 User Invitation API (Protected - Admin/SuperAdmin)
 ```
-POST /api/users/invite
+POST /users/invite
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -210,7 +210,7 @@ VALUES (gen_random_uuid(), $1, $2, $3, gen_random_uuid(), NOW() + INTERVAL '7 da
 
 ### 2.3 User Verification API (Public)
 ```
-POST /api/users/verify
+POST /users/verify
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -268,7 +268,7 @@ WHERE invite_id = $1;
 
 ### 2.4 User Authentication Check API (Protected)
 ```
-GET /api/users/me
+GET /users/me
 Authorization: Bearer <jwt_token>
 
 Response (200):
@@ -295,7 +295,7 @@ SELECT role, school_id FROM users WHERE id = $1 AND is_verified = true;
 
 ### 3.1 Create Classroom (Protected - Admin/SuperAdmin)
 ```
-POST /api/classrooms
+POST /classrooms
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -337,7 +337,7 @@ RETURNING id, school_id, name, age_group, capacity, enrolled_count, created_at;
 
 ### 3.2 Get All Classrooms by School (Protected - School Context)
 ```
-GET /api/classrooms?school_id=uuid
+GET /classrooms?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -378,7 +378,7 @@ ORDER BY name ASC;
 
 ### 3.3 Update Classroom (Protected - Admin/SuperAdmin)
 ```
-PUT /api/classrooms
+PUT /classrooms
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -421,7 +421,7 @@ RETURNING id, school_id, name, updated_at;
 
 ### 3.4 Delete Classroom (Protected - Admin/SuperAdmin)
 ```
-DELETE /api/classrooms?classroom_id=uuid&school_id=uuid
+DELETE /classrooms?classroom_id=uuid&school_id=uuid
 Authorization: Bearer <jwt_token>
 
 Authorization Logic:
@@ -457,7 +457,7 @@ WHERE id = $1 AND school_id = $2;
 
 ### 4.1 Create Form Template (Protected - Admin/SuperAdmin)
 ```
-POST /api/form-templates
+POST /form-templates
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -502,7 +502,7 @@ RETURNING id, school_id, form_name, form_type, fillout_form_id, fillout_form_url
 
 ### 4.2 Get All Form Templates by School (Protected - School Context)
 ```
-GET /api/form-templates?school_id=uuid
+GET /form-templates?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -556,7 +556,7 @@ ORDER BY display_order ASC, created_at DESC;
 
 ### 4.3 Update Form Template (Protected - Admin/SuperAdmin)
 ```
-PUT /api/form-templates
+PUT /form-templates
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -618,7 +618,7 @@ RETURNING id, school_id, form_name, form_type, fillout_form_id, fillout_form_url
 
 ### 4.4 Delete Form Template (Protected - Admin/SuperAdmin)
 ```
-DELETE /api/form-templates?form_id=uuid&school_id=uuid
+DELETE /form-templates?form_id=uuid&school_id=uuid
 Authorization: Bearer <jwt_token>
 
 Authorization Logic:
@@ -650,7 +650,7 @@ WHERE id = $1 AND school_id = $2;
 
 ### 4.5 Get Form Templates Grouped by Status (Protected - School Context)
 ```
-GET /api/form-templates/by-status?school_id=uuid
+GET /form-templates/by-status?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -826,7 +826,7 @@ ORDER BY ft.form_name, ft.status;
 
 ### 5.1 Create Class Form Override (Protected - Admin/SuperAdmin)
 ```
-POST /api/class-form-overrides
+POST /class-form-overrides
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -888,7 +888,7 @@ WHERE school_id = $1 AND classroom_id = $2 AND form_template_id = $3 AND (is_act
 
 ### 5.2 Delete Class Form Override (Protected - Admin/SuperAdmin)
 ```
-DELETE /api/class-form-overrides?id=uuid
+DELETE /class-form-overrides?id=uuid
 Authorization: Bearer <jwt_token>
 
 Authorization Logic:
@@ -955,7 +955,7 @@ RETURNING id, school_id, classroom_id, form_template_id;
 
 ### 6.1 Create Student Form Assignment (Protected - Admin/SuperAdmin)
 ```
-POST /api/student-form-assignments
+POST /student-form-assignments
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1003,7 +1003,7 @@ RETURNING id, school_id, enrollment_id, child_id, form_template_id, assignment_s
 
 ### 6.2 Get All Student Form Assignments by School (Protected - School Context)
 ```
-GET /api/student-form-assignments?school_id=uuid
+GET /student-form-assignments?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1054,7 +1054,7 @@ ORDER BY assigned_at DESC;
 
 ### 6.3 Update Student Form Assignment (Protected - Admin/SuperAdmin)
 ```
-PUT /api/student-form-assignments
+PUT /student-form-assignments
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1114,7 +1114,7 @@ RETURNING id, school_id, enrollment_id, child_id, form_template_id, assignment_s
 
 ### 6.4 Delete Student Form Assignment (Protected - Admin/SuperAdmin)
 ```
-DELETE /api/student-form-assignments?assignment_id=uuid&school_id=uuid
+DELETE /student-form-assignments?assignment_id=uuid&school_id=uuid
 Authorization: Bearer <jwt_token>
 
 Authorization Logic:
@@ -1149,7 +1149,7 @@ WHERE id = $1 AND school_id = $2;
 
 ### 7.1 Create Form Submission (Webhook from Fillout)
 ```
-POST /api/form-submissions/webhook
+POST /form-submissions/webhook
 Authorization: Bearer <webhook_secret>
 Content-Type: application/json
 
@@ -1222,7 +1222,7 @@ RETURNING id, school_id, enrollment_id, student_form_assignment_id,
 
 ### 7.2 Get Latest Form Submission (Most Recent Version)
 ```
-GET /api/form-submissions/latest?school_id=uuid&enrollment_id=uuid&form_template_id=uuid
+GET /form-submissions/latest?school_id=uuid&enrollment_id=uuid&form_template_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1275,7 +1275,7 @@ LIMIT 1;
 
 ### 7.3 Get All Form Submission Versions (Version History)
 ```
-GET /api/form-submissions/versions?school_id=uuid&enrollment_id=uuid&form_template_id=uuid
+GET /form-submissions/versions?school_id=uuid&enrollment_id=uuid&form_template_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1368,7 +1368,7 @@ ORDER BY submitted_at DESC;
 
 ### 7.4 Get Form Submission by ID
 ```
-GET /api/form-submissions/{submission_id}
+GET /form-submissions/{submission_id}
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1414,7 +1414,7 @@ WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL);
 
 ### 7.5 Update Form Submission Status (Protected - Admin/SuperAdmin)
 ```
-PUT /api/form-submissions/{submission_id}/status
+PUT /form-submissions/{submission_id}/status
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1458,7 +1458,7 @@ RETURNING id, processed_at, updated_at;
 
 ### 8.1 Parent Invite for Child Enrollment (Protected - Admin/SuperAdmin)
 ```
-POST /api/enrollments/parent-invite
+POST /enrollments/parent-invite
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1619,7 +1619,7 @@ POST /api/emails/send-invitation
 
 ### 8.2 Resend Parent Invitation (Protected - Admin/SuperAdmin)
 ```
-POST /api/enrollments/resend-invitation
+POST /enrollments/resend-invitation
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1680,7 +1680,7 @@ WHERE id = $1 AND school_id = $2;
 
 **Email Service Integration:**
 ```json
-POST /api/emails/send-invitation-reminder
+POST /emails/send-invitation-reminder
 {
   "to": "parent@example.com",
   "subject": "Invitation to Create an Account for The Goddard School Admission",
@@ -1714,7 +1714,7 @@ POST /api/emails/send-invitation-reminder
 
 ### 8.3 Add Additional Child (Protected - Admin/SuperAdmin)
 ```
-POST /api/enrollments/add-child
+POST /enrollments/add-child
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -1858,7 +1858,7 @@ RETURNING id, form_template_id, assignment_source, status, is_required, assigned
 
 ### 8.4 Get All Enrollment Form Details by School (Protected - School Context)
 ```
-GET /api/enrollments/school-forms?school_id=uuid
+GET /enrollments/school-forms?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -2016,7 +2016,7 @@ WHERE sfa.enrollment_id = $1
 
 ### 8.5 Get Class-wise Child Count Details (Protected - School Context)
 ```
-GET /api/enrollments/class-wise-count?school_id=uuid
+GET /enrollments/class-wise-count?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -2171,7 +2171,7 @@ ORDER BY c.id;
 
 ### 8.6 Get Enrollment Children with Form Assignments (Protected - School Context)
 ```
-GET /api/enrollments/children-forms?school_id=uuid
+GET /enrollments/children-forms?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -2332,7 +2332,7 @@ WHERE sfa.enrollment_id = $1
 
 ### 8.7 Get Parent Details by School (Protected - School Context)
 ```
-GET /api/parents/details?school_id=uuid
+GET /parents/details?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -2422,7 +2422,7 @@ ORDER BY u.created_at DESC, u.email;
 
 ### 9.1 School Enrollment Summary Report (Protected - Admin/SuperAdmin)
 ```
-GET /api/reports/enrollment-summary?school_id=uuid
+GET /reports/enrollment-summary?school_id=uuid
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
@@ -2550,15 +2550,3 @@ GROUP BY s.id, s.name;
 - Regulatory compliance reporting
 
 ---
-
-## 10. Future API Sections (Planned)
-- Children Management
-- Enrollment Process
-- Document Upload
-- Notification System
-- Admin Dashboard
-- Reporting & Analytics
-
----
-
-*This document will be expanded as additional API sections are specified and planned.*

@@ -1,13 +1,25 @@
 meta {
   name: Create Form
   type: http
-  seq: 1
+  seq: 3
 }
 
 post {
-  url: http:localhost:9000/
-  body: none
+  url: http:localhost:9000/form-templates
+  body: json
   auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+      "school_id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
+      "form_name": "Student Admission Form",
+    "fillout_form_id": "www.google.com"
+    }
 }
 
 settings {

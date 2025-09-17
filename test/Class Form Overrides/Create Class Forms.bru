@@ -1,11 +1,11 @@
 meta {
-  name: Create
+  name: Create Class Forms
   type: http
-  seq: 3
+  seq: 2
 }
 
 post {
-  url: http:localhost:9000/form-templates
+  url: http:localhost:9000/class-form-overrides
   body: json
   auth: inherit
 }
@@ -17,8 +17,8 @@ headers {
 body:json {
   {
       "school_id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
-      "form_name": "Student Admission Form",
-    "fillout_form_id": "www.google.com"
+      "classroom_id": "74ccf5ee-e8ab-4dfb-91c9-931467ef3e4a",
+      "form_template_id": "2812c31a-5099-4489-a852-4a725db7871f"
     }
 }
 

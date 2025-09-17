@@ -338,8 +338,8 @@ pub struct CreateFormTemplateRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FilloutWebhookRequest {
-    pub submissionId: String,
-    pub formId: String,
+    pub submission_id: String,
+    pub form_id: String,
     pub data: HashMap<String, serde_json::Value>,
 }
 

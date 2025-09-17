@@ -3,6 +3,7 @@ use reqwest::Client;
 use serde_json::json;
 use std::env;
 
+#[derive(Clone)]
 pub struct SupabaseClient {
     client: Client,
     project_url: String,

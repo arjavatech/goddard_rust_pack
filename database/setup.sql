@@ -10,7 +10,9 @@ CREATE TABLE schools (
     name VARCHAR(255) NOT NULL,
     subdomain VARCHAR(100) UNIQUE NOT NULL,
     settings JSONB,
-    created_at TIMESTAMP DEFAULT NOW()
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 2. USERS Table
@@ -22,10 +24,13 @@ CREATE TABLE users (
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     role VARCHAR(50) NOT NULL,
+    is_verified BOOLEAN DEFAULT false,
     id_signed BOOLEAN DEFAULT false,
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT NOW(),
-    metadata JSONB
+    updated_at TIMESTAMP,
+    metadata JSONB,
+    is_active BOOLEAN DEFAULT true
 );
 
 -- 3. PARENT_ADDITIONAL_EMAILS Table
@@ -52,7 +57,10 @@ CREATE TABLE children (
     last_name VARCHAR(100) NOT NULL,
     birth_date DATE,
     gender VARCHAR(20),
-    status VARCHAR(50) DEFAULT 'active'
+    status VARCHAR(50) DEFAULT 'active',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 5. CLASSROOMS Table
@@ -62,7 +70,10 @@ CREATE TABLE classrooms (
     name VARCHAR(255) NOT NULL,
     age_group VARCHAR(50),
     capacity INTEGER,
-    enrolled_count INTEGER DEFAULT 0
+    enrolled_count INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 6. FORM_TEMPLATES Table
@@ -76,7 +87,9 @@ CREATE TABLE form_templates (
     status VARCHAR(50),
     is_required BOOLEAN DEFAULT false,
     display_order INTEGER,
-    created_at TIMESTAMP DEFAULT NOW()
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 7. ENROLLMENTS Table
@@ -88,7 +101,10 @@ CREATE TABLE enrollments (
     status VARCHAR(50),
     application_status JSONB,
     progress JSONB,
-    submitted_at TIMESTAMP
+    submitted_at TIMESTAMP,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 8. CLASS_FORM_OVERRIDES Table
@@ -100,6 +116,7 @@ CREATE TABLE class_form_overrides (
     action VARCHAR(50),
     is_required BOOLEAN,
     created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP,
     is_active BOOLEAN DEFAULT true
 );
 
@@ -113,7 +130,10 @@ CREATE TABLE student_form_assignments (
     assignment_source VARCHAR(50),
     status VARCHAR(50) DEFAULT 'incomplete',
     is_required BOOLEAN DEFAULT false,
-    assigned_at TIMESTAMP DEFAULT NOW()
+    assigned_at TIMESTAMP DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 10. FORM_SUBMISSIONS Table
@@ -127,7 +147,10 @@ CREATE TABLE form_submissions (
     form_data JSONB,
     metadata JSONB,
     submitted_at TIMESTAMP,
-    processed_at TIMESTAMP
+    processed_at TIMESTAMP,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
 );
 
 -- 11. DOCUMENTS Table
@@ -139,6 +162,20 @@ CREATE TABLE documents (
     storage_path TEXT,
     file_name VARCHAR(255),
     uploaded_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 12. USER_INVITATIONS Table
+CREATE TABLE user_invitations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    school_id UUID NOT NULL REFERENCES schools(id),
+    email VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    invite_id UUID UNIQUE NOT NULL,
+    expires_at TIMESTAMP,
+    is_used BOOLEAN DEFAULT false,
+    used_at TIMESTAMP,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Create indexes for better performance

@@ -24,6 +24,12 @@ fi
 echo -e "${YELLOW}🔨 Building Lambda function...${NC}"
 cd lambda/goddard
 
+# Load environment variables
+if [ -f "../../.env" ]; then
+    echo -e "${BLUE}📋 Loading environment variables...${NC}"
+    export $(cat ../../.env | grep -v '^#' | xargs)
+fi
+
 # Build the Lambda function for local testing
 cargo lambda build --release
 

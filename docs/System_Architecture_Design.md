@@ -159,7 +159,9 @@ erDiagram
         string name
         string subdomain UK
         jsonb settings
+        boolean is_active "-- Default: true"
         timestamp created_at
+        timestamp updated_at
     }
     
     USERS ||--o{ CHILDREN : has

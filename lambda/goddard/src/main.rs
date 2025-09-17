@@ -1,7 +1,7 @@
 use axum::{
     http::Method,
     middleware as axum_middleware,
-    routing::{get, post},
+    routing::{get, post, put, delete},
     Router,
 };
 use lambda_http::{run, Error};
@@ -22,14 +22,21 @@ use controllers::{
     auth_verification_controller::{
         get_auth_verification_status,
         get_invitation_summary,
-        resend_invitation,
         create_invitation
+    },
+    school_controller::{
+        create_school, get_all_schools, update_school, delete_school
     },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::DatabaseConfig;
-use dao::AuthDao;
-use services::{AuthService, SupabaseClient};
+use dao::{
+    AuthDao, SchoolDao, /* UserDao, ClassroomDao, FormTemplateDao, EnrollmentDao */
+};
+use services::{
+    AuthService, SupabaseClient, SchoolService, /* UserService, ClassroomService, FormTemplateService, EnrollmentService */
+};
+use middleware::auth::api_key_middleware;
 use std::sync::Arc;
 
 
@@ -48,11 +55,17 @@ async fn main() -> Result<(), Error> {
     let pool = db_config.create_pool().await
         .map_err(|e| lambda_http::Error::from(format!("Database connection error: {}", e)))?;
 
-    // Initialize services
-    let auth_dao = AuthDao::new(pool);
+    // Initialize DAOs
+    let auth_dao = AuthDao::new(pool.clone());
+    let school_dao = SchoolDao::new(pool.clone());
+
+    // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
         .map_err(|e| lambda_http::Error::from(format!("Supabase client error: {}", e)))?;
-    let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client));
+
+    // Initialize services
+    let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client.clone()));
+    let school_service = Arc::new(SchoolService::new(school_dao));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -77,14 +90,19 @@ async fn main() -> Result<(), Error> {
         .route("/health", get(health_check))
         .route("/hello/:name", get(hello_name))
 
-        // Authorization Verification Routes
+        // Authorization Verification Routes (Legacy)
         .route("/auth/verification-status", get(get_auth_verification_status))
         .route("/auth/invitation-summary", get(get_invitation_summary))
-        .route("/auth/resend-invitation", post(resend_invitation))
+        // .route("/auth/resend-invitation", post(resend_invitation)) // DISABLED - resend_invitation not available
         .route("/auth/invite-create", post(create_invitation))
-
-        // Add service dependencies
         .with_state(auth_service)
+
+        // School Management APIs (API Key Protected)
+        .route("/schools", post(create_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/schools", get(get_all_schools)) // Public
+        .route("/schools", put(update_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/schools/:id", delete(delete_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(school_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

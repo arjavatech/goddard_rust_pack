@@ -1,7 +1,7 @@
 pub mod connection;
-pub mod schools;
-pub mod users;
-// Temporarily disabled modules due to schema mismatches
+// All DB modules temporarily disabled - will be reimplemented following new API specification
+// pub mod schools;
+// pub mod users;
 // pub mod children;
 // pub mod classrooms;
 // pub mod enrollments;

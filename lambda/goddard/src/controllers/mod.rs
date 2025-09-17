@@ -1,11 +1,1 @@
 pub mod hello_controller;
-pub mod school_controller;
-pub mod users_controller;
-pub mod children_controller;
-pub mod classrooms_controller;
-pub mod enrollments_controller;
-pub mod forms_controller;
-pub mod notifications_controller;
-pub mod documents_controller;
-pub mod admin_controller;
-pub mod api_discovery_controller;

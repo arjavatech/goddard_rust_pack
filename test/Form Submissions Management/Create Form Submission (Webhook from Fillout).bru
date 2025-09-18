@@ -1,0 +1,35 @@
+meta {
+  name: Create Form Submission (Webhook from Fillout)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/form-submissions/webhook
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {      "form_id": "654dab56-a910-4320-b6a0-1382d3b47194",         "school_id": "a78b43f0-4404-4d5d-8e4a-cc162bcee693",        "enrollment_id": "7077def2-97d3-47c6-9cbe-46e6899c726f",        "student_form_assignment_id":                    "81c79e78-c210-49ce-a818-ab89441011ab",        
+    
+    "form_data": {
+      "student_name": "John Doe",
+      "parent_email": "mani@example.com",
+      "additional_fields": "..."
+    },
+    "metadata": {
+      "form_version": "1.2",
+      "submission_ip": "192.168.1.1",
+      "user_agent": "Mozilla/5.0"
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+}

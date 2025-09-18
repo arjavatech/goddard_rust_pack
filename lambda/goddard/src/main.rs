@@ -39,14 +39,18 @@ use controllers::{
     enrollment_controller::{
         create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count
     },
+    form_submission_controller::{
+        create_form_submission_webhook, get_latest_form_submission, get_form_submission_versions,
+        get_form_submission_by_id, update_form_submission_status
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService
 };
 use middleware::auth::{api_key_middleware};
 use std::sync::Arc;
@@ -87,6 +91,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let form_template_dao = FormTemplateDao::new(pool.clone());
     let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
     let enrollment_dao = EnrollmentDao::new(pool.clone());
+    let form_submission_dao = FormSubmissionDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -99,6 +104,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
+    let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -167,6 +173,14 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(enrollment_service)
 
+        // Form Submissions Management APIs (Version Control)
+        .route("/form-submissions/webhook", post(create_form_submission_webhook))
+        .route("/form-submissions/latest", get(get_latest_form_submission).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/form-submissions/versions", get(get_form_submission_versions).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/form-submissions/:submission_id", get(get_form_submission_by_id).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/form-submissions/:submission_id/status", put(update_form_submission_status).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(form_submission_service)
+
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(cors);
@@ -186,6 +200,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let form_template_dao = FormTemplateDao::new(pool.clone());
     let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
     let enrollment_dao = EnrollmentDao::new(pool.clone());
+    let form_submission_dao = FormSubmissionDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
@@ -197,6 +212,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
+    let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -262,6 +278,14 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/enrollments/school-forms", get(get_school_forms).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(enrollment_service)
+
+        // Form Submissions Management APIs (Version Control)
+        .route("/form-submissions/webhook", post(create_form_submission_webhook))
+        .route("/form-submissions/latest", get(get_latest_form_submission).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/form-submissions/versions", get(get_form_submission_versions).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/form-submissions/:submission_id", get(get_form_submission_by_id).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/form-submissions/:submission_id/status", put(update_form_submission_status).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(form_submission_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

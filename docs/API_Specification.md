@@ -1151,12 +1151,11 @@ WHERE id = $1 AND school_id = $2;
 ### 7.1 Create Form Submission (Webhook from Fillout)
 ```
 POST /form-submissions/webhook
-Authorization: Bearer <webhook_secret>
+X-API-Key: <api_key>
 Content-Type: application/json
 
 Request Body (from Fillout webhook):
 {
-  "submission_id": "fillout_123",
   "form_id": "fillout_form_456",
   "school_id": "uuid",
   "enrollment_id": "uuid",
@@ -1169,12 +1168,13 @@ Request Body (from Fillout webhook):
   "metadata": {
     "form_version": "1.2",
     "submission_ip": "192.168.1.1",
-    "user_agent": "Mozilla/5.0"
+    "user_agent": "Mozilla/5.0",
+    "fillout_submission_id": "fillout_123"
   }
 }
 
 Authorization Logic:
-- Validate webhook secret from Fillout
+- Validate API key from X-API-Key header
 - Extract school_id from form metadata
 - Verify student_form_assignment exists
 

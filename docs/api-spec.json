@@ -2,8 +2,8 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Goddard School Enrollment System API",
-    "version": "1.0.0",
-    "description": "Comprehensive API for the Goddard School Enrollment and Management System"
+    "version": "2.0.0",
+    "description": "Comprehensive API for the Goddard School Enrollment and Management System with complete CRUD operations for all entities"
   },
   "servers": [
     {
@@ -11,7 +11,7 @@
       "description": "Production server"
     },
     {
-      "url": "http://localhost:8000",
+      "url": "http://localhost:9000",
       "description": "Development server"
     }
   ],
@@ -20,17 +20,20 @@
       "ApiKeyAuth": {
         "type": "apiKey",
         "in": "header",
-        "name": "X-API-Key"
+        "name": "X-API-Key",
+        "description": "API Key for owner operations (test-owner-key-2024)"
       },
       "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
+        "description": "JWT token for user operations"
       },
       "WebhookAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "webhook_secret"
+        "bearerFormat": "webhook_secret",
+        "description": "Webhook authentication for form submissions"
       }
     },
     "schemas": {
@@ -42,25 +45,30 @@
             "format": "uuid"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "example": "The Goddard School - Downtown"
           },
           "subdomain": {
-            "type": "string"
+            "type": "string",
+            "example": "downtown-goddard"
           },
           "settings": {
             "type": "object",
             "properties": {
               "timezone": {
-                "type": "string"
+                "type": "string",
+                "example": "America/New_York"
               },
               "max_enrollment": {
-                "type": "integer"
+                "type": "integer",
+                "example": 200
               },
               "age_groups": {
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "example": ["infant", "toddler", "preschool"]
               }
             }
           },
@@ -74,33 +82,39 @@
           }
         }
       },
-      "User": {
+      "CreateSchoolRequest": {
         "type": "object",
+        "required": ["name", "subdomain"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "The Goddard School - Downtown"
+          },
+          "subdomain": {
+            "type": "string",
+            "example": "downtown-goddard"
+          },
+          "settings": {
+            "type": "object"
+          }
+        }
+      },
+      "UpdateSchoolRequest": {
+        "type": "object",
+        "required": ["id"],
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
           },
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "role": {
-            "type": "string",
-            "enum": ["SuperAdmin", "Admin", "Teacher", "Parent"]
-          },
-          "school_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "is_verified": {
-            "type": "boolean"
-          },
-          "first_name": {
+          "name": {
             "type": "string"
           },
-          "last_name": {
+          "subdomain": {
             "type": "string"
+          },
+          "settings": {
+            "type": "object"
           }
         }
       },
@@ -115,8 +129,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "class_name": {
+            "type": "string",
+            "example": "Toddler Room A"
+          },
           "name": {
-            "type": "string"
+            "type": "string",
+            "example": "Toddler Room A"
           },
           "age_group": {
             "type": "string",
@@ -127,11 +146,46 @@
             "nullable": true
           },
           "enrolled_count": {
-            "type": "integer"
+            "type": "integer",
+            "default": 0
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreateClassroomRequest": {
+        "type": "object",
+        "required": ["school_id", "class_name"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "class_name": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateClassroomRequest": {
+        "type": "object",
+        "required": ["school_id", "class_id", "class_name"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "class_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "class_name": {
+            "type": "string"
           }
         }
       },
@@ -147,10 +201,13 @@
             "format": "uuid"
           },
           "form_name": {
-            "type": "string"
+            "type": "string",
+            "example": "Student Registration Form"
           },
           "form_type": {
-            "type": "string"
+            "type": "string",
+            "enum": ["school_form"],
+            "default": "school_form"
           },
           "fillout_form_id": {
             "type": "string",
@@ -161,7 +218,9 @@
             "nullable": true
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": ["school_default", "class_override"],
+            "default": "school_default"
           },
           "is_required": {
             "type": "boolean",
@@ -174,6 +233,55 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreateFormTemplateRequest": {
+        "type": "object",
+        "required": ["school_id", "form_name", "fillout_form_id"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_name": {
+            "type": "string"
+          },
+          "fillout_form_id": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateFormTemplateRequest": {
+        "type": "object",
+        "required": ["school_id", "form_id"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_name": {
+            "type": "string"
+          },
+          "fillout_form_id": {
+            "type": "string"
+          },
+          "fillout_form_url": {
+            "type": "string"
+          },
+          "is_required": {
+            "type": "boolean"
+          },
+          "display_order": {
+            "type": "integer"
           }
         }
       },
@@ -196,20 +304,40 @@
             "type": "string",
             "format": "uuid"
           },
-          "action": {
-            "type": "string",
-            "nullable": true
-          },
           "is_required": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "is_active": {
             "type": "boolean"
+          },
+          "display_order": {
+            "type": "integer",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "CreateClassFormOverrideRequest": {
+        "type": "object",
+        "required": ["school_id", "classroom_id", "form_template_id", "is_required"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classroom_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_required": {
+            "type": "boolean"
+          },
+          "display_order": {
+            "type": "integer"
           }
         }
       },
@@ -237,10 +365,12 @@
             "format": "uuid"
           },
           "assignment_source": {
-            "type": "string"
+            "type": "string",
+            "enum": ["manual", "auto_enrollment", "class_override"]
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": ["incomplete", "in_progress", "completed"]
           },
           "is_required": {
             "type": "boolean"
@@ -248,11 +378,52 @@
           "assigned_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
-      "FormSubmission": {
+      "CreateStudentFormAssignmentRequest": {
         "type": "object",
+        "required": ["school_id", "enrollment_id", "child_id", "form_template_id", "assignment_source"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "child_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignment_source": {
+            "type": "string",
+            "enum": ["manual", "auto_enrollment", "class_override"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["incomplete", "in_progress", "completed"],
+            "default": "incomplete"
+          },
+          "is_required": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "UpdateStudentFormAssignmentRequest": {
+        "type": "object",
+        "required": ["id", "school_id"],
         "properties": {
           "id": {
             "type": "string",
@@ -266,7 +437,39 @@
             "type": "string",
             "format": "uuid"
           },
-          "student_form_assignment_id": {
+          "child_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignment_source": {
+            "type": "string",
+            "enum": ["manual", "auto_enrollment", "class_override"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["incomplete", "in_progress", "completed"]
+          },
+          "is_required": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FormSubmission": {
+        "type": "object",
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enrollment_id": {
             "type": "string",
             "format": "uuid"
           },
@@ -277,19 +480,107 @@
           "fillout_submission_id": {
             "type": "string"
           },
-          "form_data": {
+          "submission_data": {
             "type": "object"
           },
-          "metadata": {
-            "type": "object"
+          "status": {
+            "type": "string",
+            "enum": ["submitted", "reviewed", "approved", "rejected"]
+          },
+          "version": {
+            "type": "integer"
           },
           "submitted_at": {
             "type": "string",
             "format": "date-time"
           },
-          "processed_at": {
+          "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "FormSubmissionWebhookRequest": {
+        "type": "object",
+        "required": ["submissionId", "formId", "data"],
+        "properties": {
+          "submissionId": {
+            "type": "string"
+          },
+          "formId": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      },
+      "UpdateFormSubmissionStatusRequest": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["submitted", "reviewed", "approved", "rejected"]
+          },
+          "reviewer_notes": {
+            "type": "string"
+          }
+        }
+      },
+      "ParentInviteRequest": {
+        "type": "object",
+        "required": ["school_id", "child_full_name", "child_dob", "classroom_id", "parent_email", "parent_first_name", "parent_last_name"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "child_full_name": {
+            "type": "string"
+          },
+          "child_dob": {
+            "type": "string",
+            "format": "date"
+          },
+          "classroom_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "parent_first_name": {
+            "type": "string"
+          },
+          "parent_last_name": {
+            "type": "string"
+          }
+        }
+      },
+      "AddChildRequest": {
+        "type": "object",
+        "required": ["school_id", "enrollment_id", "child_full_name", "child_dob", "classroom_id"],
+        "properties": {
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "child_full_name": {
+            "type": "string"
+          },
+          "child_dob": {
+            "type": "string",
+            "format": "date"
+          },
+          "classroom_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -297,32 +588,148 @@
         "type": "object",
         "properties": {
           "child_id": {
-            "type": "integer"
+            "type": "string",
+            "format": "uuid"
           },
-          "child_first_name": {
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "child_full_name": {
             "type": "string"
           },
-          "child_last_name": {
-            "type": "string"
+          "child_dob": {
+            "type": "string",
+            "format": "date"
           },
-          "class_name": {
-            "type": "string"
+          "classroom_id": {
+            "type": "string",
+            "format": "uuid"
           },
-          "primary_email": {
-            "type": "string"
-          },
-          "form_status": {
+          "classroom_name": {
             "type": "string"
           },
           "forms": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "form_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "form_name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["incomplete", "in_progress", "completed"]
+                },
+                "is_required": {
+                  "type": "boolean"
+                }
+              }
             }
+          }
+        }
+      },
+      "ParentDetails": {
+        "type": "object",
+        "properties": {
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
           },
-          "additional_parent_email": {
+          "parent_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "parent_first_name": {
+            "type": "string"
+          },
+          "parent_last_name": {
+            "type": "string"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnrollmentChild"
+            }
+          }
+        }
+      },
+      "ClassWiseCount": {
+        "type": "object",
+        "properties": {
+          "classroom_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classroom_name": {
+            "type": "string"
+          },
+          "total_children": {
+            "type": "integer"
+          }
+        }
+      },
+      "EnrollmentSummary": {
+        "type": "object",
+        "properties": {
+          "total_enrollments": {
+            "type": "integer"
+          },
+          "total_children": {
+            "type": "integer"
+          },
+          "pending_forms": {
+            "type": "integer"
+          },
+          "completed_forms": {
+            "type": "integer"
+          },
+          "classroom_breakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClassWiseCount"
+            }
+          }
+        }
+      },
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object"
+          },
+          "message": {
             "type": "string",
             "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
@@ -330,48 +737,50 @@
   },
   "paths": {
     "/schools": {
-      "post": {
-        "tags": ["School Management"],
-        "summary": "Create School",
-        "description": "Create a new school (Protected - API Key)",
-        "security": [
-          {
-            "ApiKeyAuth": []
+      "get": {
+        "summary": "Get all schools",
+        "description": "Retrieve a list of all active schools (public endpoint)",
+        "tags": ["Schools"],
+        "responses": {
+          "200": {
+            "description": "List of schools",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {"$ref": "#/components/schemas/ApiResponse"},
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {"type": "string", "format": "uuid"},
+                              "name": {"type": "string"},
+                              "subdomain": {"type": "string"}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
-        ],
+        }
+      },
+      "post": {
+        "summary": "Create a new school",
+        "description": "Create a new school (requires API key)",
+        "tags": ["Schools"],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["name", "subdomain"],
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "subdomain": {
-                    "type": "string"
-                  },
-                  "settings": {
-                    "type": "object",
-                    "properties": {
-                      "timezone": {
-                        "type": "string"
-                      },
-                      "max_enrollment": {
-                        "type": "integer"
-                      },
-                      "age_groups": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/CreateSchoolRequest"}
             }
           }
         },
@@ -381,71 +790,46 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/School"
+                  "allOf": [
+                    {"$ref": "#/components/schemas/ApiResponse"},
+                    {
+                      "properties": {
+                        "data": {"$ref": "#/components/schemas/School"}
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Invalid API key"
-          },
-          "422": {
-            "description": "Validation errors"
-          }
-        }
-      },
-      "get": {
-        "tags": ["School Management"],
-        "summary": "Get All Schools",
-        "description": "Get list of all schools (Public)",
-        "responses": {
-          "200": {
-            "description": "List of schools",
+            "description": "Invalid API key",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/School"
-                  }
-                }
+                "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation errors",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ErrorResponse"}
               }
             }
           }
         }
       },
       "put": {
-        "tags": ["School Management"],
-        "summary": "Update School",
-        "description": "Update school details (Protected - API Key Only)",
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
+        "summary": "Update a school",
+        "description": "Update an existing school (requires API key)",
+        "tags": ["Schools"],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id"],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "subdomain": {
-                    "type": "string"
-                  },
-                  "settings": {
-                    "type": "object"
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/UpdateSchoolRequest"}
             }
           }
         },
@@ -455,36 +839,31 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/School"
+                  "allOf": [
+                    {"$ref": "#/components/schemas/ApiResponse"},
+                    {
+                      "properties": {
+                        "data": {"$ref": "#/components/schemas/School"}
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
-          "400": {
-            "description": "Invalid school_id"
-          },
-          "401": {
-            "description": "Invalid API key"
-          },
-          "404": {
-            "description": "School not found"
-          },
-          "422": {
-            "description": "Validation errors"
-          }
+          "400": {"description": "Invalid school_id"},
+          "401": {"description": "Invalid API key"},
+          "404": {"description": "School not found"},
+          "422": {"description": "Validation errors"}
         }
       }
     },
     "/schools/{id}": {
       "delete": {
-        "tags": ["School Management"],
-        "summary": "Delete School",
-        "description": "Delete a school (Protected - API Key Only)",
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
+        "summary": "Delete a school",
+        "description": "Soft delete a school (requires API key)",
+        "tags": ["Schools"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "id",
@@ -498,205 +877,31 @@
         ],
         "responses": {
           "200": {
-            "description": "School deleted successfully"
-          },
-          "400": {
-            "description": "Invalid school_id"
-          },
-          "401": {
-            "description": "Invalid API key"
-          },
-          "404": {
-            "description": "School not found"
-          }
-        }
-      }
-    },
-    "/users/invite": {
-      "post": {
-        "tags": ["User Management"],
-        "summary": "User Invitation",
-        "description": "Send user invitation (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["email", "role", "school_id"],
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "format": "email"
-                  },
-                  "role": {
-                    "type": "string",
-                    "enum": ["Admin", "Teacher", "Parent"]
-                  },
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Invitation sent successfully"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          }
-        }
-      }
-    },
-    "/users/verify": {
-      "post": {
-        "tags": ["User Management"],
-        "summary": "User Verification",
-        "description": "Verify user with invite ID",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["invite_id"],
-                "properties": {
-                  "invite_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "User verified successfully"
-          },
-          "400": {
-            "description": "Invalid or expired invitation"
-          },
-          "401": {
-            "description": "Invalid JWT token"
-          },
-          "409": {
-            "description": "Invitation already used"
-          },
-          "422": {
-            "description": "Email mismatch with JWT"
-          }
-        }
-      }
-    },
-    "/users/me": {
-      "get": {
-        "tags": ["User Management"],
-        "summary": "User Authentication Check",
-        "description": "Get current user details",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "User details",
+            "description": "School deleted successfully",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "role": {
-                      "type": "string"
-                    },
-                    "school_id": {
-                      "type": "string",
-                      "format": "uuid"
-                    }
+                    "message": {"type": "string"},
+                    "school_id": {"type": "string", "format": "uuid"}
                   }
                 }
               }
             }
-          }
+          },
+          "400": {"description": "Invalid school_id"},
+          "401": {"description": "Invalid API key"},
+          "404": {"description": "School not found"}
         }
       }
     },
     "/classrooms": {
-      "post": {
-        "tags": ["Classroom Management"],
-        "summary": "Create Classroom",
-        "description": "Create a new classroom (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "class_name"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "class_name": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Classroom created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Classroom"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid school_id"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "422": {
-            "description": "Validation errors"
-          }
-        }
-      },
       "get": {
-        "tags": ["Classroom Management"],
-        "summary": "Get All Classrooms by School",
-        "description": "Get all classrooms for a school (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Get classrooms by school",
+        "description": "Retrieve all classrooms for a specific school",
+        "tags": ["Classrooms"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -718,90 +923,79 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": {
-                        "type": "string",
-                        "format": "uuid"
-                      },
-                      "class_name": {
-                        "type": "string"
-                      }
+                      "id": {"type": "string", "format": "uuid"},
+                      "class_name": {"type": "string"}
                     }
                   }
                 }
               }
             }
           },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
-          }
+          "400": {"description": "Missing or invalid school_id parameter"},
+          "403": {"description": "Access denied to school"},
+          "404": {"description": "School not found"}
         }
       },
-      "put": {
-        "tags": ["Classroom Management"],
-        "summary": "Update Classroom",
-        "description": "Update classroom details (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+      "post": {
+        "summary": "Create a classroom",
+        "description": "Create a new classroom",
+        "tags": ["Classrooms"],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "class_id", "class_name"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "class_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "class_name": {
-                    "type": "string"
-                  }
-                }
+              "schema": {"$ref": "#/components/schemas/CreateClassroomRequest"}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Classroom created successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Classroom"}
               }
+            }
+          },
+          "400": {"description": "Invalid school_id"},
+          "403": {"description": "Insufficient permissions"},
+          "422": {"description": "Validation errors"}
+        }
+      },
+      "put": {
+        "summary": "Update a classroom",
+        "description": "Update an existing classroom",
+        "tags": ["Classrooms"],
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/UpdateClassroomRequest"}
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Classroom updated successfully"
+            "description": "Classroom updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Classroom"}
+              }
+            }
           },
-          "400": {
-            "description": "Invalid school_id or class_id"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Classroom not found"
-          },
-          "422": {
-            "description": "Validation errors"
-          }
+          "400": {"description": "Invalid school_id or class_id"},
+          "403": {"description": "Insufficient permissions"},
+          "404": {"description": "Classroom not found"},
+          "422": {"description": "Validation errors"}
         }
       },
       "delete": {
-        "tags": ["Classroom Management"],
-        "summary": "Delete Classroom",
-        "description": "Delete a classroom (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Delete a classroom",
+        "description": "Soft delete a classroom",
+        "tags": ["Classrooms"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "classroom_id",
@@ -824,85 +1018,32 @@
         ],
         "responses": {
           "200": {
-            "description": "Classroom deleted successfully"
-          },
-          "400": {
-            "description": "Missing or invalid parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Classroom not found"
-          }
-        }
-      }
-    },
-    "/form-templates": {
-      "post": {
-        "tags": ["Form Templates"],
-        "summary": "Create Form Template",
-        "description": "Create a new form template (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "form_name"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "form_name": {
-                    "type": "string"
-                  },
-                  "fillout_form_id": {
-                    "type": "string",
-                    "nullable": true
+            "description": "Classroom deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {"type": "string"},
+                    "classroom_id": {"type": "string", "format": "uuid"},
+                    "school_id": {"type": "string", "format": "uuid"}
                   }
                 }
               }
             }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Form template created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormTemplate"
-                }
-              }
-            }
           },
-          "400": {
-            "description": "Invalid school_id"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "422": {
-            "description": "Validation errors"
-          }
+          "400": {"description": "Missing or invalid parameters"},
+          "403": {"description": "Insufficient permissions"},
+          "404": {"description": "Classroom not found"}
         }
-      },
+      }
+    },
+    "/form-templates": {
       "get": {
+        "summary": "Get form templates by school",
+        "description": "Retrieve all form templates for a specific school",
         "tags": ["Form Templates"],
-        "summary": "Get All Form Templates by School",
-        "description": "Get all form templates for a school (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -921,102 +1062,66 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FormTemplate"
-                  }
+                  "items": {"$ref": "#/components/schemas/FormTemplate"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       },
-      "put": {
+      "post": {
+        "summary": "Create a form template",
+        "description": "Create a new form template",
         "tags": ["Form Templates"],
-        "summary": "Update Form Template",
-        "description": "Update form template details (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id", "school_id"],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "form_name": {
-                    "type": "string"
-                  },
-                  "form_type": {
-                    "type": "string"
-                  },
-                  "fillout_form_id": {
-                    "type": "string"
-                  },
-                  "fillout_form_url": {
-                    "type": "string"
-                  },
-                  "status": {
-                    "type": "string"
-                  },
-                  "is_required": {
-                    "type": "boolean"
-                  },
-                  "display_order": {
-                    "type": "integer"
-                  }
-                }
+              "schema": {"$ref": "#/components/schemas/CreateFormTemplateRequest"}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Form template created successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/FormTemplate"}
               }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a form template",
+        "description": "Update an existing form template",
+        "tags": ["Form Templates"],
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/UpdateFormTemplateRequest"}
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Form template updated successfully"
-          },
-          "400": {
-            "description": "Invalid form_id or school_id"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Form template not found"
-          },
-          "422": {
-            "description": "Validation errors"
+            "description": "Form template updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/FormTemplate"}
+              }
+            }
           }
         }
       },
       "delete": {
+        "summary": "Delete a form template",
+        "description": "Soft delete a form template",
         "tags": ["Form Templates"],
-        "summary": "Delete Form Template",
-        "description": "Delete a form template (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "form_id",
@@ -1040,29 +1145,16 @@
         "responses": {
           "200": {
             "description": "Form template deleted successfully"
-          },
-          "400": {
-            "description": "Missing or invalid parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Form template not found"
           }
         }
       }
     },
     "/form-templates/by-status": {
       "get": {
+        "summary": "Get form templates by status",
+        "description": "Retrieve form templates filtered by status",
         "tags": ["Form Templates"],
-        "summary": "Get Form Templates Grouped by Status",
-        "description": "Get form templates grouped by their status (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -1072,95 +1164,43 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["school_default", "class_override"]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Form templates grouped by status",
+            "description": "List of form templates by status",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "all": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    },
-                    "active": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    },
-                    "archive": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    },
-                    "default": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    },
-                    "available": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "integer"
-                      }
-                    }
-                  }
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/FormTemplate"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       }
     },
     "/class-form-overrides": {
       "post": {
+        "summary": "Create a class form override",
+        "description": "Create a form override for a specific class",
         "tags": ["Class Form Overrides"],
-        "summary": "Create Class Form Override",
-        "description": "Create a class-specific form override (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "classroom_id", "form_template_id"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "classroom_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "form_template_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/CreateClassFormOverrideRequest"}
             }
           }
         },
@@ -1169,38 +1209,17 @@
             "description": "Class form override created successfully",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClassFormOverride"
-                }
+                "schema": {"$ref": "#/components/schemas/ClassFormOverride"}
               }
             }
-          },
-          "400": {
-            "description": "Invalid parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Classroom or form template not found"
-          },
-          "409": {
-            "description": "Override already exists"
-          },
-          "422": {
-            "description": "Validation errors"
           }
         }
       },
       "delete": {
+        "summary": "Delete a class form override",
+        "description": "Delete a class form override",
         "tags": ["Class Form Overrides"],
-        "summary": "Delete Class Form Override",
-        "description": "Delete a class form override (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "id",
@@ -1215,95 +1234,16 @@
         "responses": {
           "200": {
             "description": "Class form override deleted successfully"
-          },
-          "400": {
-            "description": "Missing or invalid id parameter"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Override not found"
           }
         }
       }
     },
     "/student-form-assignments": {
-      "post": {
-        "tags": ["Student Form Assignments"],
-        "summary": "Create Student Form Assignment",
-        "description": "Assign a form to a student (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "enrollment_id", "child_id", "form_template_id"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "enrollment_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "child_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "form_template_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "assignment_source": {
-                    "type": "string"
-                  },
-                  "status": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Student form assignment created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StudentFormAssignment"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "422": {
-            "description": "Validation errors"
-          }
-        }
-      },
       "get": {
+        "summary": "Get student form assignments by school",
+        "description": "Retrieve all form assignments for a specific school",
         "tags": ["Student Form Assignments"],
-        "summary": "Get All Student Form Assignments by School",
-        "description": "Get all student form assignments for a school (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -1322,102 +1262,66 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/StudentFormAssignment"
-                  }
+                  "items": {"$ref": "#/components/schemas/StudentFormAssignment"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       },
-      "put": {
+      "post": {
+        "summary": "Create a student form assignment",
+        "description": "Create a new form assignment for a student",
         "tags": ["Student Form Assignments"],
-        "summary": "Update Student Form Assignment",
-        "description": "Update student form assignment details (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["id", "school_id"],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "enrollment_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "child_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "form_template_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "assignment_source": {
-                    "type": "string"
-                  },
-                  "status": {
-                    "type": "string"
-                  },
-                  "is_required": {
-                    "type": "boolean"
-                  }
-                }
+              "schema": {"$ref": "#/components/schemas/CreateStudentFormAssignmentRequest"}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Student form assignment created successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/StudentFormAssignment"}
               }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a student form assignment",
+        "description": "Update an existing form assignment",
+        "tags": ["Student Form Assignments"],
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/UpdateStudentFormAssignmentRequest"}
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Student form assignment updated successfully"
-          },
-          "400": {
-            "description": "Invalid assignment_id or school_id"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Assignment not found"
-          },
-          "422": {
-            "description": "Validation errors"
+            "description": "Student form assignment updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/StudentFormAssignment"}
+              }
+            }
           }
         }
       },
       "delete": {
+        "summary": "Delete a student form assignment",
+        "description": "Soft delete a form assignment",
         "tags": ["Student Form Assignments"],
-        "summary": "Delete Student Form Assignment",
-        "description": "Delete a student form assignment (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "assignment_id",
@@ -1441,101 +1345,37 @@
         "responses": {
           "200": {
             "description": "Student form assignment deleted successfully"
-          },
-          "400": {
-            "description": "Missing or invalid parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Assignment not found"
           }
         }
       }
     },
     "/form-submissions/webhook": {
       "post": {
+        "summary": "Form submission webhook",
+        "description": "Webhook endpoint for form submissions from external form provider",
         "tags": ["Form Submissions"],
-        "summary": "Create Form Submission (Webhook)",
-        "description": "Receive form submission from Fillout webhook",
-        "security": [
-          {
-            "WebhookAuth": []
-          }
-        ],
+        "security": [{"WebhookAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "submission_id": {
-                    "type": "string"
-                  },
-                  "form_id": {
-                    "type": "string"
-                  },
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "enrollment_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "student_form_assignment_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "form_data": {
-                    "type": "object"
-                  },
-                  "metadata": {
-                    "type": "object"
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/FormSubmissionWebhookRequest"}
             }
           }
         },
         "responses": {
-          "201": {
-            "description": "Form submission created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSubmission"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid submission data"
-          },
-          "401": {
-            "description": "Invalid webhook secret"
-          },
-          "404": {
-            "description": "Student form assignment not found"
-          },
-          "422": {
-            "description": "Validation errors"
+          "200": {
+            "description": "Webhook processed successfully"
           }
         }
       }
     },
     "/form-submissions/latest": {
       "get": {
+        "summary": "Get latest form submission",
+        "description": "Get the latest submission for a specific form and enrollment",
         "tags": ["Form Submissions"],
-        "summary": "Get Latest Form Submission",
-        "description": "Get the most recent version of a form submission",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -1570,34 +1410,19 @@
             "description": "Latest form submission",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSubmission"
-                }
+                "schema": {"$ref": "#/components/schemas/FormSubmission"}
               }
             }
-          },
-          "400": {
-            "description": "Missing required parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "No submission found"
           }
         }
       }
     },
     "/form-submissions/versions": {
       "get": {
+        "summary": "Get form submission versions",
+        "description": "Get all versions of submissions for a specific form and enrollment",
         "tags": ["Form Submissions"],
-        "summary": "Get All Form Submission Versions",
-        "description": "Get version history of form submissions",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -1634,35 +1459,20 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FormSubmission"
-                  }
+                  "items": {"$ref": "#/components/schemas/FormSubmission"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing required parameters"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "No submissions found"
           }
         }
       }
     },
     "/form-submissions/{submission_id}": {
       "get": {
+        "summary": "Get form submission by ID",
+        "description": "Get a specific form submission by its ID",
         "tags": ["Form Submissions"],
-        "summary": "Get Form Submission by ID",
-        "description": "Get a specific form submission",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "submission_id",
@@ -1679,31 +1489,19 @@
             "description": "Form submission details",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FormSubmission"
-                }
+                "schema": {"$ref": "#/components/schemas/FormSubmission"}
               }
             }
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Submission not found"
           }
         }
       }
     },
     "/form-submissions/{submission_id}/status": {
       "put": {
+        "summary": "Update form submission status",
+        "description": "Update the review status of a form submission",
         "tags": ["Form Submissions"],
-        "summary": "Update Form Submission Status",
-        "description": "Update the processing status of a form submission (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "submission_id",
@@ -1719,136 +1517,55 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "processed_at": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "processing_notes": {
-                    "type": "string"
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/UpdateFormSubmissionStatusRequest"}
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Status updated successfully"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Submission not found"
+            "description": "Form submission status updated successfully"
           }
         }
       }
     },
     "/enrollments/parent-invite": {
       "post": {
-        "tags": ["Enrollment Management"],
-        "summary": "Parent Invite for Child Enrollment",
-        "description": "Create parent invite and child enrollment (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Create parent invitation",
+        "description": "Create a new parent invitation and enrollment",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "child_first_name", "child_last_name", "child_birth_date", "gender", "class_id", "parent_email", "parent_first_name", "parent_last_name"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "child_first_name": {
-                    "type": "string"
-                  },
-                  "child_last_name": {
-                    "type": "string"
-                  },
-                  "child_birth_date": {
-                    "type": "string",
-                    "format": "date"
-                  },
-                  "gender": {
-                    "type": "string",
-                    "enum": ["male", "female", "other"]
-                  },
-                  "class_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "parent_email": {
-                    "type": "string",
-                    "format": "email"
-                  },
-                  "parent_first_name": {
-                    "type": "string"
-                  },
-                  "parent_last_name": {
-                    "type": "string"
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/ParentInviteRequest"}
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Parent invite created successfully"
-          },
-          "400": {
-            "description": "Invalid request data"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "School or classroom not found"
-          },
-          "409": {
-            "description": "Parent email already exists"
-          },
-          "422": {
-            "description": "Validation errors"
+            "description": "Parent invitation created successfully"
           }
         }
       }
     },
-    "/enrollments/resend-invitation": {
+    "/enrollments/resend-confirmation": {
       "post": {
-        "tags": ["Enrollment Management"],
-        "summary": "Resend Parent Invitation",
-        "description": "Resend invitation email to parent (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Resend parent confirmation",
+        "description": "Resend confirmation email to parent",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["parent_id", "school_id"],
+                "required": ["parent_email"],
                 "properties": {
-                  "parent_id": {
+                  "parent_email": {
                     "type": "string",
-                    "format": "uuid"
-                  },
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
+                    "format": "email"
                   }
                 }
               }
@@ -1857,104 +1574,38 @@
         },
         "responses": {
           "200": {
-            "description": "Invitation reminder sent successfully"
-          },
-          "400": {
-            "description": "Invalid parent_id or school_id"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Parent not found"
-          },
-          "409": {
-            "description": "Parent already verified"
-          },
-          "422": {
-            "description": "Validation errors"
+            "description": "Confirmation email sent successfully"
           }
         }
       }
     },
     "/enrollments/add-child": {
       "post": {
-        "tags": ["Enrollment Management"],
-        "summary": "Add Additional Child",
-        "description": "Add another child for existing parent (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Add child to enrollment",
+        "description": "Add a child to an existing enrollment",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["school_id", "child_first_name", "child_last_name", "child_birth_date", "gender", "class_id", "parent_id"],
-                "properties": {
-                  "school_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "child_first_name": {
-                    "type": "string"
-                  },
-                  "child_last_name": {
-                    "type": "string"
-                  },
-                  "child_birth_date": {
-                    "type": "string",
-                    "format": "date"
-                  },
-                  "gender": {
-                    "type": "string",
-                    "enum": ["male", "female", "other"]
-                  },
-                  "class_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "parent_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              }
+              "schema": {"$ref": "#/components/schemas/AddChildRequest"}
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Additional child added successfully"
-          },
-          "400": {
-            "description": "Invalid request data"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Parent, school or classroom not found"
-          },
-          "422": {
-            "description": "Validation errors"
+            "description": "Child added successfully"
           }
         }
       }
     },
     "/enrollments/school-forms": {
       "get": {
-        "tags": ["Enrollment Management"],
-        "summary": "Get All Enrollment Form Details by School",
-        "description": "Get all enrollment forms for a school (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Get school forms",
+        "description": "Get all forms available for a school",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -1968,40 +1619,25 @@
         ],
         "responses": {
           "200": {
-            "description": "List of enrollment form details",
+            "description": "List of school forms",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/EnrollmentChild"
-                  }
+                  "items": {"$ref": "#/components/schemas/FormTemplate"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       }
     },
     "/enrollments/class-wise-count": {
       "get": {
-        "tags": ["Enrollment Management"],
-        "summary": "Get Class-wise Child Count Details",
-        "description": "Get enrollment counts by classroom (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Get class-wise child count",
+        "description": "Get child count breakdown by classroom",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -2015,57 +1651,25 @@
         ],
         "responses": {
           "200": {
-            "description": "Class-wise enrollment counts",
+            "description": "Class-wise child count",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "class_id": {
-                        "type": "integer"
-                      },
-                      "class_name": {
-                        "type": "string"
-                      },
-                      "count": {
-                        "type": "integer"
-                      },
-                      "forms": {
-                        "type": "object"
-                      },
-                      "default_forms": {
-                        "type": "string"
-                      }
-                    }
-                  }
+                  "items": {"$ref": "#/components/schemas/ClassWiseCount"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       }
     },
     "/enrollments/children-forms": {
       "get": {
-        "tags": ["Enrollment Management"],
-        "summary": "Get Enrollment Children with Form Assignments",
-        "description": "Get children enrolled with their form assignments (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Get enrollment children with forms",
+        "description": "Get all children for an enrollment with their assigned forms",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -2075,44 +1679,38 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "enrollment_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "List of enrolled children with form details",
+            "description": "List of children with their forms",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/EnrollmentChild"
-                  }
+                  "items": {"$ref": "#/components/schemas/EnrollmentChild"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       }
     },
     "/parents/details": {
       "get": {
-        "tags": ["Parent Management"],
-        "summary": "Get Parent Details by School",
-        "description": "Get all primary parents in a school (Protected - School Context)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Get parent details by school",
+        "description": "Get all parent details for a school",
+        "tags": ["Enrollments"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -2131,52 +1729,20 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "parent_id": {
-                        "type": "string",
-                        "format": "uuid"
-                      },
-                      "parent_email": {
-                        "type": "string",
-                        "format": "email"
-                      },
-                      "id_signed": {
-                        "type": "boolean"
-                      },
-                      "created_at": {
-                        "type": "string",
-                        "format": "date-time"
-                      }
-                    }
-                  }
+                  "items": {"$ref": "#/components/schemas/ParentDetails"}
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       }
     },
     "/reports/enrollment-summary": {
       "get": {
-        "tags": ["Reports and Analytics"],
-        "summary": "School Enrollment Summary Report",
-        "description": "Get comprehensive enrollment report (Protected - Admin/SuperAdmin)",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Get enrollment summary report",
+        "description": "Get comprehensive enrollment summary and statistics",
+        "tags": ["Reports"],
+        "security": [{"ApiKeyAuth": []}],
         "parameters": [
           {
             "name": "school_id",
@@ -2193,89 +1759,84 @@
             "description": "Enrollment summary report",
             "content": {
               "application/json": {
+                "schema": {"$ref": "#/components/schemas/EnrollmentSummary"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Check API health status",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "API is healthy",
+            "content": {
+              "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "school_id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "school_name": {
-                      "type": "string"
-                    },
-                    "total_children": {
-                      "type": "integer"
-                    },
-                    "total_enrollments": {
-                      "type": "integer"
-                    },
-                    "active_enrollments": {
-                      "type": "integer"
-                    },
-                    "pending_enrollments": {
-                      "type": "integer"
-                    },
-                    "classrooms": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "classroom_id": {
-                            "type": "string",
-                            "format": "uuid"
-                          },
-                          "classroom_name": {
-                            "type": "string"
-                          },
-                          "capacity": {
-                            "type": "integer"
-                          },
-                          "enrolled_count": {
-                            "type": "integer"
-                          },
-                          "available_spots": {
-                            "type": "integer"
+                  "allOf": [
+                    {"$ref": "#/components/schemas/ApiResponse"},
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {"type": "string", "example": "healthy"},
+                            "service": {"type": "string", "example": "goddard-backend-lambda"},
+                            "version": {"type": "string", "example": "0.1.0"},
+                            "uptime": {"type": "string"}
                           }
                         }
                       }
-                    },
-                    "form_completion_stats": {
-                      "type": "object",
-                      "properties": {
-                        "total_forms_assigned": {
-                          "type": "integer"
-                        },
-                        "completed_forms": {
-                          "type": "integer"
-                        },
-                        "pending_forms": {
-                          "type": "integer"
-                        },
-                        "completion_rate": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "generated_at": {
-                      "type": "string",
-                      "format": "date-time"
                     }
-                  }
+                  ]
                 }
               }
             }
-          },
-          "400": {
-            "description": "Missing or invalid school_id parameter"
-          },
-          "403": {
-            "description": "Access denied to school"
-          },
-          "404": {
-            "description": "School not found"
           }
         }
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Schools",
+      "description": "School management operations"
+    },
+    {
+      "name": "Classrooms",
+      "description": "Classroom management operations"
+    },
+    {
+      "name": "Form Templates",
+      "description": "Form template management operations"
+    },
+    {
+      "name": "Class Form Overrides",
+      "description": "Class-specific form override operations"
+    },
+    {
+      "name": "Student Form Assignments",
+      "description": "Student form assignment management operations"
+    },
+    {
+      "name": "Form Submissions",
+      "description": "Form submission and version control operations"
+    },
+    {
+      "name": "Enrollments",
+      "description": "Enrollment and child management operations"
+    },
+    {
+      "name": "Reports",
+      "description": "Analytics and reporting operations"
+    },
+    {
+      "name": "System",
+      "description": "System health and monitoring operations"
+    }
+  ]
 }

@@ -24,14 +24,14 @@ pub async fn delete_class_form_override(
     State(class_form_override_service): State<Arc<ClassFormOverrideService>>,
     Query(params): Query<DeleteClassFormOverrideParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    let deleted_override = class_form_override_service.delete_class_form_override(params.id).await?;
+    class_form_override_service.delete_class_form_override(params.id, params.school_id).await?;
 
     let response = DeleteClassFormOverrideResponse {
         message: "Class form override successfully deleted".to_string(),
-        id: deleted_override.id,
-        school_id: deleted_override.school_id,
-        classroom_id: deleted_override.classroom_id,
-        form_template_id: deleted_override.form_template_id,
+        id: params.id,
+        school_id: params.school_id,
+        classroom_id: uuid::Uuid::nil(), // We don't have this info anymore, could be retrieved separately if needed
+        form_template_id: uuid::Uuid::nil(), // We don't have this info anymore, could be retrieved separately if needed
     };
 
     Ok((StatusCode::OK, Json(response)))

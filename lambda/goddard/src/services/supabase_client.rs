@@ -101,9 +101,14 @@ impl SupabaseClient {
             .await
             .map_err(|e| AppError::ExternalService(format!("Failed to parse create user response: {}", e)))?;
 
-        let user_id = create_data["user"]["id"]
-            .as_str()
-            .or_else(|| create_data["id"].as_str())
+        // Log the response for debugging
+        eprintln!("Supabase create user response: {}", serde_json::to_string_pretty(&create_data).unwrap_or_default());
+
+        let user_id = create_data
+            .get("user")
+            .and_then(|u| u.get("id"))
+            .and_then(|id| id.as_str())
+            .or_else(|| create_data.get("id").and_then(|id| id.as_str()))
             .ok_or_else(|| AppError::ExternalService(format!("User ID not found in response. Response: {}", serde_json::to_string(&create_data).unwrap_or_default())))?;
 
         // Step 2: Send signup confirmation email using the resend endpoint
@@ -129,5 +134,16 @@ impl SupabaseClient {
         }
 
         Ok(user_id.to_string())
+    }
+
+    pub async fn create_auth_user(&self, email: &str) -> Result<uuid::Uuid, AppError> {
+        // Create user in Supabase Auth and return the auth user ID
+        let user_id_string = self.create_user_invitation(email, None).await?;
+
+        // Parse the user ID string into UUID
+        let auth_user_id = uuid::Uuid::parse_str(&user_id_string)
+            .map_err(|e| AppError::ExternalService(format!("Invalid user ID format from Supabase: {}", e)))?;
+
+        Ok(auth_user_id)
     }
 }

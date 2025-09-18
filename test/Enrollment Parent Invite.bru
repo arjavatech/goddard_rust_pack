@@ -1,0 +1,33 @@
+meta {
+  name: Enrollment Parent Invite
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/enrollments/parent-invite
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+    "school_id": "a78b43f0-4404-4d5d-8e4a-cc162bcee693",
+    "child_first_name": "Ramu",
+    "child_last_name": "Paiyan",
+    "child_birth_date": "2018-05-15",
+    "gender": "male",
+    "class_id": "1a3b49ea-8ca8-40c1-94cf-4bea676f99dd",
+    "parent_email": "rammaye87540644@gmail.com",
+    "parent_first_name": "Jane",
+    "parent_last_name": "Doe"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

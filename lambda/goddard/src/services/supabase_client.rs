@@ -146,4 +146,42 @@ impl SupabaseClient {
 
         Ok(auth_user_id)
     }
+
+    pub async fn get_user_email_by_id(&self, user_id: uuid::Uuid) -> Result<String, AppError> {
+        let user_id_str = user_id.to_string();
+
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id_str))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to get user from Supabase: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+
+            if status_code == 404 {
+                return Err(AppError::NotFound("User not found in Supabase auth".to_string()));
+            }
+
+            return Err(AppError::ExternalService(format!(
+                "Failed to get user from Supabase. Status: {}, Error: {}",
+                status_code, error_text
+            )));
+        }
+
+        let user_data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user response: {}", e)))?;
+
+        let email = user_data
+            .get("email")
+            .and_then(|email| email.as_str())
+            .ok_or_else(|| AppError::ExternalService("Email not found in user response".to_string()))?;
+
+        Ok(email.to_string())
+    }
 }

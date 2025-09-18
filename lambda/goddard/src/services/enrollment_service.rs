@@ -6,7 +6,8 @@ use crate::services::supabase_client::SupabaseClient;
 use crate::models::enrollment::{
     ParentInviteRequest, ParentInviteResponse, ParentInviteDetails,
     ParentDetails, ChildDetails, EnrollmentDetails, AssignedFormDetails,
-    AuthUserResult, FormTemplate, ClassFormOverride, CreatedFormAssignment
+    AuthUserResult, FormTemplate, ClassFormOverride, CreatedFormAssignment,
+    ResendConfirmationRequest, ResendConfirmationResponse, ResendConfirmationParentDetails
 };
 use crate::error::AppError;
 
@@ -202,5 +203,25 @@ impl EnrollmentService {
         }
 
         Ok(assigned_forms)
+    }
+
+    pub async fn resend_parent_confirmation(&self, request: ResendConfirmationRequest) -> ApiResult<ResendConfirmationResponse> {
+        // Step 1: Get user email from Supabase auth using parent_id as auth user ID
+        let parent_email = self.supabase_client.get_user_email_by_id(request.parent_id).await?;
+
+        // Step 2: Resend confirmation email through Supabase
+        self.supabase_client.resend_invitation(&parent_email).await?;
+
+        // Step 3: Generate response
+        let response = ResendConfirmationResponse {
+            parent_id: request.parent_id,
+            email_sent: true,
+            message: "Confirmation email resent successfully".to_string(),
+            parent_details: ResendConfirmationParentDetails {
+                email: parent_email,
+            },
+        };
+
+        Ok(response)
     }
 }

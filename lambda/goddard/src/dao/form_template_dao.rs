@@ -41,12 +41,12 @@ impl FormTemplateDao {
             RETURNING id, school_id, form_name, form_type, fillout_form_id, fillout_form_url, status, is_required, display_order, is_active, created_at, updated_at
         "#;
 
-        let row = client.query_one(
-            query,
-            &[&request.school_id, &request.form_name, &request.fillout_form_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to create form template: {}", e)))?;
+        let stmt = client.prepare(query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let row = client.query_one(&stmt, &[&request.school_id, &request.form_name, &request.fillout_form_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to create form template: {}", e)))?;
 
         Ok(Self::row_to_form_template(&row))
     }
@@ -62,7 +62,10 @@ impl FormTemplateDao {
             ORDER BY form_name ASC
         "#;
 
-        let rows = client.query(query, &[school_id])
+        let stmt = client.prepare(query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = client.query(&stmt, &[school_id])
             .await
             .map_err(|e| AppError::Database(format!("Failed to fetch form templates: {}", e)))?;
 
@@ -81,12 +84,12 @@ impl FormTemplateDao {
             RETURNING id, school_id, form_name, form_type, fillout_form_id, fillout_form_url, status, is_required, display_order, is_active, created_at, updated_at
         "#;
 
-        let rows = client.query(
-            query,
-            &[&request.school_id, &request.id, &request.form_name, &request.form_type, &request.fillout_form_id, &request.fillout_form_url, &request.status, &request.is_required, &request.display_order]
-        )
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to update form template: {}", e)))?;
+        let stmt = client.prepare(query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = client.query(&stmt, &[&request.school_id, &request.id, &request.form_name, &request.form_type, &request.fillout_form_id, &request.fillout_form_url, &request.status, &request.is_required, &request.display_order])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to update form template: {}", e)))?;
 
         if rows.is_empty() {
             return Err(AppError::NotFound("Form template not found".to_string()));
@@ -105,7 +108,10 @@ impl FormTemplateDao {
             WHERE id = $1 AND school_id = $2
         "#;
 
-        let rows_affected = client.execute(query, &[form_template_id, school_id])
+        let stmt = client.prepare(query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows_affected = client.execute(&stmt, &[form_template_id, school_id])
             .await
             .map_err(|e| AppError::Database(format!("Failed to delete form template: {}", e)))?;
 

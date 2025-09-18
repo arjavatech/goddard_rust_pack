@@ -32,36 +32,42 @@ impl ClassFormOverrideDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         // Validate classroom exists
-        let classroom_check = client.query(
-            "SELECT id FROM classrooms WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL)",
-            &[&request.classroom_id, &request.school_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to validate classroom: {}", e)))?;
+        let stmt = client.prepare(
+            "SELECT id FROM classrooms WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL)"
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let classroom_check = client.query(&stmt, &[&request.classroom_id, &request.school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to validate classroom: {}", e)))?;
 
         if classroom_check.is_empty() {
             return Err(AppError::NotFound("Classroom not found".to_string()));
         }
 
         // Validate form template exists
-        let form_template_check = client.query(
-            "SELECT id FROM form_templates WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL)",
-            &[&request.form_template_id, &request.school_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to validate form template: {}", e)))?;
+        let stmt2 = client.prepare(
+            "SELECT id FROM form_templates WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL)"
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let form_template_check = client.query(&stmt2, &[&request.form_template_id, &request.school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to validate form template: {}", e)))?;
 
         if form_template_check.is_empty() {
             return Err(AppError::NotFound("Form template not found".to_string()));
         }
 
         // Check if override already exists
-        let existing_override = client.query(
-            "SELECT id FROM class_form_overrides WHERE school_id = $1 AND classroom_id = $2 AND form_template_id = $3 AND (is_active = true OR is_active IS NULL)",
-            &[&request.school_id, &request.classroom_id, &request.form_template_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to check existing override: {}", e)))?;
+        let stmt3 = client.prepare(
+            "SELECT id FROM class_form_overrides WHERE school_id = $1 AND classroom_id = $2 AND form_template_id = $3 AND (is_active = true OR is_active IS NULL)"
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let existing_override = client.query(&stmt3, &[&request.school_id, &request.classroom_id, &request.form_template_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to check existing override: {}", e)))?;
 
         if !existing_override.is_empty() {
             return Err(AppError::Validation("Override already exists for this classroom and form template".to_string()));
@@ -73,12 +79,12 @@ impl ClassFormOverrideDao {
             RETURNING id, school_id, classroom_id, form_template_id, action, is_required, is_active, created_at
         "#;
 
-        let row = client.query_one(
-            query,
-            &[&request.school_id, &request.classroom_id, &request.form_template_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to create class form override: {}", e)))?;
+        let stmt4 = client.prepare(query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let row = client.query_one(&stmt4, &[&request.school_id, &request.classroom_id, &request.form_template_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to create class form override: {}", e)))?;
 
         Ok(Self::row_to_class_form_override(&row))
     }
@@ -94,7 +100,10 @@ impl ClassFormOverrideDao {
             WHERE id = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL)
         "#;
 
-        let override_details = client.query(get_query, &[override_id, school_id])
+        let stmt = client.prepare(get_query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let override_details = client.query(&stmt, &[override_id, school_id])
             .await
             .map_err(|e| AppError::Database(format!("Failed to fetch override details: {}", e)))?;
 
@@ -109,7 +118,10 @@ impl ClassFormOverrideDao {
             WHERE id = $1 AND school_id = $2
         "#;
 
-        let rows_affected = client.execute(delete_query, &[override_id, school_id])
+        let stmt2 = client.prepare(delete_query).await
+            .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows_affected = client.execute(&stmt2, &[override_id, school_id])
             .await
             .map_err(|e| AppError::Database(format!("Failed to delete class form override: {}", e)))?;
 

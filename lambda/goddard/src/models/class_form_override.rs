@@ -10,8 +10,8 @@ pub struct ClassFormOverride {
     pub form_template_id: Uuid,
     pub action: Option<String>,
     pub is_required: Option<bool>,
-    pub is_active: bool,
-    pub created_at: NaiveDateTime,
+    pub is_active: Option<bool>,
+    pub created_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,8 +35,8 @@ pub struct ClassFormOverrideResponse {
     pub form_template_id: Uuid,
     pub action: Option<String>,
     pub is_required: Option<bool>,
-    pub is_active: bool,
-    pub created_at: NaiveDateTime,
+    pub is_active: Option<bool>,
+    pub created_at: Option<NaiveDateTime>,
 }
 
 #[derive(serde::Serialize)]

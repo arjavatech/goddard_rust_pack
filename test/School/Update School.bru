@@ -5,7 +5,7 @@ meta {
 }
 
 put {
-  url: http:localhost:9000/schools
+  url: {{base_url}}/schools
   body: json
   auth: inherit
 }
@@ -17,8 +17,8 @@ headers {
 body:json {
   {
       "id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
-      "name": "Goddard School Sammamish",
-      "subdomain": "sammamish",
+      "name": "Goddard School Lynn",
+      "subdomain": "Lynn",
       "settings": {
         "age_groups": [
           "infants",

@@ -10,7 +10,7 @@ pub struct School {
     pub subdomain: String,
     pub settings: Option<Value>,
     pub is_active: Option<bool>,
-    pub created_at: NaiveDateTime,
+    pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
 
@@ -35,7 +35,7 @@ pub struct SchoolResponse {
     pub name: String,
     pub subdomain: String,
     pub settings: Option<Value>,
-    pub created_at: NaiveDateTime,
+    pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
 

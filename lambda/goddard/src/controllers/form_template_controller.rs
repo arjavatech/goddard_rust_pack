@@ -76,7 +76,7 @@ pub async fn update_form_template(
         is_required: form_template.is_required,
         display_order: form_template.display_order,
         created_at: form_template.created_at,
-        updated_at: Some(form_template.updated_at),
+        updated_at: form_template.updated_at,
     };
 
     Ok((StatusCode::OK, Json(response)))

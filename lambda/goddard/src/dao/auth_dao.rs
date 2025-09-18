@@ -60,7 +60,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let row = client.query_one(
+        let stmt = client.prepare(
             r#"
             SELECT
                 COUNT(*) as total_users,
@@ -69,11 +69,13 @@ impl AuthDao {
                 COUNT(CASE WHEN confirmation_sent_at IS NOT NULL AND email_confirmed_at IS NULL THEN 1 END) as confirmation_sent_not_confirmed,
                 COUNT(CASE WHEN last_sign_in_at IS NOT NULL THEN 1 END) as users_who_signed_in
             FROM auth.users
-            "#,
-            &[]
-        )
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let row = client.query_one(&stmt, &[])
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         Ok(Self::row_to_auth_stats(&row))
     }

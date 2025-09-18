@@ -13,9 +13,9 @@ pub struct FormTemplate {
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
-    pub is_active: bool,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+    pub is_active: Option<bool>,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,7 +55,7 @@ pub struct FormTemplateResponse {
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
-    pub created_at: NaiveDateTime,
+    pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
 
@@ -70,7 +70,7 @@ pub struct FormTemplateListResponse {
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
-    pub created_at: NaiveDateTime,
+    pub created_at: Option<NaiveDateTime>,
 }
 
 #[derive(serde::Serialize)]
@@ -93,7 +93,7 @@ impl From<FormTemplate> for FormTemplateResponse {
             is_required: form_template.is_required,
             display_order: form_template.display_order,
             created_at: form_template.created_at,
-            updated_at: Some(form_template.updated_at),
+            updated_at: form_template.updated_at,
         }
     }
 }

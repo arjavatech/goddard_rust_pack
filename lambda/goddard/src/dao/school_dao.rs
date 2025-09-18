@@ -31,16 +31,18 @@ impl SchoolDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let row = client.query_one(
+        let stmt = client.prepare(
             r#"
             INSERT INTO schools (id, name, subdomain, settings, is_active, created_at)
             VALUES (gen_random_uuid(), $1, $2, $3, true, NOW())
             RETURNING id, name, subdomain, settings, is_active, created_at, updated_at
-            "#,
-            &[&request.name, &request.subdomain, &request.settings]
-        )
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let row = client.query_one(&stmt, &[&request.name, &request.subdomain, &request.settings])
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         Ok(Self::row_to_school(&row))
     }
@@ -49,17 +51,19 @@ impl SchoolDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let rows = client.query(
+        let stmt = client.prepare(
             r#"
             SELECT id, name, subdomain, settings, is_active, created_at, updated_at
             FROM schools
             WHERE (is_active = true OR is_active IS NULL)
             ORDER BY created_at DESC
-            "#,
-            &[]
-        )
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = client.query(&stmt, &[])
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         let schools = rows.iter().map(Self::row_to_school).collect();
         Ok(schools)
@@ -69,16 +73,18 @@ impl SchoolDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let rows = client.query(
+        let stmt = client.prepare(
             r#"
             SELECT id, name, subdomain, settings, is_active, created_at, updated_at
             FROM schools
             WHERE id = $1 AND (is_active = true OR is_active IS NULL)
-            "#,
-            &[school_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows = client.query(&stmt, &[school_id])
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         if rows.is_empty() {
             Ok(None)
@@ -91,38 +97,60 @@ impl SchoolDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let row = client.query_one(
+        // Build the SQL query with escaped values to avoid prepared statement conflicts
+        let query = format!(
             r#"
             UPDATE schools
-            SET name = $2,
-                subdomain = $3,
-                settings = $4,
+            SET name = '{}',
+                subdomain = '{}',
                 updated_at = NOW()
-            WHERE id = $1 AND (is_active = true OR is_active IS NULL)
+            WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
             RETURNING id, name, subdomain, settings, is_active, created_at, updated_at
             "#,
-            &[&request.id, &request.name, &request.subdomain, &request.settings]
-        )
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            request.name.replace('\'', "''"),
+            request.subdomain.replace('\'', "''"),
+            request.id
+        );
 
-        Ok(Self::row_to_school(&row))
+        // Use simple_query to avoid prepared statements entirely
+        let result = client.simple_query(&query).await
+            .map_err(|e| AppError::Database(format!("Failed to update school: {}", e)))?;
+
+        // Parse the result from simple_query
+        for message in result {
+            if let tokio_postgres::SimpleQueryMessage::Row(row) = message {
+                // Extract values from SimpleQueryRow by index
+                let school = School {
+                    id: row.get(0).unwrap().parse().unwrap(),
+                    name: row.get(1).unwrap().to_string(),
+                    subdomain: row.get(2).unwrap().to_string(),
+                    settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
+                    is_active: row.get(4).and_then(|s| s.parse().ok()),
+                    created_at: row.get(5).and_then(|s| s.parse().ok()),
+                    updated_at: row.get(6).and_then(|s| s.parse().ok()),
+                };
+                return Ok(school);
+            }
+        }
+        Err(AppError::NotFound("School not found".to_string()))
     }
 
     pub async fn delete_school(&self, school_id: &Uuid) -> ApiResult<()> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let rows_affected = client.execute(
+        let stmt = client.prepare(
             r#"
             UPDATE schools
             SET is_active = false, updated_at = NOW()
             WHERE id = $1
-            "#,
-            &[school_id]
-        )
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+
+        let rows_affected = client.execute(&stmt, &[school_id])
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         if rows_affected == 0 {
             return Err(AppError::NotFound("School not found".to_string()));
@@ -136,21 +164,27 @@ impl SchoolDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let count: i64 = if let Some(exclude_id) = exclude_id {
-            client.query_one(
-                "SELECT COUNT(*) FROM schools WHERE subdomain = $1 AND id != $2 AND (is_active = true OR is_active IS NULL)",
-                &[&subdomain, exclude_id]
-            )
-            .await
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .get(0)
+            {
+                let stmt = client.prepare(
+                    "SELECT COUNT(*) FROM schools WHERE subdomain = $1 AND id != $2 AND (is_active = true OR is_active IS NULL)"
+                ).await
+                .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+                client.query_one(&stmt, &[&subdomain, exclude_id])
+                    .await
+                    .map_err(|e| AppError::Database(e.to_string()))?
+                    .get(0)
+            }
         } else {
-            client.query_one(
-                "SELECT COUNT(*) FROM schools WHERE subdomain = $1 AND (is_active = true OR is_active IS NULL)",
-                &[&subdomain]
-            )
-            .await
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .get(0)
+            {
+                let stmt = client.prepare(
+                    "SELECT COUNT(*) FROM schools WHERE subdomain = $1 AND (is_active = true OR is_active IS NULL)"
+                ).await
+                .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+                client.query_one(&stmt, &[&subdomain])
+                    .await
+                    .map_err(|e| AppError::Database(e.to_string()))?
+                    .get(0)
+            }
         };
 
         Ok(count > 0)

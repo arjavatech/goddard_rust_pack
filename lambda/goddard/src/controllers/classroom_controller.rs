@@ -79,7 +79,7 @@ pub async fn update_classroom(
         capacity: classroom.capacity,
         enrolled_count: classroom.enrolled_count,
         created_at: classroom.created_at,
-        updated_at: Some(classroom.updated_at),
+        updated_at: classroom.updated_at,
     };
 
     Ok((StatusCode::OK, Json(response)))

@@ -32,14 +32,17 @@ impl ClassroomDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = r#"
+        let stmt = client.prepare(
+            r#"
             INSERT INTO classrooms (id, school_id, name, age_group, capacity, enrolled_count, is_active, created_at, updated_at)
             VALUES (gen_random_uuid(), $1, $2, null, null, 0, true, NOW(), NOW())
             RETURNING id, school_id, name, age_group, capacity, enrolled_count, is_active,
                      created_at, updated_at
-        "#;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
 
-        let row = client.query_one(query, &[&request.school_id, &request.class_name])
+        let row = client.query_one(&stmt, &[&request.school_id, &request.class_name])
             .await
             .map_err(|e| AppError::Database(format!("Failed to create classroom: {}", e)))?;
 
@@ -50,15 +53,18 @@ impl ClassroomDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = r#"
+        let stmt = client.prepare(
+            r#"
             SELECT id, name, school_id, age_group, capacity, enrolled_count, is_active,
                    created_at, updated_at
             FROM classrooms
             WHERE school_id = $1 AND (is_active = true OR is_active IS NULL)
             ORDER BY name ASC
-        "#;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
 
-        let rows = client.query(query, &[school_id])
+        let rows = client.query(&stmt, &[school_id])
             .await
             .map_err(|e| AppError::Database(format!("Failed to fetch classrooms: {}", e)))?;
 
@@ -70,36 +76,59 @@ impl ClassroomDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = r#"
+        // Build the SQL query with escaped values to avoid prepared statement conflicts
+        let query = format!(
+            r#"
             UPDATE classrooms
-            SET name = $3, updated_at = NOW()
-            WHERE id = $2 AND school_id = $1 AND (is_active = true OR is_active IS NULL)
+            SET name = '{}', updated_at = NOW()
+            WHERE id = '{}' AND school_id = '{}' AND (is_active = true OR is_active IS NULL)
             RETURNING id, school_id, name, age_group, capacity, enrolled_count, is_active,
                      created_at, updated_at
-        "#;
+            "#,
+            request.class_name.replace('\'', "''"), // SQL escape single quotes
+            request.class_id,
+            request.school_id
+        );
 
-        let rows = client.query(query, &[&request.school_id, &request.class_id, &request.class_name])
-            .await
+        // Use simple_query to avoid prepared statements entirely
+        let result = client.simple_query(&query).await
             .map_err(|e| AppError::Database(format!("Failed to update classroom: {}", e)))?;
 
-        if rows.is_empty() {
-            return Err(AppError::NotFound("Classroom not found".to_string()));
+        // Parse the result from simple_query
+        for message in result {
+            if let tokio_postgres::SimpleQueryMessage::Row(row) = message {
+                // Extract values from SimpleQueryRow by index since column names might not work
+                let classroom = Classroom {
+                    id: row.get(0).unwrap().parse().unwrap(),
+                    school_id: row.get(1).unwrap().parse().unwrap(),
+                    name: row.get(2).unwrap().to_string(),
+                    age_group: row.get(3).map(|s| s.to_string()),
+                    capacity: row.get(4).and_then(|s| s.parse().ok()),
+                    enrolled_count: row.get(5).and_then(|s| s.parse().ok()),
+                    is_active: row.get(6).and_then(|s| s.parse().ok()),
+                    created_at: row.get(7).and_then(|s| s.parse().ok()),
+                    updated_at: row.get(8).and_then(|s| s.parse().ok()),
+                };
+                return Ok(classroom);
+            }
         }
-
-        Ok(Self::row_to_classroom(&rows[0]))
+        Err(AppError::NotFound("Classroom not found".to_string()))
     }
 
     pub async fn delete_classroom(&self, classroom_id: &Uuid, school_id: &Uuid) -> Result<(), AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = r#"
+        let stmt = client.prepare(
+            r#"
             UPDATE classrooms
             SET is_active = false, updated_at = NOW()
             WHERE id = $1 AND school_id = $2
-        "#;
+            "#
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
 
-        let rows_affected = client.execute(query, &[classroom_id, school_id])
+        let rows_affected = client.execute(&stmt, &[classroom_id, school_id])
             .await
             .map_err(|e| AppError::Database(format!("Failed to delete classroom: {}", e)))?;
 

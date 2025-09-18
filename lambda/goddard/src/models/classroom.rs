@@ -9,10 +9,10 @@ pub struct Classroom {
     pub name: String,
     pub age_group: Option<String>,
     pub capacity: Option<i32>,
-    pub enrolled_count: i32,
-    pub is_active: bool,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
+    pub enrolled_count: Option<i32>,
+    pub is_active: Option<bool>,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,8 +35,8 @@ pub struct ClassroomResponse {
     pub name: String,
     pub age_group: Option<String>,
     pub capacity: Option<i32>,
-    pub enrolled_count: i32,
-    pub created_at: NaiveDateTime,
+    pub enrolled_count: Option<i32>,
+    pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
 
@@ -56,7 +56,7 @@ impl From<Classroom> for ClassroomResponse {
             capacity: classroom.capacity,
             enrolled_count: classroom.enrolled_count,
             created_at: classroom.created_at,
-            updated_at: Some(classroom.updated_at),
+            updated_at: classroom.updated_at,
         }
     }
 }

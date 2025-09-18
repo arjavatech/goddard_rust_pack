@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: http:localhost:9000/schools
+  url: {{base_url}}/schools
   body: json
   auth: inherit
 }
@@ -16,8 +16,8 @@ headers {
 
 body:json {
   {
-        "name": "Goddard School, Lynnwood",
-        "subdomain": "lynnwood",
+        "name": "Mani's School, Karaikudi",
+        "subdomain": "Karaikudi",
         "settings": {
           "timezone": "America/New_York",
           "enrollment_capacity": 200,

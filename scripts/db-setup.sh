@@ -35,7 +35,7 @@ if [ ! -f "database/setup.sql" ]; then
 fi
 
 echo -e "${YELLOW}🔧 Creating tables and setting up audit system...${NC}"
-SETUP_OUTPUT=$(PGPASSWORD="$DB_PASSWORD" $PSQL -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f database/setup.sql -q 2>&1)
+SETUP_OUTPUT=$($PSQL "$DATABASE_URL" -f database/setup.sql -q 2>&1)
 SETUP_STATUS=$?
 
 # Only show errors if any
@@ -48,7 +48,7 @@ if [ $SETUP_STATUS -eq 0 ]; then
     echo -e "${GREEN}✅ Database setup completed successfully!${NC}"
 
     # Count actual tables created
-    TABLE_COUNT=$(PGPASSWORD="$DB_PASSWORD" $PSQL -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ')
+    TABLE_COUNT=$($PSQL "$DATABASE_URL" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ')
 
     if [ "$TABLE_COUNT" -gt 0 ]; then
         echo -e "${GREEN}✅ $TABLE_COUNT tables created successfully${NC}"
@@ -72,36 +72,25 @@ echo -e "${GREEN}✅ Business logic constraints${NC}"
 echo -e "${GREEN}✅ Email validation${NC}"
 echo -e "${GREEN}✅ UUID primary keys${NC}"
 
-# Test direct connection if password is available
+# Test direct connection
 if ! echo "$DATABASE_URL" | grep -q "\[YOUR_DB_PASSWORD\]"; then
-    echo -e "${BLUE}🔗 Testing direct psql connection...${NC}"
-    PSQL="/opt/homebrew/opt/postgresql@14/bin/psql"
+    echo -e "${BLUE}🔗 Testing database connection...${NC}"
 
-    # Try multiple connection methods
-    if [ -n "$DB_HOST" ] && [ -n "$DB_PASSWORD" ]; then
-        # Method 1: Using PGPASSWORD environment variable
-        PGPASSWORD="$DB_PASSWORD" $PSQL -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1
-        CONN_STATUS=$?
-
-        if [ $CONN_STATUS -eq 0 ]; then
-            echo -e "${GREEN}✅ Direct psql connection working${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Direct psql connection failed (password may need updating)${NC}"
-            echo -e "${BLUE}💡 Database is fully operational via Supabase dashboard${NC}"
-            echo -e "${BLUE}💡 All 14 tables are accessible via web interface${NC}"
-            echo -e "${BLUE}💡 Direct psql is optional for development${NC}"
-            echo ""
-            echo -e "${YELLOW}To fix direct psql access:${NC}"
-            echo -e "${YELLOW}1. Visit: https://supabase.com/dashboard/project/fxsjcrwsnnowlovcnddz/settings/database${NC}"
-            echo -e "${YELLOW}2. Get the current database password${NC}"
-            echo -e "${YELLOW}3. Update DB_PASSWORD in .env file${NC}"
-        fi
+    if $PSQL "$DATABASE_URL" -c "SELECT 1;" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Database connection working${NC}"
     else
-        echo -e "${YELLOW}⚠️  Connection components not found (using MCP instead)${NC}"
-        echo -e "${BLUE}💡 Tables are accessible via Supabase dashboard and MCP${NC}"
+        echo -e "${YELLOW}⚠️  Database connection failed (password may need updating)${NC}"
+        echo -e "${BLUE}💡 Database is fully operational via Supabase dashboard${NC}"
+        echo -e "${BLUE}💡 All tables are accessible via web interface${NC}"
+        echo ""
+        echo -e "${YELLOW}To fix database access:${NC}"
+        echo -e "${YELLOW}1. Visit: https://supabase.com/dashboard/project/fxsjcrwsnnowlovcnddz/settings/database${NC}"
+        echo -e "${YELLOW}2. Get the current database password${NC}"
+        echo -e "${YELLOW}3. Update DATABASE_URL in .env file${NC}"
     fi
 else
-    echo -e "${YELLOW}💡 For direct psql access, replace [YOUR_DB_PASSWORD] in .env${NC}"
+    echo -e "${YELLOW}💡 Please replace [YOUR_DB_PASSWORD] in DATABASE_URL within .env file${NC}"
+    echo -e "${BLUE}💡 Visit Supabase dashboard to get your database password${NC}"
 fi
 
 echo -e "${GREEN}🎉 Database is ready for Goddard School enrollment system!${NC}"

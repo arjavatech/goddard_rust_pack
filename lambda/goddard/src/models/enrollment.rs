@@ -150,3 +150,21 @@ pub struct CreatedFormAssignment {
     pub status: String,
     pub is_required: bool,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ResendConfirmationRequest {
+    pub parent_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResendConfirmationResponse {
+    pub parent_id: Uuid,
+    pub email_sent: bool,
+    pub message: String,
+    pub parent_details: ResendConfirmationParentDetails,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResendConfirmationParentDetails {
+    pub email: String,
+}

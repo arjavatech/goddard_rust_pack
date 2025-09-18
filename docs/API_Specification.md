@@ -1618,66 +1618,53 @@ POST /api/emails/send-invitation
 9. **Send Sign-up Email**: Send invitation email to parent using invite_id from users table
 10. **Return Complete Response**: Include all created records and assigned forms
 
-### 8.2 Resend Parent Invitation (Protected - Admin/SuperAdmin)
+### 8.2 Resend Parent Confirmation Email (Protected - API Key)
 ```
-POST /enrollments/resend-invitation
-Authorization: Bearer <jwt_token>
+POST /enrollments/resend-confirmation
+X-API-Key: <owner_api_key>
 Content-Type: application/json
 
 Request Body:
 {
-  "parent_id": "uuid",
-  "school_id": "uuid"
+  "parent_id": "uuid"
 }
 
 Authorization Logic:
-- Extract user_id, role, school_id from JWT
-- Allow if role === "SuperAdmin" OR (role === "Admin" AND jwt.school_id === request.school_id)
-- Verify parent belongs to school and is_verified = false
-- Reject with 403 if insufficient permissions
+- Extract X-API-Key header
+- Compare with OWNER_API_KEY environment variable
+- Allow if keys match exactly
+- Reject with 401 if missing/invalid API key
+- parent_id must match Supabase auth table ID (not local users table ID)
 
 Response (200):
 {
   "parent_id": "uuid",
-  "invite_id": "uuid",
   "email_sent": true,
-  "message": "Invitation reminder sent successfully",
+  "message": "Confirmation email resent successfully",
   "parent_details": {
-    "first_name": "Jane",
-    "last_name": "Doe",
-    "email": "parent@example.com",
-    "is_verified": false,
-    "last_invite_sent": "2024-01-15T14:30:00Z"
-  },
-  "child_details": {
-    "first_name": "John",
-    "last_name": "Doe"
+    "email": "parent@example.com"
   }
 }
 
 Error Responses:
-- 400: Invalid parent_id or school_id
-- 403: Insufficient permissions
-- 404: Parent not found
-- 409: Parent already verified
+- 400: Invalid parent_id or parent not found in Supabase auth
+- 401: Invalid API key
 - 422: Validation errors
+- 500: Email service error
 ```
 
-**Database Operations:**
-```sql
--- Step 1: Verify parent exists and is not verified
-SELECT u.id, u.invite_id, u.first_name, u.last_name, u.email, u.is_verified,
-       c.first_name as child_first_name, c.last_name as child_last_name
-FROM users u
-INNER JOIN children c ON u.id = c.parent_id
-WHERE u.id = $1 AND u.school_id = $2 AND u.is_verified = false AND u.role = 'Parent'
-LIMIT 1;
+**Business Logic Flow:**
+1. **Validate Input**: Check parent_id is provided and valid UUID
+2. **API Key Authorization**: Verify request has valid owner API key
+3. **Supabase Auth Lookup**: Use parent_id to find user in Supabase auth table directly
+4. **Resend Confirmation**: Call Supabase resend endpoint with parent email
+5. **Return Success**: Confirm email was sent with parent email details
 
--- Step 2: Update last invite sent timestamp (optional tracking)
-UPDATE users
-SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{last_invite_sent}', to_jsonb(NOW()))
-WHERE id = $1 AND school_id = $2;
-```
+**Supabase Integration:**
+- Use existing SupabaseClient.resend_invitation() method
+- parent_id corresponds to Supabase auth user ID (not local users.id)
+- No school_id filtering required - works directly with Supabase auth
+- Leverages Supabase's built-in email confirmation system
 
 **Email Service Integration:**
 ```json

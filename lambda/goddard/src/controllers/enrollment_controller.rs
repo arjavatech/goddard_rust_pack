@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -66,6 +66,16 @@ pub async fn get_enrollment_children_with_forms(
     axum::extract::Query(query): axum::extract::Query<GetEnrollmentChildrenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let response = enrollment_service.get_enrollment_children_with_forms(query).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// GET /enrollments/school-forms?school_id={uuid}
+/// Get all enrollment form details by school (API Key protected)
+pub async fn get_school_forms(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    axum::extract::Query(query): axum::extract::Query<GetSchoolFormsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = enrollment_service.get_school_forms(query).await?;
     Ok(ResponseUtils::success(response))
 }
 

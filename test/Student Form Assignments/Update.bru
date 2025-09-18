@@ -1,0 +1,34 @@
+meta {
+  name: Update
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{base_url}}/student-form-assignments
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+    "id": "600a498a-c2a9-437f-b740-ed61d0d7d56e",
+    "school_id": "a78b43f0-4404-4d5d-8e4a-cc162bcee693",
+    "enrollment_id": "cd450a90-d5bb-440b-a59a-da828b46732b",
+    "child_id": "5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b",
+    "form_template_id": "654dab56-a910-4320-b6a0-1382d3b47194",
+    "assignment_source": "school_default",
+    "status": "completed",
+    "is_required": true,
+    "assigned_at": "2025-09-18T21:18:18.002875Z",
+    "updated_at": null
+  }
+}
+
+settings {
+  encodeUrl: true
+}

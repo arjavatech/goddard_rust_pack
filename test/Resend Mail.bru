@@ -5,9 +5,19 @@ meta {
 }
 
 post {
-  url: {{base_url
-  body: none
+  url: {{base_url}}/enrollments/resend-confirmation
+  body: json
   auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+    "parent_id": "1c610c04-fadf-4fdb-b1f8-adf01b0ca7dc"
+  }
 }
 
 settings {

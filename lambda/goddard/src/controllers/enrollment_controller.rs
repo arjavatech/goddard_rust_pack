@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -33,5 +33,17 @@ pub async fn resend_parent_confirmation(
     // API key middleware will handle authentication
     // parent_id is the Supabase auth user ID, not local users table ID
     let response = enrollment_service.resend_parent_confirmation(payload).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// POST /enrollments/add-child
+/// Add additional child to existing parent (JWT protected - Admin/SuperAdmin)
+pub async fn add_child(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Json(payload): Json<AddChildRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // JWT middleware will handle authentication and authorization
+    // The service will validate business logic and permissions
+    let response = enrollment_service.add_child(payload).await?;
     Ok(ResponseUtils::success(response))
 }

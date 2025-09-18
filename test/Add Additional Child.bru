@@ -1,11 +1,11 @@
 meta {
-  name: Enrollment Parent Invite
+  name: Add Additional Child
   type: http
-  seq: 6
+  seq: 8
 }
 
 post {
-  url: {{base_url}}/enrollments/parent-invite
+  url: {{base_url}}/enrollments/add-child
   body: json
   auth: inherit
 }
@@ -22,7 +22,7 @@ body:json {
     "child_birth_date": "2018-05-15",
     "gender": "male",
     "class_id": "1a3b49ea-8ca8-40c1-94cf-4bea676f99dd",
-    "parent_email": "dbakarthik@gmail.com",
+    "parent_id": "97f4292d-f209-4f55-8e3c-128073eb8510",
     "parent_first_name": "Jane",
     "parent_last_name": "Doe"
   }

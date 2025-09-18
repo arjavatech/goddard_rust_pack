@@ -233,6 +233,31 @@ impl EnrollmentDao {
         Ok(count > 0)
     }
 
+    // Helper: Get parent by ID for Section 8.3
+    pub async fn get_parent_by_id(&self, parent_id: Uuid, school_id: Uuid) -> ApiResult<CreatedUser> {
+        let query = r#"
+            SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at
+            FROM users
+            WHERE id = $1 AND school_id = $2 AND role = 'Parent' AND (is_active = true OR is_active IS NULL)
+        "#;
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client
+            .query_one(query, &[&parent_id, &school_id])
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("no rows returned") {
+                    AppError::NotFound("Parent not found or does not belong to this school".to_string())
+                } else {
+                    AppError::Database(format!("Failed to get parent: {}", e))
+                }
+            })?;
+
+        Ok(Self::row_to_created_user(&row))
+    }
+
     // Row mappers
     fn row_to_created_user(row: &Row) -> CreatedUser {
         CreatedUser {

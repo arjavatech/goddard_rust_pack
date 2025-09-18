@@ -2404,6 +2404,170 @@ ORDER BY u.created_at DESC, u.email;
 - Consider pagination for schools with many parents
 - Cache results for frequently accessed schools
 
+### 8.3 Add Additional Child to Existing Parent (Protected - Admin/SuperAdmin)
+```
+POST /enrollments/add-child
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Request Body:
+{
+  "school_id": "uuid",
+  "child_first_name": "Jane",
+  "child_last_name": "Doe",
+  "child_birth_date": "2020-03-10",
+  "gender": "female",
+  "class_id": "uuid",
+  "parent_id": "uuid"
+}
+
+Authorization Logic:
+- Extract user_id, role, school_id from JWT
+- Allow if role === "SuperAdmin" OR (role === "Admin" AND jwt.school_id === request.school_id)
+- Verify parent exists in users table with role='Parent'
+- Verify classroom belongs to school
+- Reject with 403 if insufficient permissions
+
+Response (201):
+{
+  "child_id": "uuid",
+  "enrollment_id": "uuid",
+  "assigned_forms_count": 5,
+  "message": "Additional child added successfully",
+  "details": {
+    "parent": {
+      "id": "uuid",
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "parent@example.com",
+      "is_verified": true
+    },
+    "child": {
+      "id": "uuid",
+      "parent_id": "uuid",
+      "school_id": "uuid",
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "birth_date": "2020-03-10",
+      "gender": "female",
+      "status": "active",
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    "enrollment": {
+      "id": "uuid",
+      "child_id": "uuid",
+      "school_id": "uuid",
+      "classroom_id": "uuid",
+      "status": "not_completed",
+      "application_status": null,
+      "created_at": "2024-01-15T10:30:00Z"
+    },
+    "assigned_forms": [
+      {
+        "id": "uuid",
+        "form_template_id": "uuid",
+        "form_name": "Student Registration Form",
+        "assignment_source": "school_default",
+        "status": "incomplete",
+        "is_required": true
+      },
+      {
+        "id": "uuid",
+        "form_template_id": "uuid",
+        "form_name": "Medical History Form",
+        "assignment_source": "class_override",
+        "status": "incomplete",
+        "is_required": true
+      }
+    ]
+  }
+}
+
+Error Responses:
+- 400: Invalid request data or missing required fields
+- 403: Insufficient permissions
+- 404: Parent, school or classroom not found
+- 422: Validation errors
+```
+
+**Database Operations (Transaction):**
+```sql
+-- Step 1: Verify parent exists and get parent details
+SELECT id, first_name, last_name, email, is_verified
+FROM users
+WHERE id = $1 AND school_id = $2 AND role = 'Parent';
+
+-- Step 2: Verify classroom belongs to school
+SELECT id FROM classrooms
+WHERE id = $3 AND school_id = $2 AND (is_active = true OR is_active IS NULL);
+
+-- Step 3: Create child record (status defaults to 'active')
+INSERT INTO children (id, parent_id, school_id, first_name, last_name, birth_date, gender, status)
+VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active')
+RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at;
+
+-- Step 4: Create enrollment record
+INSERT INTO enrollments (id, child_id, school_id, classroom_id, status, application_status, progress, submitted_at)
+VALUES (gen_random_uuid(), $1, $2, $3, 'not_completed', null, '{}', NOW())
+RETURNING id, child_id, school_id, classroom_id, status, application_status, created_at;
+
+-- Step 5: Get school default forms
+SELECT id, form_name, fillout_form_id, fillout_form_url, is_required
+FROM form_templates
+WHERE school_id = $1 AND status = 'school_default' AND (is_active = true OR is_active IS NULL);
+
+-- Step 6: Get class-specific form overrides
+SELECT form_template_id, action, is_required
+FROM class_form_overrides
+WHERE school_id = $1 AND classroom_id = $2 AND (is_active = true OR is_active IS NULL);
+
+-- Step 7: Consolidate forms and create student form assignments
+-- (This logic consolidates school defaults + class overrides)
+INSERT INTO student_form_assignments (
+  id, school_id, enrollment_id, child_id, form_template_id,
+  assignment_source, status, is_required, assigned_at
+)
+VALUES
+  (gen_random_uuid(), $1, $2, $3, $4, 'school_default', 'incomplete', $5, NOW()),
+  (gen_random_uuid(), $1, $2, $3, $6, 'class_override', 'incomplete', $7, NOW())
+  -- ... (repeated for each consolidated form)
+RETURNING id, form_template_id, assignment_source, status, is_required, assigned_at;
+```
+
+**Business Logic Flow:**
+1. **Validate Input**: Check all required fields and verify parent exists
+2. **Verify Parent**: Query users table to confirm parent exists with role='Parent'
+3. **Verify Classroom**: Ensure classroom belongs to the school
+4. **Create Child**: Insert into children table linked to existing parent
+5. **Create Enrollment**: Insert into enrollments with status='not_completed'
+6. **Get Default Forms**: Query form_templates for school_default forms
+7. **Get Class Overrides**: Query class_form_overrides for specific classroom
+8. **Consolidate Forms**: Merge default forms with class-specific overrides
+9. **Create Form Assignments**: Insert into student_form_assignments with status='incomplete'
+10. **Return Complete Response**: Include child, enrollment and assigned forms (no auth user creation or email sent)
+
+**Key Differences from 8.1:**
+- No auth user creation (parent already exists in Supabase auth)
+- No user creation in users table (parent already exists)
+- No invite_id generation
+- No email notification sent
+- Parent verification status can be either true or false
+- Simpler transaction without user table INSERT
+- Uses existing parent_id directly from request
+- Same form assignment logic as 8.1
+
+**Use Cases:**
+- Existing parent wants to enroll additional child
+- Sibling enrollment for families already in the system
+- Secondary child enrollment without creating new parent account
+- Administrative child addition to existing parent profiles
+
+**Performance Considerations:**
+- Lighter transaction than 8.1 (no user creation or email sending)
+- Same form assignment complexity
+- Uses existing parent verification status
+- No external service calls (Supabase auth or email)
+
 ---
 
 ## 9. Reports and Analytics APIs

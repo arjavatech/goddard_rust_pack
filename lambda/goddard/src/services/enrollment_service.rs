@@ -11,7 +11,8 @@ use crate::models::enrollment::{
     AddChildRequest, AddChildResponse, AddChildDetails, AddChildParentDetails,
     GetParentDetailsBySchoolRequest, GetParentDetailsBySchoolResponse, ParentWithAuthDetails,
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
-    GetClassWiseCountRequest, GetClassWiseCountResponse
+    GetClassWiseCountRequest, GetClassWiseCountResponse,
+    GetSchoolFormsRequest, GetSchoolFormsResponse
 };
 use crate::error::AppError;
 
@@ -373,6 +374,18 @@ impl EnrollmentService {
 
         let response = GetEnrollmentChildrenResponse {
             children,
+        };
+
+        Ok(response)
+    }
+
+    // 8.4 Get All Enrollment Form Details by School
+    pub async fn get_school_forms(&self, request: GetSchoolFormsRequest) -> ApiResult<GetSchoolFormsResponse> {
+        // Get all enrollment form details for the school
+        let enrollments = self.enrollment_dao.get_school_forms(request.school_id).await?;
+
+        let response = GetSchoolFormsResponse {
+            enrollments,
         };
 
         Ok(response)

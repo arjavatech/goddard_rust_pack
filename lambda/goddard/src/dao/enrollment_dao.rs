@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 
 use crate::models::enrollment::{
     CreatedUser, CreatedChild, CreatedEnrollment, FormTemplate,
-    ClassFormOverride, CreatedFormAssignment, EnrollmentChildWithForms, ClassWiseCount
+    ClassFormOverride, CreatedFormAssignment, EnrollmentChildWithForms, ClassWiseCount, SchoolFormDetails
 };
 use crate::error::AppError;
 
@@ -449,6 +449,69 @@ impl EnrollmentDao {
             count: row.get("count"),
             forms: row.get::<_, Option<serde_json::Value>>("forms").unwrap_or(serde_json::json!({})),
             default_forms: row.get("default_forms"),
+        }
+    }
+
+    // 8.4 Get All Enrollment Form Details by School
+    pub async fn get_school_forms(&self, school_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
+        let query = r#"
+            SELECT DISTINCT
+                c.id AS child_id,
+                c.first_name AS child_first_name,
+                c.last_name AS child_last_name,
+                cl.name AS class_name,
+                u1.email AS primary_email,
+                u2.email AS additional_parent_email,
+                e.status AS form_status,
+                COALESCE(
+                    (
+                        SELECT jsonb_object_agg(
+                            ft.id::text,
+                            ft.form_name
+                        )
+                        FROM student_form_assignments sfa
+                        INNER JOIN form_templates ft ON sfa.form_template_id = ft.id
+                        WHERE sfa.enrollment_id = e.id
+                        AND sfa.child_id = c.id
+                        AND (sfa.is_active = true OR sfa.is_active IS NULL)
+                        AND (ft.is_active = true OR ft.is_active IS NULL)
+                    ),
+                    '{}'::jsonb
+                ) AS forms
+            FROM enrollments e
+            INNER JOIN children c ON e.child_id = c.id
+            INNER JOIN classrooms cl ON e.classroom_id = cl.id
+            INNER JOIN users u1 ON c.parent_id = u1.id
+            LEFT JOIN users u2 ON c.secondary_parent_id = u2.id
+            WHERE e.school_id = $1
+                AND (e.is_active = true OR e.is_active IS NULL)
+                AND c.status = 'active'
+                AND (c.is_active = true OR c.is_active IS NULL)
+                AND (cl.is_active = true OR cl.is_active IS NULL)
+            ORDER BY c.id
+        "#;
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client
+            .query(query, &[&school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to get school forms: {}", e)))?;
+
+        Ok(rows.into_iter().map(|row| Self::row_to_school_form_details(&row)).collect())
+    }
+
+    fn row_to_school_form_details(row: &Row) -> SchoolFormDetails {
+        SchoolFormDetails {
+            child_id: row.get("child_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+            class_name: row.get("class_name"),
+            primary_email: row.get("primary_email"),
+            additional_parent_email: row.get("additional_parent_email"),
+            form_status: row.get("form_status"),
+            forms: row.get::<_, Option<serde_json::Value>>("forms").unwrap_or(serde_json::json!({})),
         }
     }
 }

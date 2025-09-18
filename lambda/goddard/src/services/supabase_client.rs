@@ -2,6 +2,7 @@ use crate::error::AppError;
 use reqwest::Client;
 use serde_json::json;
 use std::env;
+use chrono::{DateTime, Utc};
 
 #[derive(Clone)]
 pub struct SupabaseClient {
@@ -183,5 +184,57 @@ impl SupabaseClient {
             .ok_or_else(|| AppError::ExternalService("Email not found in user response".to_string()))?;
 
         Ok(email.to_string())
+    }
+
+    pub async fn get_user_auth_details(&self, user_id: uuid::Uuid) -> Result<(String, DateTime<Utc>, bool), AppError> {
+        let user_id_str = user_id.to_string();
+
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id_str))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to get user from Supabase: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+
+            if status_code == 404 {
+                return Err(AppError::NotFound("User not found in Supabase auth".to_string()));
+            }
+
+            return Err(AppError::ExternalService(format!(
+                "Failed to get user from Supabase. Status: {}, Error: {}",
+                status_code, error_text
+            )));
+        }
+
+        let user_data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user response: {}", e)))?;
+
+        let email = user_data
+            .get("email")
+            .and_then(|email| email.as_str())
+            .ok_or_else(|| AppError::ExternalService("Email not found in user response".to_string()))?;
+
+        let created_at_str = user_data
+            .get("created_at")
+            .and_then(|created_at| created_at.as_str())
+            .ok_or_else(|| AppError::ExternalService("Created_at not found in user response".to_string()))?;
+
+        let created_at = created_at_str.parse::<DateTime<Utc>>()
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse created_at: {}", e)))?;
+
+        let last_sign_in_at = user_data
+            .get("last_sign_in_at")
+            .and_then(|value| value.as_str());
+
+        let id_signed = last_sign_in_at.is_some() && !last_sign_in_at.unwrap().is_empty();
+
+        Ok((email.to_string(), created_at, id_signed))
     }
 }

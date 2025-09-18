@@ -8,7 +8,8 @@ use crate::models::enrollment::{
     ParentDetails, ChildDetails, EnrollmentDetails, AssignedFormDetails,
     AuthUserResult, FormTemplate, ClassFormOverride, CreatedFormAssignment,
     ResendConfirmationRequest, ResendConfirmationResponse, ResendConfirmationParentDetails,
-    AddChildRequest, AddChildResponse, AddChildDetails, AddChildParentDetails
+    AddChildRequest, AddChildResponse, AddChildDetails, AddChildParentDetails,
+    GetParentDetailsBySchoolRequest, GetParentDetailsBySchoolResponse, ParentWithAuthDetails
 };
 use crate::error::AppError;
 
@@ -313,6 +314,51 @@ impl EnrollmentService {
                     is_required: form.is_required,
                 }).collect(),
             },
+        };
+
+        Ok(response)
+    }
+
+    pub async fn get_parent_details_by_school(&self, request: GetParentDetailsBySchoolRequest) -> ApiResult<GetParentDetailsBySchoolResponse> {
+        // Step 1: Get all parents from the school
+        let parents = self.enrollment_dao.get_parents_by_school(request.school_id).await?;
+
+        // Step 2: Get auth details for each parent
+        let mut parents_with_auth = Vec::new();
+
+        for parent in parents {
+            // Get auth details from Supabase using parent ID as auth user ID
+            match self.supabase_client.get_user_auth_details(parent.id).await {
+                Ok((auth_email, auth_created_at, id_signed)) => {
+                    let parent_with_auth = ParentWithAuthDetails {
+                        id: parent.id,
+                        school_id: parent.school_id,
+                        first_name: parent.first_name,
+                        last_name: parent.last_name,
+                        email: parent.email,
+                        role: parent.role,
+                        is_verified: parent.is_verified,
+                        created_at: parent.created_at.map(|dt| {
+                            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                        }).unwrap_or_else(chrono::Utc::now),
+                        id_signed,
+                    };
+                    parents_with_auth.push(parent_with_auth);
+                }
+                Err(e) => {
+                    // Log warning and skip this parent if auth details not found
+                    eprintln!("Warning: Could not get auth details for parent {}: {}", parent.id, e);
+                    continue;
+                }
+            }
+        }
+
+        // Step 3: Generate response
+        let response = GetParentDetailsBySchoolResponse {
+            school_id: request.school_id,
+            total_parents: parents_with_auth.len(),
+            message: format!("Retrieved {} parent details successfully", parents_with_auth.len()),
+            parents: parents_with_auth,
         };
 
         Ok(response)

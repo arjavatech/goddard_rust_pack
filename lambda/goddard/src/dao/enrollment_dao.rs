@@ -315,4 +315,24 @@ impl EnrollmentDao {
             is_required: row.get("is_required"),
         }
     }
+
+    // Helper: Get all parents by school_id for Section 8.7
+    pub async fn get_parents_by_school(&self, school_id: Uuid) -> ApiResult<Vec<CreatedUser>> {
+        let query = r#"
+            SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at
+            FROM users
+            WHERE school_id = $1 AND role = 'Parent' AND (is_active = true OR is_active IS NULL)
+            ORDER BY first_name, last_name
+        "#;
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client
+            .query(query, &[&school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to get parents: {}", e)))?;
+
+        Ok(rows.into_iter().map(|row| Self::row_to_created_user(&row)).collect())
+    }
 }

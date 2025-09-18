@@ -2357,52 +2357,69 @@ Error Responses:
 - 404: School not found
 ```
 
-**Database Query (Primary Parents Only):**
-```sql
--- Get primary parents (role filter) with signing status and creation date
-SELECT DISTINCT
-    u.id AS parent_id,
-    u.email AS parent_email,
-    u.id_signed,
-    u.created_at
-FROM users u
-WHERE u.school_id = $1
-    AND u.role = 'primary-parent'
-    AND (u.is_active = true OR u.is_active IS NULL)
-ORDER BY u.created_at DESC, u.email;
-```
-
 **Business Logic Flow:**
 1. **Validate Request**: Check school_id is provided and valid UUID
 2. **Authorization Check**: Verify user has access to this school's data
-3. **Filter by Role**: Get users with role = 'primary-parent' only
-4. **Filter by School**: Ensure users belong to the specified school
-5. **Get Signing Status**: Include id_signed field (replaces is_verified)
-6. **Return Parent List**: List of primary parents with email and signing status
+3. **Get Local Parents**: Query users table filtered by school_id and role = 'Parent'
+4. **Get Auth Details**: For each parent_id, query Supabase auth table as User UID
+5. **Check Sign-in Status**: If last_sign_in_at is empty/null then id_signed = false, otherwise true
+6. **Return Parent List**: List of parents with email, created_at from auth table, and calculated id_signed
 
-**Response Field Mappings:**
-- `parent_id`: users.id
-- `parent_email`: users.email
-- `id_signed`: users.id_signed (boolean - indicates if parent has signed documents)
-- `created_at`: users.created_at (timestamp - when parent account was created)
+**Database Operations:**
+```sql
+-- Step 1: Get parents from local users table
+SELECT id, email
+FROM users
+WHERE school_id = $1
+    AND role = 'Parent'
+    AND (is_active = true OR is_active IS NULL)
+ORDER BY created_at DESC;
 
-**Role-Based Filtering:**
-- **primary-parent**: Only users with this specific role are included
-- **Excludes**: secondary-parent, admin, superadmin, staff roles
-- **Active Only**: Users with is_active = true or NULL
+-- Step 2: For each parent_id, query Supabase auth table
+-- This is done via Supabase Admin API call for each parent_id as User UID
+GET /auth/v1/admin/users/{parent_id}
+```
+
+**Supabase Auth Integration:**
+```sql
+-- Supabase auth.users table structure (accessed via Admin API)
+{
+  "id": "uuid",                    -- matches our users.id
+  "email": "parent@example.com",   -- auth email
+  "created_at": "2024-01-15T10:30:00Z",
+  "last_sign_in_at": "2024-01-20T15:45:00Z" or null,
+  ...
+}
+```
+
+**Response Logic:**
+- `parent_id`: From local users.id (same as Supabase auth.users.id)
+- `parent_email`: From Supabase auth.users.email
+- `created_at`: From Supabase auth.users.created_at
+- `id_signed`:
+  - `false` if auth.users.last_sign_in_at is null or empty
+  - `true` if auth.users.last_sign_in_at has a value
+
+**Key Implementation Details:**
+- Uses parent_id from local users table as User UID for Supabase auth lookup
+- Each parent requires individual Supabase Admin API call
+- Filters by role = 'Parent' (not 'primary-parent')
+- All data except id_signed comes from Supabase auth table
+- id_signed is calculated based on last_sign_in_at field presence
 
 **Use Cases:**
-- Admin dashboard to view all primary parents in a school
-- Parent communication and outreach
-- Document signing status tracking
-- Parent verification and onboarding status
-- School enrollment reporting
+- Admin dashboard to view all parents in a school with auth status
+- Parent sign-in tracking and verification
+- Onboarding status monitoring
+- Email communication lists with verification status
+- School enrollment reporting with auth metrics
 
 **Performance Considerations:**
-- Use composite index on (school_id, role, is_active)
-- Simple query with minimal joins for fast response
+- Multiple Supabase API calls (one per parent) - consider caching
+- Use batch requests if Supabase supports it
 - Consider pagination for schools with many parents
 - Cache results for frequently accessed schools
+- Monitor Supabase API rate limits
 
 ### 8.3 Add Additional Child to Existing Parent (Protected - Admin/SuperAdmin)
 ```

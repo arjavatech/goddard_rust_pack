@@ -168,3 +168,40 @@ pub struct ResendConfirmationResponse {
 pub struct ResendConfirmationParentDetails {
     pub email: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct AddChildRequest {
+    pub school_id: Uuid,
+    pub child_first_name: String,
+    pub child_last_name: String,
+    pub child_birth_date: NaiveDate,
+    pub gender: String,
+    pub class_id: Uuid,
+    pub parent_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AddChildResponse {
+    pub child_id: Uuid,
+    pub enrollment_id: Uuid,
+    pub assigned_forms_count: usize,
+    pub message: String,
+    pub details: AddChildDetails,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AddChildDetails {
+    pub parent: AddChildParentDetails,
+    pub child: ChildDetails,
+    pub enrollment: EnrollmentDetails,
+    pub assigned_forms: Vec<AssignedFormDetails>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AddChildParentDetails {
+    pub id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub is_verified: bool,
+}

@@ -7,7 +7,8 @@ use crate::models::enrollment::{
     ParentInviteRequest, ParentInviteResponse, ParentInviteDetails,
     ParentDetails, ChildDetails, EnrollmentDetails, AssignedFormDetails,
     AuthUserResult, FormTemplate, ClassFormOverride, CreatedFormAssignment,
-    ResendConfirmationRequest, ResendConfirmationResponse, ResendConfirmationParentDetails
+    ResendConfirmationRequest, ResendConfirmationResponse, ResendConfirmationParentDetails,
+    AddChildRequest, AddChildResponse, AddChildDetails, AddChildParentDetails
 };
 use crate::error::AppError;
 
@@ -219,6 +220,98 @@ impl EnrollmentService {
             message: "Confirmation email resent successfully".to_string(),
             parent_details: ResendConfirmationParentDetails {
                 email: parent_email,
+            },
+        };
+
+        Ok(response)
+    }
+
+    pub async fn add_child(&self, request: AddChildRequest) -> ApiResult<AddChildResponse> {
+        // Step 1: Verify parent exists and get parent details
+        let parent_user = self.enrollment_dao.get_parent_by_id(request.parent_id, request.school_id).await?;
+
+        // Step 2: Validate classroom belongs to school
+        if !self.enrollment_dao.verify_classroom_belongs_to_school(request.class_id, request.school_id).await? {
+            return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
+        }
+
+        // Step 3: Create child in children table
+        let created_child = self.enrollment_dao.create_child(
+            request.parent_id,
+            request.school_id,
+            &request.child_first_name,
+            &request.child_last_name,
+            request.child_birth_date,
+            &request.gender,
+        ).await?;
+
+        // Step 4: Create enrollment
+        let created_enrollment = self.enrollment_dao.create_enrollment(
+            created_child.id,
+            request.school_id,
+            request.class_id,
+        ).await?;
+
+        // Step 5: Get school default forms
+        let school_forms = self.enrollment_dao.get_school_default_forms(request.school_id).await?;
+
+        // Step 6: Get classroom form overrides
+        let classroom_overrides = self.enrollment_dao.get_classroom_form_overrides(
+            request.class_id,
+            request.school_id,
+        ).await?;
+
+        // Step 7: Process forms and create assignments
+        let assigned_forms = self.process_form_assignments(
+            &school_forms,
+            &classroom_overrides,
+            created_enrollment.id,
+            created_child.id,
+            request.school_id,
+        ).await?;
+
+        // Step 8: Generate response
+        let response = AddChildResponse {
+            child_id: created_child.id,
+            enrollment_id: created_enrollment.id,
+            assigned_forms_count: assigned_forms.len(),
+            message: "Additional child added successfully".to_string(),
+            details: AddChildDetails {
+                parent: AddChildParentDetails {
+                    id: parent_user.id,
+                    first_name: parent_user.first_name,
+                    last_name: parent_user.last_name,
+                    email: parent_user.email,
+                    is_verified: parent_user.is_verified,
+                },
+                child: ChildDetails {
+                    id: created_child.id,
+                    parent_id: created_child.parent_id,
+                    school_id: created_child.school_id,
+                    first_name: created_child.first_name,
+                    last_name: created_child.last_name,
+                    birth_date: created_child.birth_date,
+                    gender: created_child.gender,
+                    status: created_child.status,
+                    created_at: created_child.created_at,
+                },
+                enrollment: EnrollmentDetails {
+                    id: created_enrollment.id,
+                    child_id: created_enrollment.child_id,
+                    school_id: created_enrollment.school_id,
+                    classroom_id: created_enrollment.classroom_id,
+                    status: created_enrollment.status,
+                    application_status: created_enrollment.application_status,
+                    created_at: created_enrollment.created_at,
+                },
+                assigned_forms: assigned_forms.into_iter().map(|form| AssignedFormDetails {
+                    id: form.id,
+                    form_template_id: form.form_template_id,
+                    form_name: form.form_name,
+                    assignment_source: form.assignment_source,
+                    status: form.status,
+                    is_required: form.is_required,
+                }).collect(),
             },
         };
 

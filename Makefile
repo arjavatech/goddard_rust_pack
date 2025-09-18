@@ -112,11 +112,16 @@ db-setup: ## 🚀 Complete database setup with full audit system
 	@./scripts/db-setup.sh
 
 db-clear: ## 🗑️  Clear all tables (keep structure, remove data)
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "$(RED)❌ ERROR: DATABASE_URL not set$(NC)"; \
+		echo "$(YELLOW)Please set DATABASE_URL in your .env file$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(YELLOW)⚠️  WARNING: This will delete all table structures!$(NC)"
 	@echo "$(YELLOW)Type 'yes' to continue:$(NC)"
 	@read confirm && [ "$$confirm" = "yes" ] || (echo "$(BLUE)Operation cancelled.$(NC)" && exit 1)
 	@echo "$(YELLOW)🗑️  Dropping all tables...$(NC)"
-	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "\
+	@$(PSQL) "$(DATABASE_URL)" -c "\
 		DO \$$\$$ \
 		DECLARE \
 			r RECORD; \
@@ -124,23 +129,31 @@ db-clear: ## 🗑️  Clear all tables (keep structure, remove data)
 			FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP \
 				EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; \
 			END LOOP; \
-		END \$$\$$;" -q >/dev/null 2>&1
-	@echo "$(GREEN)✅ All tables cleared!$(NC)"
+		END \$$\$$;" -q >/dev/null 2>&1 && echo "$(GREEN)✅ All tables cleared!$(NC)" || echo "$(RED)❌ Failed to clear tables$(NC)"
 
 db-reset: ## ⚠️  Reset database (DANGER: Drops all data)
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "$(RED)❌ ERROR: DATABASE_URL not set$(NC)"; \
+		echo "$(YELLOW)Please set DATABASE_URL in your .env file$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(RED)⚠️  WARNING: This will destroy ALL data in the database!$(NC)"
 	@echo "$(YELLOW)Type 'yes' to continue:$(NC)"
 	@read confirm && [ "$$confirm" = "yes" ] || (echo "$(BLUE)Operation cancelled.$(NC)" && exit 1)
 	@echo "$(YELLOW)🗑️  Dropping and recreating schema...$(NC)"
-	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" -q >/dev/null 2>&1
-	@echo "$(YELLOW)🔧 Recreating database structure...$(NC)"
+	@$(PSQL) "$(DATABASE_URL)" -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;" -q >/dev/null 2>&1 && echo "$(YELLOW)🔧 Recreating database structure...$(NC)" || (echo "$(RED)❌ Failed to reset schema$(NC)" && exit 1)
 	@make db-setup
 	@echo "$(GREEN)✅ Database reset completed!$(NC)"
 
 db-status: ## 📊 Check database status and table counts
+	@if [ -z "$(DATABASE_URL)" ]; then \
+		echo "$(RED)❌ ERROR: DATABASE_URL not set$(NC)"; \
+		echo "$(YELLOW)Please set DATABASE_URL in your .env file$(NC)"; \
+		exit 1; \
+	fi
 	@echo "$(BLUE)📊 Database Status$(NC)"
 	@echo "$(BLUE)==================$(NC)"
-	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "\
+	@$(PSQL) "$(DATABASE_URL)" -c "\
 		SELECT \
 			COUNT(*) as total_tables, \
 			STRING_AGG(table_name, ', ' ORDER BY table_name) as tables \
@@ -148,7 +161,7 @@ db-status: ## 📊 Check database status and table counts
 		WHERE table_schema = 'public';" 2>/dev/null || echo "$(RED)❌ Could not connect to database$(NC)"
 	@echo ""
 	@echo "$(BLUE)📈 Table Statistics:$(NC)"
-	@PGPASSWORD="$(DB_PASSWORD)" $(PSQL) -h "$(DB_HOST)" -p "$(DB_PORT)" -U "$(DB_USER)" -d "$(DB_NAME)" -c "\
+	@$(PSQL) "$(DATABASE_URL)" -c "\
 		SELECT \
 			tablename, \
 			n_live_tup as rows \

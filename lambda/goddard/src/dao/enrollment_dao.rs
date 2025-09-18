@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 
 use crate::models::enrollment::{
     CreatedUser, CreatedChild, CreatedEnrollment, FormTemplate,
-    ClassFormOverride, CreatedFormAssignment
+    ClassFormOverride, CreatedFormAssignment, EnrollmentChildWithForms, ClassWiseCount
 };
 use crate::error::AppError;
 
@@ -334,5 +334,121 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get parents: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| Self::row_to_created_user(&row)).collect())
+    }
+
+    // 8.6 Get Enrollment Children with Form Assignments
+    pub async fn get_enrollment_children_with_forms(&self, school_id: Uuid) -> ApiResult<Vec<EnrollmentChildWithForms>> {
+        let query = r#"
+            SELECT DISTINCT
+                c.id AS child_id,
+                c.first_name AS child_first_name,
+                c.last_name AS child_last_name,
+                cl.name AS class_name,
+                u1.email AS primary_email,
+                u2.email AS additional_parent_email,
+                e.status AS form_status,
+                -- Aggregate forms as JSON object with form_template_id as key and form_name as value
+                (
+                    SELECT jsonb_object_agg(
+                        ft.id::text,
+                        ft.form_name
+                    )
+                    FROM student_form_assignments sfa
+                    INNER JOIN form_templates ft ON sfa.form_template_id = ft.id
+                    WHERE sfa.enrollment_id = e.id
+                    AND sfa.child_id = c.id
+                    AND (sfa.is_active = true OR sfa.is_active IS NULL)
+                    AND (ft.is_active = true OR ft.is_active IS NULL)
+                ) AS forms
+            FROM enrollments e
+            INNER JOIN children c ON e.child_id = c.id
+            INNER JOIN classrooms cl ON e.classroom_id = cl.id
+            INNER JOIN users u1 ON c.parent_id = u1.id
+            LEFT JOIN users u2 ON c.secondary_parent_id = u2.id
+            WHERE e.school_id = $1
+                AND (e.is_active = true OR e.is_active IS NULL)
+                AND (c.is_active = true OR c.is_active IS NULL)
+                AND (cl.is_active = true OR cl.is_active IS NULL)
+                AND (u1.is_active = true OR u1.is_active IS NULL)
+            ORDER BY c.first_name, c.last_name
+        "#;
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client
+            .query(query, &[&school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to get enrollment children with forms: {}", e)))?;
+
+        Ok(rows.into_iter().map(|row| Self::row_to_enrollment_child_with_forms(&row)).collect())
+    }
+
+    fn row_to_enrollment_child_with_forms(row: &Row) -> EnrollmentChildWithForms {
+        EnrollmentChildWithForms {
+            child_id: row.get("child_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+            class_name: row.get("class_name"),
+            primary_email: row.get("primary_email"),
+            form_status: row.get("form_status"),
+            forms: row.get::<_, Option<serde_json::Value>>("forms").unwrap_or(serde_json::json!({})),
+            additional_parent_email: row.get("additional_parent_email"),
+        }
+    }
+    // 8.5 Get Class-wise Child Count Details
+    pub async fn get_class_wise_count(&self, school_id: Uuid) -> ApiResult<Vec<ClassWiseCount>> {
+        let query = r#"
+            SELECT
+                c.id AS class_id,
+                c.name AS class_name,
+                COUNT(e.id) AS count,
+                COALESCE(
+                    jsonb_object_agg(
+                        ft.id::text,
+                        ft.form_name
+                    ) FILTER (WHERE ft.id IS NOT NULL),
+                    '{}'
+                ) AS forms,
+                COALESCE(
+                    jsonb_agg(
+                        DISTINCT ft_default.form_name
+                    ) FILTER (WHERE ft_default.form_name IS NOT NULL),
+                    '[]'
+                )::text AS default_forms
+            FROM classrooms c
+            LEFT JOIN enrollments e ON c.id = e.classroom_id
+                AND (e.is_active = true OR e.is_active IS NULL)
+            LEFT JOIN form_templates ft_default ON ft_default.school_id = c.school_id
+                AND (ft_default.is_active = true OR ft_default.is_active IS NULL)
+            LEFT JOIN class_form_overrides cfo ON c.id = cfo.classroom_id
+                AND (cfo.is_active = true OR cfo.is_active IS NULL)
+            LEFT JOIN form_templates ft ON cfo.form_template_id = ft.id
+                AND (ft.is_active = true OR ft.is_active IS NULL)
+            WHERE c.school_id = $1
+                AND (c.is_active = true OR c.is_active IS NULL)
+            GROUP BY c.id, c.name
+            ORDER BY c.id
+        "#;
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client
+            .query(query, &[&school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to get class-wise count: {}", e)))?;
+
+        Ok(rows.into_iter().map(|row| Self::row_to_class_wise_count(&row)).collect())
+    }
+
+    fn row_to_class_wise_count(row: &Row) -> ClassWiseCount {
+        ClassWiseCount {
+            class_id: row.get("class_id"),
+            class_name: row.get("class_name"),
+            count: row.get("count"),
+            forms: row.get::<_, Option<serde_json::Value>>("forms").unwrap_or(serde_json::json!({})),
+            default_forms: row.get("default_forms"),
+        }
     }
 }

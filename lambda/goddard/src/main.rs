@@ -37,7 +37,7 @@ use controllers::{
         create_class_form_override, delete_class_form_override
     },
     enrollment_controller::{
-        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school
+        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_class_wise_count
     },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
@@ -162,6 +162,8 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/enrollments/add-child", post(add_child).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/enrollments/parent-details-by-school", get(get_parent_details_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parent/details", get(get_parent_details_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(enrollment_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
@@ -255,6 +257,8 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/enrollments/resend-confirmation", post(resend_parent_confirmation).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/enrollments/add-child", post(add_child).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parent/details", get(get_parent_details_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(enrollment_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))

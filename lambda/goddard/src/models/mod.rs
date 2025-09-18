@@ -4,6 +4,7 @@ pub mod classroom;
 pub mod form_template;
 pub mod class_form_override;
 pub mod enrollment;
+pub mod form_submission;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

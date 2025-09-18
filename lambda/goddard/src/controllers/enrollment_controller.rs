@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -45,5 +45,16 @@ pub async fn add_child(
     // JWT middleware will handle authentication and authorization
     // The service will validate business logic and permissions
     let response = enrollment_service.add_child(payload).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// GET /enrollments/parent-details-by-school?school_id={uuid}
+/// Get parent details by school including auth information (API Key protected)
+pub async fn get_parent_details_by_school(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    axum::extract::Query(query): axum::extract::Query<GetParentDetailsBySchoolRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // API key middleware will handle authentication
+    let response = enrollment_service.get_parent_details_by_school(query).await?;
     Ok(ResponseUtils::success(response))
 }

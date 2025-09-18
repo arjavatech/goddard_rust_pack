@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime, DateTime, Utc};
 use uuid::Uuid;
 use serde_json::Value;
 
@@ -204,4 +204,37 @@ pub struct AddChildParentDetails {
     pub last_name: String,
     pub email: String,
     pub is_verified: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetParentDetailsBySchoolRequest {
+    pub school_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetParentDetailsBySchoolResponse {
+    pub school_id: Uuid,
+    pub total_parents: usize,
+    pub message: String,
+    pub parents: Vec<ParentWithAuthDetails>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ParentWithAuthDetails {
+    pub id: Uuid,
+    pub school_id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub role: String,
+    pub is_verified: bool,
+    pub created_at: DateTime<Utc>,
+    pub id_signed: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthUserDetails {
+    pub email: String,
+    pub created_at: DateTime<Utc>,
+    pub id_signed: bool,
 }

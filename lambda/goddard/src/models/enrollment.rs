@@ -238,3 +238,46 @@ pub struct AuthUserDetails {
     pub created_at: DateTime<Utc>,
     pub id_signed: bool,
 }
+
+// 8.6 Get Enrollment Children with Form Assignments
+#[derive(Debug, Deserialize)]
+pub struct GetEnrollmentChildrenRequest {
+    pub school_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetEnrollmentChildrenResponse {
+    pub children: Vec<EnrollmentChildWithForms>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EnrollmentChildWithForms {
+    pub child_id: Uuid,
+    pub child_first_name: String,
+    pub child_last_name: String,
+    pub class_name: String,
+    pub primary_email: String,
+    pub form_status: String,
+    pub forms: serde_json::Value, // JSON object with form_template_id as key and form_name as value
+    pub additional_parent_email: Option<String>,
+}
+
+// 8.5 Get Class-wise Child Count Details
+#[derive(Debug, Deserialize)]
+pub struct GetClassWiseCountRequest {
+    pub school_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetClassWiseCountResponse {
+    pub classes: Vec<ClassWiseCount>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClassWiseCount {
+    pub class_id: Uuid,
+    pub class_name: String,
+    pub count: i64,
+    pub forms: serde_json::Value,
+    pub default_forms: String,
+}

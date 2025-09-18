@@ -9,7 +9,9 @@ use crate::models::enrollment::{
     AuthUserResult, FormTemplate, ClassFormOverride, CreatedFormAssignment,
     ResendConfirmationRequest, ResendConfirmationResponse, ResendConfirmationParentDetails,
     AddChildRequest, AddChildResponse, AddChildDetails, AddChildParentDetails,
-    GetParentDetailsBySchoolRequest, GetParentDetailsBySchoolResponse, ParentWithAuthDetails
+    GetParentDetailsBySchoolRequest, GetParentDetailsBySchoolResponse, ParentWithAuthDetails,
+    GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
+    GetClassWiseCountRequest, GetClassWiseCountResponse
 };
 use crate::error::AppError;
 
@@ -359,6 +361,30 @@ impl EnrollmentService {
             total_parents: parents_with_auth.len(),
             message: format!("Retrieved {} parent details successfully", parents_with_auth.len()),
             parents: parents_with_auth,
+        };
+
+        Ok(response)
+    }
+
+    // 8.6 Get Enrollment Children with Form Assignments
+    pub async fn get_enrollment_children_with_forms(&self, request: GetEnrollmentChildrenRequest) -> ApiResult<GetEnrollmentChildrenResponse> {
+        // Get enrollment children with their form assignments
+        let children = self.enrollment_dao.get_enrollment_children_with_forms(request.school_id).await?;
+
+        let response = GetEnrollmentChildrenResponse {
+            children,
+        };
+
+        Ok(response)
+    }
+
+    // 8.5 Get Class-wise Child Count Details
+    pub async fn get_class_wise_count(&self, request: GetClassWiseCountRequest) -> ApiResult<GetClassWiseCountResponse> {
+        // Get class-wise count details
+        let classes = self.enrollment_dao.get_class_wise_count(request.school_id).await?;
+
+        let response = GetClassWiseCountResponse {
+            classes,
         };
 
         Ok(response)

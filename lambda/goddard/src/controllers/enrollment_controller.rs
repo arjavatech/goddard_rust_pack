@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -56,5 +56,25 @@ pub async fn get_parent_details_by_school(
 ) -> Result<impl IntoResponse, AppError> {
     // API key middleware will handle authentication
     let response = enrollment_service.get_parent_details_by_school(query).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// GET /enrollments/children-forms?school_id={uuid}
+/// Get enrollment children with form assignments (JWT protected)
+pub async fn get_enrollment_children_with_forms(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    axum::extract::Query(query): axum::extract::Query<GetEnrollmentChildrenRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = enrollment_service.get_enrollment_children_with_forms(query).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// GET /enrollments/class-wise-count?school_id={uuid}
+/// Get class-wise child count details (API Key protected)
+pub async fn get_class_wise_count(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    axum::extract::Query(query): axum::extract::Query<GetClassWiseCountRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = enrollment_service.get_class_wise_count(query).await?;
     Ok(ResponseUtils::success(response))
 }

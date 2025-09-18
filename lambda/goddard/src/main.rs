@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post, put, delete},
     Router,
 };
-use lambda_http::{run, Error};
+use lambda_http::run;
 use tower_http::cors::{Any, CorsLayer};
 
 mod controllers;
@@ -36,14 +36,17 @@ use controllers::{
     class_form_override_controller::{
         create_class_form_override, delete_class_form_override
     },
+    enrollment_controller::{
+        create_parent_invite
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, /* UserDao, EnrollmentDao */
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, /* UserService, EnrollmentService */
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService
 };
 use middleware::auth::{api_key_middleware};
 use std::sync::Arc;
@@ -83,6 +86,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let classroom_dao = ClassroomDao::new(pool.clone());
     let form_template_dao = FormTemplateDao::new(pool.clone());
     let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
+    let enrollment_dao = EnrollmentDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -94,6 +98,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
+    let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -151,6 +156,10 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/class-form-overrides", delete(delete_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(class_form_override_service)
 
+        // Enrollment Management APIs (API Key Protected for Testing)
+        .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(enrollment_service)
+
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(cors);
@@ -169,6 +178,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let classroom_dao = ClassroomDao::new(pool.clone());
     let form_template_dao = FormTemplateDao::new(pool.clone());
     let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
+    let enrollment_dao = EnrollmentDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
@@ -179,6 +189,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
+    let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -234,6 +245,10 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/class-form-overrides", post(create_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/class-form-overrides", delete(delete_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(class_form_override_service)
+
+        // Enrollment Management APIs (API Key Protected for Testing)
+        .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(enrollment_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

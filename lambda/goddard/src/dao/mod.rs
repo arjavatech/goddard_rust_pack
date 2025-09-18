@@ -5,6 +5,7 @@ pub mod form_template_dao;
 pub mod class_form_override_dao;
 pub mod enrollment_dao;
 pub mod form_submission_dao;
+pub mod student_form_assignment_dao;
 
 pub use auth_dao::AuthDao;
 pub use school_dao::SchoolDao;
@@ -13,3 +14,4 @@ pub use form_template_dao::FormTemplateDao;
 pub use class_form_override_dao::ClassFormOverrideDao;
 pub use enrollment_dao::EnrollmentDao;
 pub use form_submission_dao::FormSubmissionDao;
+pub use student_form_assignment_dao::StudentFormAssignmentDao;

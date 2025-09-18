@@ -43,14 +43,17 @@ use controllers::{
         create_form_submission_webhook, get_latest_form_submission, get_form_submission_versions,
         get_form_submission_by_id, update_form_submission_status
     },
+    student_form_assignment_controller::{
+        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService
 };
 use middleware::auth::{api_key_middleware};
 use std::sync::Arc;
@@ -92,6 +95,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
     let enrollment_dao = EnrollmentDao::new(pool.clone());
     let form_submission_dao = FormSubmissionDao::new(pool.clone());
+    let student_form_assignment_dao = StudentFormAssignmentDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -105,6 +109,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
     let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
+    let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -181,6 +186,13 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/form-submissions/:submission_id/status", put(update_form_submission_status).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(form_submission_service)
 
+        // Student Form Assignments Management APIs (API Key Protected)
+        .route("/student-form-assignments", post(create_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments", get(get_assignments_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(student_form_assignment_service)
+
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(cors);
@@ -201,6 +213,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let class_form_override_dao = ClassFormOverrideDao::new(pool.clone());
     let enrollment_dao = EnrollmentDao::new(pool.clone());
     let form_submission_dao = FormSubmissionDao::new(pool.clone());
+    let student_form_assignment_dao = StudentFormAssignmentDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
@@ -213,6 +226,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
     let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
+    let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -287,12 +301,19 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/form-submissions/:submission_id/status", put(update_form_submission_status).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(form_submission_service)
 
+        // Student Form Assignments Management APIs (API Key Protected)
+        .route("/student-form-assignments", post(create_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments", get(get_assignments_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(student_form_assignment_service)
+
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(cors);
 
-    println!("Starting local server on http://localhost:8080");
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    println!("Starting local server on http://localhost:9000");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await?;
     axum::serve(listener, app).await?;
 
     Ok(())

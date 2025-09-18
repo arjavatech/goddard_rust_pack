@@ -24,6 +24,7 @@ pub struct CreateClassFormOverrideRequest {
 #[derive(Debug, Deserialize)]
 pub struct DeleteClassFormOverrideParams {
     pub id: Uuid,
+    pub school_id: Uuid,
 }
 
 #[derive(Debug, Serialize)]

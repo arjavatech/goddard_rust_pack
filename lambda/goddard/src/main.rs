@@ -38,7 +38,7 @@ use controllers::{
     },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
-use config::DatabaseConfig;
+use config::database::{initialize_database, get_db_pool};
 use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, /* UserDao, EnrollmentDao */
 };
@@ -60,9 +60,9 @@ async fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
 
     // Initialize database connection
-    let db_config = DatabaseConfig::from_env();
-    let pool = db_config.create_pool().await
+    initialize_database().await
         .map_err(|e| lambda_http::Error::from(format!("Database connection error: {}", e)))?;
+    let pool = get_db_pool();
 
     // Initialize DAOs
     let auth_dao = AuthDao::new(pool.clone());

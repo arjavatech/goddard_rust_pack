@@ -22,7 +22,7 @@ impl ClassFormOverrideService {
         self.dao.create_class_form_override(&request).await
     }
 
-    pub async fn delete_class_form_override(&self, override_id: Uuid) -> Result<ClassFormOverride, AppError> {
-        self.dao.delete_class_form_override(&override_id).await
+    pub async fn delete_class_form_override(&self, override_id: Uuid, school_id: Uuid) -> Result<(), AppError> {
+        self.dao.delete_class_form_override(&override_id, &school_id).await
     }
 }

@@ -10,15 +10,15 @@ pub mod connection;
 // pub mod documents;
 // pub mod admin;
 
-use sqlx::{Pool, Postgres};
+use deadpool_postgres::Pool;
 use std::sync::Arc;
 
-pub type DbPool = Arc<Pool<Postgres>>;
+pub type DbPool = Arc<Pool>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
     #[error("Database query failed: {0}")]
-    QueryError(#[from] sqlx::Error),
+    QueryError(#[from] tokio_postgres::Error),
 
     #[error("Record not found")]
     NotFound,

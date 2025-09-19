@@ -7,3 +7,4 @@ pub mod class_form_override_controller;
 pub mod enrollment_controller;
 pub mod form_submission_controller;
 pub mod student_form_assignment_controller;
+pub mod portal_controller;

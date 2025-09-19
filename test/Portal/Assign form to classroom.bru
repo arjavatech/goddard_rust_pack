@@ -1,0 +1,15 @@
+meta {
+  name: Assign form to classroom
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/classrooms/{{class_id}}/forms
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

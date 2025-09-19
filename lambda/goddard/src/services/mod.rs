@@ -7,6 +7,7 @@ pub mod class_form_override_service;
 pub mod enrollment_service;
 pub mod form_submission_service;
 pub mod student_form_assignment_service;
+pub mod portal_service;
 
 pub use auth_service::AuthService;
 pub use supabase_client::SupabaseClient;
@@ -17,3 +18,4 @@ pub use class_form_override_service::ClassFormOverrideService;
 pub use enrollment_service::EnrollmentService;
 pub use form_submission_service::FormSubmissionService;
 pub use student_form_assignment_service::StudentFormAssignmentService;
+pub use portal_service::PortalService;

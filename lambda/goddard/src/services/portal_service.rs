@@ -166,7 +166,7 @@ impl PortalService {
                 status: form.status,
                 due_date: form.due_date,
                 assigned_by: form.assigned_by,
-                assigned_at: form.assigned_at,
+                assigned_at: form.assigned_at.and_utc(),
             });
         }
 

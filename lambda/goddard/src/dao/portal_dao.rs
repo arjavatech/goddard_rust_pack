@@ -1,5 +1,5 @@
 use uuid::Uuid;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
 
@@ -59,7 +59,7 @@ pub struct ClassroomForm {
     pub status: String,
     pub due_date: Option<NaiveDate>,
     pub assigned_by: String,
-    pub assigned_at: chrono::DateTime<chrono::Utc>,
+    pub assigned_at: chrono::NaiveDateTime,
 }
 
 pub struct ClassroomFormAssignment {
@@ -278,8 +278,8 @@ impl PortalDao {
                 c.name,
                 c.capacity,
                 c.age_group,
-                c.notes,
-                COALESCE(c.teachers, ARRAY[]::text[]) as teachers,
+                NULL as notes,
+                ARRAY[]::text[] as teachers,
                 COUNT(e.id) as enrolled_count
             FROM classrooms c
             LEFT JOIN enrollments e ON c.id = e.classroom_id
@@ -287,7 +287,7 @@ impl PortalDao {
                 AND (e.is_active = true OR e.is_active IS NULL)
             WHERE c.id = $1
                 AND (c.is_active = true OR c.is_active IS NULL)
-            GROUP BY c.id
+            GROUP BY c.id, c.name, c.capacity, c.age_group
         ";
 
         let row = client.query_one(query, &[classroom_id]).await
@@ -313,19 +313,24 @@ impl PortalDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Connection pool error: {}", e)))?;
 
+        // First get school_id from classroom
+        let school_query = "SELECT school_id FROM classrooms WHERE id = $1";
+        let school_row = client.query_one(school_query, &[classroom_id]).await
+            .map_err(|e| AppError::Database(format!("Classroom not found: {}", e)))?;
+        let school_id: Uuid = school_row.get("school_id");
+
         let query = "
             SELECT
-                cf.form_template_id,
-                ft.form_name as title,
-                cf.status,
-                cf.due_date,
-                cf.assigned_by,
-                cf.created_at as assigned_at
-            FROM classroom_forms cf
-            JOIN form_templates ft ON cf.form_template_id = ft.id
-            WHERE cf.classroom_id = $1
-                AND (cf.is_active = true OR cf.is_active IS NULL)
-            ORDER BY cf.due_date ASC NULLS LAST
+                cfo.form_template_id,
+                ft.form_name AS title,
+                'active' AS status,
+                NULL::date AS due_date,
+                'classroom' AS assigned_by,
+                cfo.created_at AS assigned_at
+            FROM class_form_overrides cfo
+            JOIN form_templates ft ON cfo.form_template_id = ft.id
+            WHERE cfo.classroom_id = $1
+                AND (cfo.is_active = true OR cfo.is_active IS NULL)
         ";
 
         let rows = client.query(query, &[classroom_id]).await
@@ -363,16 +368,16 @@ impl PortalDao {
         let school_id: Uuid = school_row.get("school_id");
 
         let query = "
-            INSERT INTO classroom_forms
-                (id, school_id, classroom_id, form_template_id, status, due_date, assigned_by, notes, created_at)
+            INSERT INTO class_form_overrides
+                (id, school_id, classroom_id, form_template_id, action, is_required, created_at)
             VALUES
-                (gen_random_uuid(), $1, $2, $3, 'active', $4, $5, $6, NOW())
-            RETURNING id, classroom_id, form_template_id, due_date, created_at
+                (gen_random_uuid(), $1, $2, $3, 'include', true, NOW())
+            RETURNING id, classroom_id, form_template_id, created_at
         ";
 
         let row = client.query_one(
             query,
-            &[&school_id, classroom_id, form_template_id, &due_date, &assigned_by, &notes]
+            &[&school_id, classroom_id, form_template_id]
         ).await
         .map_err(|e| AppError::Database(format!("Failed to assign form: {}", e)))?;
 
@@ -380,7 +385,7 @@ impl PortalDao {
             id: row.get("id"),
             classroom_id: row.get("classroom_id"),
             form_template_id: row.get("form_template_id"),
-            due_date: row.get("due_date"),
+            due_date: due_date,
             created_at: row.get("created_at"),
         })
     }
@@ -394,7 +399,7 @@ impl PortalDao {
             .map_err(|e| AppError::Database(format!("Connection pool error: {}", e)))?;
 
         let query = "
-            UPDATE classroom_forms
+            UPDATE class_form_overrides
             SET is_active = false, updated_at = NOW()
             WHERE classroom_id = $1 AND form_template_id = $2
         ";

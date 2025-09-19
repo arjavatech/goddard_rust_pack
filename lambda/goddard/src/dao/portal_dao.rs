@@ -68,7 +68,7 @@ pub struct ClassroomFormAssignment {
     pub classroom_id: Uuid,
     pub form_template_id: Uuid,
     pub due_date: Option<NaiveDate>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: chrono::NaiveDateTime,
 }
 
 pub struct PortalDao {
@@ -329,7 +329,7 @@ impl PortalDao {
                 'active' AS status,
                 NULL::date AS due_date,
                 'classroom' AS assigned_by,
-                cfo.created_at AS assigned_at
+                COALESCE(cfo.created_at, NOW()::timestamp) AS assigned_at
             FROM class_form_overrides cfo
             JOIN form_templates ft ON cfo.form_template_id = ft.id
             WHERE cfo.classroom_id = $1

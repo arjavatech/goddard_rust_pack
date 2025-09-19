@@ -194,7 +194,7 @@ impl PortalService {
             status: "active".to_string(),
             due_date: result.due_date,
             assigned_by: assigned_by.to_string(),
-            created_at: result.created_at,
+            created_at: result.created_at.and_utc(),
         })
     }
 

@@ -28,8 +28,9 @@ pub struct ChildData {
     pub last_name: String,
     pub dob: NaiveDate,
     pub age: i32,
+    pub gender: Option<String>,
     pub class_name: String,
-    pub enrollment_id: Uuid,
+    pub enrollment_id: Option<Uuid>,
 }
 
 pub struct ChildForm {
@@ -115,6 +116,7 @@ impl PortalDao {
                 c.last_name,
                 c.birth_date as dob,
                 DATE_PART('year', AGE(c.birth_date))::int as age,
+                c.gender,
                 COALESCE(cl.name, 'Not Enrolled') as class_name,
                 e.id as enrollment_id
             FROM children c
@@ -135,6 +137,7 @@ impl PortalDao {
                 last_name: row.get("last_name"),
                 dob: row.get("dob"),
                 age: row.get("age"),
+                gender: row.get("gender"),
                 class_name: row.get("class_name"),
                 enrollment_id: row.get("enrollment_id"),
             }
@@ -152,14 +155,14 @@ impl PortalDao {
                 c.id,
                 c.first_name,
                 c.last_name,
-                c.gender
+                c.gender,
                 c.birth_date as dob,
                 DATE_PART('year', AGE(c.birth_date))::int as age,
                 cl.name as class_name,
                 e.id as enrollment_id
             FROM children c
-            JOIN enrollments e ON c.id = e.child_id
-            JOIN classrooms cl ON e.classroom_id = cl.id
+            LEFT JOIN enrollments e ON c.id = e.child_id AND (e.is_active = true OR e.is_active IS NULL)
+            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE c.id = $1 AND c.parent_id = $2
                 AND (c.is_active = true OR c.is_active IS NULL)
         ";
@@ -173,6 +176,7 @@ impl PortalDao {
             last_name: row.get("last_name"),
             dob: row.get("dob"),
             age: row.get("age"),
+            gender: row.get("gender"),
             class_name: row.get("class_name"),
             enrollment_id: row.get("enrollment_id"),
         })

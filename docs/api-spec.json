@@ -732,6 +732,334 @@
             "format": "date-time"
           }
         }
+      },
+      "UserContext": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["Parent", "Admin", "SuperAdmin"]
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "school_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          }
+        }
+      },
+      "Child": {
+        "type": "object",
+        "properties": {
+          "child_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "dob": {
+            "type": "string",
+            "format": "date"
+          },
+          "age": {
+            "type": "integer"
+          },
+          "class_name": {
+            "type": "string"
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ChildProfile": {
+        "type": "object",
+        "properties": {
+          "child_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "dob": {
+            "type": "string",
+            "format": "date"
+          },
+          "age": {
+            "type": "integer"
+          },
+          "class_name": {
+            "type": "string"
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enrollment_progress": {
+            "type": "object",
+            "properties": {
+              "total_forms": {
+                "type": "integer"
+              },
+              "completed_forms": {
+                "type": "integer"
+              },
+              "completion_percentage": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ChildForm": {
+        "type": "object",
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "form_template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed"]
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "launch_url": {
+            "type": "string"
+          }
+        }
+      },
+      "ClassroomDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "age_group": {
+            "type": "string"
+          },
+          "teachers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "enrolled_count": {
+            "type": "integer"
+          },
+          "available_spots": {
+            "type": "integer"
+          }
+        }
+      },
+      "ClassroomForm": {
+        "type": "object",
+        "properties": {
+          "form_template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive"]
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "assigned_by": {
+            "type": "string",
+            "format": "email"
+          },
+          "assigned_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AssignClassroomFormRequest": {
+        "type": "object",
+        "required": ["form_template_id"],
+        "properties": {
+          "form_template_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "ParentProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone_numbers": {
+            "type": "object",
+            "properties": {
+              "primary": {
+                "type": "string"
+              },
+              "secondary": {
+                "type": "string"
+              }
+            }
+          },
+          "mailing_address": {
+            "type": "object",
+            "properties": {
+              "street": {
+                "type": "string"
+              },
+              "city": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "zip": {
+                "type": "string"
+              }
+            }
+          },
+          "linked_children": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "child_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "first_name": {
+                  "type": "string"
+                },
+                "last_name": {
+                  "type": "string"
+                },
+                "classroom": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ChildDemographics": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "dob": {
+            "type": "string",
+            "format": "date"
+          },
+          "age": {
+            "type": "integer"
+          },
+          "classroom_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classroom_name": {
+            "type": "string"
+          },
+          "guardian_references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "parent_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "relationship": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1766,6 +2094,430 @@
         }
       }
     },
+    "/users/me": {
+      "get": {
+        "summary": "Get user context",
+        "description": "Get current user context including parent_id and school_id when authenticated as a parent",
+        "tags": ["Authentication"],
+        "security": [{"BearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "User context retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/UserContext"}
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/parents/{parent_id}/children": {
+      "get": {
+        "summary": "Get parent's children",
+        "description": "Return the list of children linked to the logged-in guardian",
+        "tags": ["Parents"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "parent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of children",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/Child"}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Parent not found"
+          }
+        }
+      }
+    },
+    "/parents/{parent_id}/children/{child_id}/profile": {
+      "get": {
+        "summary": "Get child profile",
+        "description": "Provide detailed child metadata for dashboard cards",
+        "tags": ["Parents"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "parent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "child_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Child profile details",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ChildProfile"}
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Child not found"
+          }
+        }
+      }
+    },
+    "/parents/{parent_id}/children/{child_id}/forms": {
+      "get": {
+        "summary": "Get child's assigned forms",
+        "description": "Surface assigned forms with richer metadata",
+        "tags": ["Parents"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "parent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "child_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of assigned forms",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/ChildForm"}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Child not found"
+          }
+        }
+      }
+    },
+    "/classrooms/{id}": {
+      "get": {
+        "summary": "Get classroom details",
+        "description": "Fetch detailed classroom profile",
+        "tags": ["Classrooms"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Classroom details",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ClassroomDetail"}
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied (Admin/SuperAdmin only)"
+          },
+          "404": {
+            "description": "Classroom not found"
+          }
+        }
+      }
+    },
+    "/classrooms/{id}/forms": {
+      "get": {
+        "summary": "Get classroom forms",
+        "description": "List forms assigned to a classroom",
+        "tags": ["Classrooms"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of classroom forms",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"$ref": "#/components/schemas/ClassroomForm"}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied (Admin/SuperAdmin only)"
+          },
+          "404": {
+            "description": "Classroom not found"
+          }
+        }
+      },
+      "post": {
+        "summary": "Assign form to classroom",
+        "description": "Manage classroom-level form overrides",
+        "tags": ["Classrooms"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/AssignClassroomFormRequest"}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Form assigned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "classroom_id": {"type": "string", "format": "uuid"},
+                    "form_template_id": {"type": "string", "format": "uuid"},
+                    "status": {"type": "string"},
+                    "due_date": {"type": "string", "format": "date"},
+                    "assigned_by": {"type": "string", "format": "email"},
+                    "created_at": {"type": "string", "format": "date-time"}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied (Admin/SuperAdmin only)"
+          },
+          "404": {
+            "description": "Classroom or form template not found"
+          }
+        }
+      }
+    },
+    "/classrooms/{id}/forms/{form_id}": {
+      "delete": {
+        "summary": "Remove form from classroom",
+        "description": "Delete classroom-level form override",
+        "tags": ["Classrooms"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "form_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Form assignment removed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied (Admin/SuperAdmin only)"
+          },
+          "404": {
+            "description": "Assignment not found"
+          }
+        }
+      }
+    },
+    "/parents/{parent_id}": {
+      "get": {
+        "summary": "Get parent profile",
+        "description": "Fetch a single parent profile with complete information",
+        "tags": ["Parents"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "parent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parent profile details",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ParentProfile"}
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied (Admin/SuperAdmin only)"
+          },
+          "404": {
+            "description": "Parent not found"
+          }
+        }
+      }
+    },
+    "/children/{child_id}": {
+      "get": {
+        "summary": "Get child demographics",
+        "description": "Retrieve child demographics and guardian information",
+        "tags": ["Children"],
+        "security": [{"BearerAuth": []}],
+        "parameters": [
+          {
+            "name": "child_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Child demographics details",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/ChildDemographics"}
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Access denied (Admin/SuperAdmin only)"
+          },
+          "404": {
+            "description": "Child not found"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health check",
@@ -1803,12 +2555,24 @@
   },
   "tags": [
     {
+      "name": "Authentication",
+      "description": "User authentication and context operations"
+    },
+    {
       "name": "Schools",
       "description": "School management operations"
     },
     {
       "name": "Classrooms",
       "description": "Classroom management operations"
+    },
+    {
+      "name": "Parents",
+      "description": "Parent portal operations"
+    },
+    {
+      "name": "Children",
+      "description": "Child management operations"
     },
     {
       "name": "Form Templates",

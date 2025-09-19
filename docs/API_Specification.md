@@ -2585,3 +2585,393 @@ GROUP BY s.id, s.name;
 - Regulatory compliance reporting
 
 ---
+
+## 10. Missing APIs - Implementation Required
+
+### Parent Portal APIs
+
+#### 10.1 Get User Context (Enhancement)
+```
+GET /users/me
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+{
+  "user_id": "uuid",
+  "email": "parent@example.com",
+  "role": "Parent",
+  "parent_id": "uuid",
+  "school_id": "uuid",
+  "first_name": "John",
+  "last_name": "Doe"
+}
+
+Error Responses:
+- 401: Unauthorized
+```
+
+**Database Query:**
+```sql
+SELECT u.id as user_id, u.email, u.role,
+       p.id as parent_id, p.school_id,
+       p.first_name, p.last_name
+FROM users u
+LEFT JOIN parents p ON u.id = p.user_id
+WHERE u.id = $1;
+```
+
+#### 10.2 Get Parent's Children
+```
+GET /parents/{parent_id}/children
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+[
+  {
+    "child_id": "uuid",
+    "first_name": "Emma",
+    "last_name": "Doe",
+    "dob": "2020-05-15",
+    "age": 4,
+    "class_name": "Preschool A",
+    "enrollment_id": "uuid"
+  }
+]
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied
+- 404: Parent not found
+```
+
+**Database Query:**
+```sql
+SELECT c.id as child_id, c.first_name, c.last_name, c.dob,
+       DATE_PART('year', AGE(c.dob)) as age,
+       cl.name as class_name, e.id as enrollment_id
+FROM children c
+JOIN enrollments e ON c.id = e.child_id
+JOIN classrooms cl ON e.classroom_id = cl.id
+WHERE c.parent_id = $1 AND c.is_active = true
+ORDER BY c.first_name;
+```
+
+#### 10.3 Get Child Profile
+```
+GET /parents/{parent_id}/children/{child_id}/profile
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+{
+  "child_id": "uuid",
+  "first_name": "Emma",
+  "last_name": "Doe",
+  "dob": "2020-05-15",
+  "age": 4,
+  "class_name": "Preschool A",
+  "enrollment_id": "uuid",
+  "enrollment_progress": {
+    "total_forms": 8,
+    "completed_forms": 6,
+    "completion_percentage": 75
+  }
+}
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied
+- 404: Child not found
+```
+
+**Database Query:**
+```sql
+WITH form_stats AS (
+  SELECT COUNT(*) as total_forms,
+         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_forms
+  FROM student_form_assignments
+  WHERE child_id = $2
+)
+SELECT c.id as child_id, c.first_name, c.last_name, c.dob,
+       DATE_PART('year', AGE(c.dob)) as age,
+       cl.name as class_name, e.id as enrollment_id,
+       fs.total_forms, fs.completed_forms,
+       ROUND((fs.completed_forms::numeric / NULLIF(fs.total_forms, 0)) * 100) as completion_percentage
+FROM children c
+JOIN enrollments e ON c.id = e.child_id
+JOIN classrooms cl ON e.classroom_id = cl.id
+CROSS JOIN form_stats fs
+WHERE c.id = $2 AND c.parent_id = $1;
+```
+
+#### 10.4 Get Child's Assigned Forms
+```
+GET /parents/{parent_id}/children/{child_id}/forms
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+[
+  {
+    "assignment_id": "uuid",
+    "form_template_id": "uuid",
+    "title": "Emergency Contact Form",
+    "status": "pending",
+    "due_date": "2024-02-01",
+    "last_updated": "2024-01-15T10:30:00Z",
+    "launch_url": "https://forms.fillout.com/t/emergency-contact"
+  }
+]
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied
+- 404: Child not found
+```
+
+**Database Query:**
+```sql
+SELECT sfa.id as assignment_id, sfa.form_template_id,
+       ft.title, sfa.status, sfa.due_date,
+       sfa.updated_at as last_updated, ft.form_url as launch_url
+FROM student_form_assignments sfa
+JOIN form_templates ft ON sfa.form_template_id = ft.id
+WHERE sfa.child_id = $2
+  AND EXISTS (SELECT 1 FROM children WHERE id = $2 AND parent_id = $1)
+ORDER BY sfa.due_date ASC;
+```
+
+### Admin Portal APIs
+
+#### 10.5 Get Classroom Details
+```
+GET /classrooms/{id}
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+{
+  "id": "uuid",
+  "name": "Preschool A",
+  "capacity": 20,
+  "age_group": "3-4 years",
+  "teachers": ["Ms. Smith", "Ms. Johnson"],
+  "notes": "Morning session classroom",
+  "enrolled_count": 18,
+  "available_spots": 2
+}
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied (Admin/SuperAdmin only)
+- 404: Classroom not found
+```
+
+**Database Query:**
+```sql
+SELECT c.id, c.name, c.capacity, c.age_group,
+       c.teachers, c.notes,
+       COUNT(e.id) as enrolled_count,
+       (c.capacity - COUNT(e.id)) as available_spots
+FROM classrooms c
+LEFT JOIN enrollments e ON c.id = e.classroom_id AND e.status = 'active'
+WHERE c.id = $1
+GROUP BY c.id;
+```
+
+#### 10.6 Get Classroom Forms
+```
+GET /classrooms/{id}/forms
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+[
+  {
+    "form_template_id": "uuid",
+    "title": "Health Assessment Form",
+    "status": "active",
+    "due_date": "2024-02-15",
+    "assigned_by": "admin@school.com",
+    "assigned_at": "2024-01-10T08:00:00Z"
+  }
+]
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied (Admin/SuperAdmin only)
+- 404: Classroom not found
+```
+
+**Database Query:**
+```sql
+SELECT cf.form_template_id, ft.title, cf.status,
+       cf.due_date, cf.assigned_by, cf.created_at as assigned_at
+FROM classroom_forms cf
+JOIN form_templates ft ON cf.form_template_id = ft.id
+WHERE cf.classroom_id = $1 AND cf.is_active = true
+ORDER BY cf.due_date ASC;
+```
+
+#### 10.7 Assign Form to Classroom
+```
+POST /classrooms/{id}/forms
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Request Body:
+{
+  "form_template_id": "uuid",
+  "due_date": "2024-02-15",
+  "notes": "Required for all students"
+}
+
+Response (201):
+{
+  "id": "uuid",
+  "classroom_id": "uuid",
+  "form_template_id": "uuid",
+  "status": "active",
+  "due_date": "2024-02-15",
+  "assigned_by": "admin@school.com",
+  "created_at": "2024-01-15T10:30:00Z"
+}
+
+Error Responses:
+- 400: Invalid request
+- 401: Unauthorized
+- 403: Access denied (Admin/SuperAdmin only)
+- 404: Classroom or form template not found
+```
+
+#### 10.8 Remove Form from Classroom
+```
+DELETE /classrooms/{id}/forms/{form_id}
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+{
+  "message": "Form assignment removed successfully"
+}
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied (Admin/SuperAdmin only)
+- 404: Assignment not found
+```
+
+#### 10.9 Get Parent Profile
+```
+GET /parents/{parent_id}
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+{
+  "id": "uuid",
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john.doe@example.com",
+  "phone_numbers": {
+    "primary": "555-0100",
+    "secondary": "555-0101"
+  },
+  "mailing_address": {
+    "street": "123 Main St",
+    "city": "Springfield",
+    "state": "IL",
+    "zip": "62701"
+  },
+  "linked_children": [
+    {
+      "child_id": "uuid",
+      "first_name": "Emma",
+      "last_name": "Doe",
+      "classroom": "Preschool A"
+    }
+  ]
+}
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied (Admin/SuperAdmin only)
+- 404: Parent not found
+```
+
+**Database Query:**
+```sql
+SELECT p.id, p.first_name, p.last_name, p.email,
+       p.primary_phone as primary_phone,
+       p.secondary_phone as secondary_phone,
+       p.address_street, p.address_city, p.address_state, p.address_zip,
+       json_agg(
+         json_build_object(
+           'child_id', c.id,
+           'first_name', c.first_name,
+           'last_name', c.last_name,
+           'classroom', cl.name
+         )
+       ) as linked_children
+FROM parents p
+LEFT JOIN children c ON p.id = c.parent_id
+LEFT JOIN enrollments e ON c.id = e.child_id
+LEFT JOIN classrooms cl ON e.classroom_id = cl.id
+WHERE p.id = $1
+GROUP BY p.id;
+```
+
+#### 10.10 Get Child Demographics
+```
+GET /children/{child_id}
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+Response (200):
+{
+  "id": "uuid",
+  "first_name": "Emma",
+  "last_name": "Doe",
+  "dob": "2020-05-15",
+  "age": 4,
+  "classroom_id": "uuid",
+  "classroom_name": "Preschool A",
+  "guardian_references": [
+    {
+      "parent_id": "uuid",
+      "relationship": "Mother",
+      "name": "Jane Doe"
+    }
+  ]
+}
+
+Error Responses:
+- 401: Unauthorized
+- 403: Access denied (Admin/SuperAdmin only)
+- 404: Child not found
+```
+
+**Database Query:**
+```sql
+SELECT c.id, c.first_name, c.last_name, c.dob,
+       DATE_PART('year', AGE(c.dob)) as age,
+       e.classroom_id, cl.name as classroom_name,
+       json_agg(
+         json_build_object(
+           'parent_id', p.id,
+           'relationship', pc.relationship,
+           'name', CONCAT(p.first_name, ' ', p.last_name)
+         )
+       ) as guardian_references
+FROM children c
+LEFT JOIN enrollments e ON c.id = e.child_id
+LEFT JOIN classrooms cl ON e.classroom_id = cl.id
+LEFT JOIN parent_child pc ON c.id = pc.child_id
+LEFT JOIN parents p ON pc.parent_id = p.id
+WHERE c.id = $1
+GROUP BY c.id, e.classroom_id, cl.name;
+```
+
+---

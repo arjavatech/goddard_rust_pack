@@ -115,14 +115,13 @@ impl PortalDao {
                 c.last_name,
                 c.birth_date as dob,
                 DATE_PART('year', AGE(c.birth_date))::int as age,
-                cl.name as class_name,
+                COALESCE(cl.name, 'Not Enrolled') as class_name,
                 e.id as enrollment_id
             FROM children c
-            JOIN enrollments e ON c.id = e.child_id
-            JOIN classrooms cl ON e.classroom_id = cl.id
+            LEFT JOIN enrollments e ON c.id = e.child_id AND (e.is_active = true OR e.is_active IS NULL)
+            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE c.parent_id = $1
                 AND (c.is_active = true OR c.is_active IS NULL)
-                AND e.status = 'active'
             ORDER BY c.first_name
         ";
 

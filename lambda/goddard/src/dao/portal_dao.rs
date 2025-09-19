@@ -39,7 +39,7 @@ pub struct ChildForm {
     pub title: String,
     pub status: String,
     pub due_date: Option<NaiveDate>,
-    pub last_updated: chrono::DateTime<chrono::Utc>,
+    pub last_updated: chrono::NaiveDateTime,
     pub launch_url: Option<String>,
 }
 
@@ -219,7 +219,7 @@ impl PortalDao {
 
         let query = "
             SELECT 1 FROM children
-            WHERE id = $1 AND parent_id = $2
+            WHERE id = $1 AND (parent_id = $2 OR secondary_parent_id = $2)
                 AND (is_active = true OR is_active IS NULL)
         ";
 
@@ -239,14 +239,14 @@ impl PortalDao {
                 sfa.form_template_id,
                 ft.form_name as title,
                 sfa.status,
-                sfa.due_date,
-                sfa.updated_at as last_updated,
+                NULL::date as due_date,
+                COALESCE(sfa.updated_at, sfa.created_at) as last_updated,
                 ft.fillout_form_url as launch_url
             FROM student_form_assignments sfa
             JOIN form_templates ft ON sfa.form_template_id = ft.id
             WHERE sfa.child_id = $1
                 AND (sfa.is_active = true OR sfa.is_active IS NULL)
-            ORDER BY sfa.due_date ASC NULLS LAST
+            ORDER BY sfa.created_at DESC
         ";
 
         let rows = client.query(query, &[child_id]).await

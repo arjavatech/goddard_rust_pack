@@ -128,7 +128,7 @@ impl PortalService {
                 title: form.title,
                 status: form.status,
                 due_date: form.due_date,
-                last_updated: form.last_updated,
+                last_updated: form.last_updated.and_utc(),
                 launch_url: form.launch_url,
             });
         }

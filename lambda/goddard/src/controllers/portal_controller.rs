@@ -69,7 +69,7 @@ pub struct ChildResponse {
     pub dob: NaiveDate,
     pub age: i32,
     pub class_name: String,
-    pub enrollment_id: Uuid,
+    pub enrollment_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -87,7 +87,7 @@ pub struct ChildProfileResponse {
     pub dob: NaiveDate,
     pub age: i32,
     pub class_name: String,
-    pub enrollment_id: Uuid,
+    pub enrollment_id: Option<Uuid>,
     pub enrollment_progress: EnrollmentProgress,
 }
 

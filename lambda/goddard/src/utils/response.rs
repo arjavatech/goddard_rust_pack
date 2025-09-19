@@ -52,6 +52,17 @@ impl ResponseUtils {
         StatusCode::NO_CONTENT
     }
 
+    pub fn success_with_message(message: &str) -> impl IntoResponse {
+        let response = ApiResponse {
+            success: true,
+            data: None::<()>,
+            message: Some(message.to_string()),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        (StatusCode::OK, Json(response))
+    }
+
     pub fn paginated<T: Serialize>(
         data: Vec<T>,
         page: u32,

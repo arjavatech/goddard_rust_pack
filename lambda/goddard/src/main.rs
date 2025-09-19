@@ -46,16 +46,21 @@ use controllers::{
     student_form_assignment_controller::{
         create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment
     },
+    portal_controller::{
+        get_user_context, get_parent_children, get_child_profile, get_child_forms,
+        get_classroom_details, get_classroom_forms, assign_classroom_form, remove_classroom_form,
+        get_parent_profile, get_child_demographics
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService
 };
-use middleware::auth::{api_key_middleware};
+use middleware::auth::{api_key_middleware, jwt_middleware};
 use std::sync::Arc;
 
 
@@ -96,6 +101,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let enrollment_dao = EnrollmentDao::new(pool.clone());
     let form_submission_dao = FormSubmissionDao::new(pool.clone());
     let student_form_assignment_dao = StudentFormAssignmentDao::new(pool.clone());
+    let portal_dao = PortalDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -110,6 +116,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
     let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
+    let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -193,6 +200,19 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(student_form_assignment_service)
 
+        // Section 10 Portal APIs (API Key Protected - Testing)
+        .route("/users/me", get(get_user_context).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id", get(get_classroom_details).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id/forms", get(get_classroom_forms).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id/forms", post(assign_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id/forms/:form_id", delete(remove_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(portal_service)
+
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(cors);
@@ -214,6 +234,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let enrollment_dao = EnrollmentDao::new(pool.clone());
     let form_submission_dao = FormSubmissionDao::new(pool.clone());
     let student_form_assignment_dao = StudentFormAssignmentDao::new(pool.clone());
+    let portal_dao = PortalDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
@@ -227,6 +248,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
     let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
+    let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -307,6 +329,19 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(student_form_assignment_service)
+
+        // Section 10 Portal APIs (API Key Protected - Testing)
+        .route("/users/me", get(get_user_context).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id", get(get_classroom_details).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id/forms", get(get_classroom_forms).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id/forms", post(assign_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/classrooms/:id/forms/:form_id", delete(remove_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(api_key_middleware)))
+        .with_state(portal_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

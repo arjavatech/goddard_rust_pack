@@ -1,0 +1,15 @@
+meta {
+  name: Get parent's childre
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/parents/{{parent_id}}/children
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Get child's assigned forms
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/parents/{{parent_id}}/children/{{child_id}}/forms
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

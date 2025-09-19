@@ -1,0 +1,19 @@
+meta {
+  name: Get child demographics
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/children/{{child_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+settings {
+  encodeUrl: true
+}

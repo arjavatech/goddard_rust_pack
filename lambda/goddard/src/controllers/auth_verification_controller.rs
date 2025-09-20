@@ -2,6 +2,7 @@ use axum::{
     extract::{Query, State},
     response::IntoResponse,
     Json,
+    http::HeaderMap,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -59,4 +60,23 @@ pub async fn create_invitation(
 ) -> Result<impl IntoResponse, AppError> {
     let response = auth_service.create_invitation(payload).await?;
     Ok(ResponseUtils::success(response))
+}
+
+/// DELETE /auth/clear-table
+/// Clear Supabase authentication table (Admin only)
+pub async fn clear_auth_table(
+    headers: HeaderMap,
+    State(auth_service): State<Arc<AuthService>>,
+) -> Result<impl IntoResponse, AppError> {
+    // Check for admin API key
+    if let Some(api_key) = headers.get("X-API-Key").and_then(|v| v.to_str().ok()) {
+        if api_key != std::env::var("OWNER_API_KEY").unwrap_or_default() {
+            return Err(AppError::Authorization("Invalid API key".to_string()));
+        }
+    } else {
+        return Err(AppError::Authorization("API key required".to_string()));
+    }
+
+    auth_service.clear_auth_table().await?;
+    Ok(ResponseUtils::success_with_message("Authentication table cleared successfully"))
 }

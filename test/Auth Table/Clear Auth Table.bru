@@ -1,0 +1,15 @@
+meta {
+  name: Clear Auth Table
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{base_url}}/auth/clear-table
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

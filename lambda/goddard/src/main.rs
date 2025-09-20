@@ -23,7 +23,11 @@ use controllers::{
         get_auth_verification_status,
         get_invitation_summary,
         create_invitation,
-        clear_auth_table
+        create_invitation_enhanced,
+        clear_auth_table,
+        debug_auth_users,
+        get_users_by_school_and_role,
+        get_current_user_profile
     },
     school_controller::{
         create_school, get_all_schools, update_school, delete_school
@@ -147,7 +151,11 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/auth/invitation-summary", get(get_invitation_summary))
         // .route("/auth/resend-invitation", post(resend_invitation)) // DISABLED - resend_invitation not available
         .route("/auth/invite-create", post(create_invitation))
+        .route("/auth/invite-create-enhanced", post(create_invitation_enhanced))
         .route("/auth/clear-table", delete(clear_auth_table))
+        .route("/auth/debug-users", get(debug_auth_users))
+        .route("/auth/users/filter", get(get_users_by_school_and_role))
+        .route("/users/me", get(get_current_user_profile))
         .with_state(auth_service)
 
         // School Management APIs (API Key Protected)
@@ -203,7 +211,6 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .with_state(student_form_assignment_service)
 
         // Section 10 Portal APIs (API Key Protected - Testing)
-        .route("/users/me", get(get_user_context).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(api_key_middleware)))
@@ -279,7 +286,11 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/verification-status", get(get_auth_verification_status))
         .route("/auth/invitation-summary", get(get_invitation_summary))
         .route("/auth/invite-create", post(create_invitation))
+        .route("/auth/invite-create-enhanced", post(create_invitation_enhanced))
         .route("/auth/clear-table", delete(clear_auth_table))
+        .route("/auth/debug-users", get(debug_auth_users))
+        .route("/auth/users/filter", get(get_users_by_school_and_role))
+        .route("/users/me", get(get_current_user_profile))
         .with_state(auth_service)
 
         // School Management APIs (API Key Protected)
@@ -334,7 +345,6 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(student_form_assignment_service)
 
         // Section 10 Portal APIs (API Key Protected - Testing)
-        .route("/users/me", get(get_user_context).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(api_key_middleware)))

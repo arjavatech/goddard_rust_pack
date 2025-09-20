@@ -149,6 +149,13 @@ graph LR
 
 ### 2.2 Database Schema with Multi-Tenancy & Form Management
 
+#### 2.2.1 Uniqueness Constraints Strategy
+
+The system implements a two-tier uniqueness strategy for proper multi-tenant isolation:
+
+- **Globally Unique**: Must be unique across ALL schools (school names, subdomains, Fillout form IDs)
+- **School-Level Unique**: Must be unique within each school, but can be duplicated across schools (emails, classroom names, form names)
+
 ```mermaid
 erDiagram
     SCHOOLS ||--o{ USERS : has
@@ -156,14 +163,14 @@ erDiagram
     SCHOOLS ||--o{ FORM_TEMPLATES : manages
     SCHOOLS {
         uuid id PK
-        string name
-        string subdomain UK
+        string name UK "-- GLOBALLY UNIQUE: No duplicate school names"
+        string subdomain UK "-- GLOBALLY UNIQUE: For URL routing"
         jsonb settings
         boolean is_active "-- Default: true"
         timestamp created_at
         timestamp updated_at
     }
-    
+
     USERS ||--o{ CHILDREN : has
     USERS ||--o{ ENROLLMENTS : creates
     USERS {
@@ -171,11 +178,13 @@ erDiagram
         uuid school_id FK
         string first_name
         string last_name
-        string email UK
+        string email "-- SCHOOL-LEVEL UNIQUE: (school_id, email)"
         string role
         uuid created_by FK
         timestamp created_at
         jsonb metadata
+        boolean is_verified "-- Default: false"
+        boolean is_active "-- Default: true"
     }
 
     CHILDREN ||--|| ENROLLMENTS : enrolled_via
@@ -189,6 +198,9 @@ erDiagram
         date birth_date
         string gender "-- Optional"
         string status "-- Default: Active"
+        boolean is_active "-- Default: true"
+        timestamp created_at
+        timestamp updated_at
     }
     
     ENROLLMENTS ||--o{ STUDENT_FORM_ASSIGNMENTS : has
@@ -210,7 +222,7 @@ erDiagram
     FORM_TEMPLATES {
         uuid id PK
         uuid school_id FK
-        string form_name
+        string form_name "-- Unique per school (school_id, form_name)"
         string form_type
         string fillout_form_id
         string fillout_form_url
@@ -225,7 +237,7 @@ erDiagram
     CLASSROOMS {
         uuid id PK
         uuid school_id FK
-        string name
+        string name "-- Unique per school (school_id, name)"
         string age_group
         integer capacity
         integer enrolled_count
@@ -279,6 +291,39 @@ erDiagram
         timestamp uploaded_at
     }
 ```
+
+#### 2.2.2 Uniqueness Constraints Summary
+
+| Table | Field | Constraint Type | SQL Implementation | Business Rationale |
+|-------|-------|----------------|-------------------|-------------------|
+| **schools** | `name` | **Globally Unique** | `UNIQUE (name)` | School names must be unique across the entire system for brand clarity |
+| **schools** | `subdomain` | **Globally Unique** | `UNIQUE (subdomain)` | Subdomains must be globally unique for URL routing |
+| **users** | `email` | **School-Level Unique** | `UNIQUE (school_id, email)` | Same parent can enroll children in multiple schools |
+| **classrooms** | `name` | **School-Level Unique** | `UNIQUE (school_id, name)` | Schools can have same classroom names (e.g., "Kindergarten") |
+| **form_templates** | `form_name` | **School-Level Unique** | `UNIQUE (school_id, form_name)` | Schools can have same form names (e.g., "Enrollment Form") |
+| **form_templates** | `fillout_form_id` | **Globally Unique** | `UNIQUE (fillout_form_id)` | Fillout.com form IDs are globally unique |
+| **form_submissions** | `fillout_submission_id` | **Globally Unique** | `UNIQUE (fillout_submission_id)` | Prevents duplicate form submission processing |
+
+#### 2.2.3 Multi-Tenant Business Rules
+
+**Allowed Duplicates (School-Level Unique):**
+- ✅ Same parent email across different schools: `jane@email.com` can exist in School A and School B
+- ✅ Same classroom names across schools: "Kindergarten" can exist in multiple schools
+- ✅ Same form names across schools: "Enrollment Form" can exist in multiple schools
+
+**Prevented Duplicates (Globally Unique):**
+- ❌ School names: "Goddard School of Naperville" cannot be duplicated
+- ❌ Subdomains: "naperville" subdomain cannot be reused
+- ❌ Fillout form IDs: Same Fillout.com form cannot be assigned to multiple schools
+- ❌ Form submissions: Same submission cannot be processed twice
+
+#### 2.2.4 Data Integrity Benefits
+
+1. **Parent Flexibility**: Parents with children in multiple Goddard schools can use the same email
+2. **School Independence**: Schools can use familiar naming conventions without conflicts
+3. **Administrative Clarity**: Clear data separation prevents cross-school contamination
+4. **System Scalability**: Database can grow to hundreds of schools without naming conflicts
+5. **Compliance**: Proper tenant isolation supports COPPA/FERPA requirements
 
 ---
 

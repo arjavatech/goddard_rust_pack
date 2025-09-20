@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goddard School - Parent Registration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 450px;
+            width: 100%;
+            padding: 40px;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo h1 {
+            color: #764ba2;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            gap: 10px;
+        }
+
+        .step {
+            width: 40px;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            transition: background 0.3s;
+        }
+
+        .step.active {
+            background: #764ba2;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+        }
+
+        .password-requirements {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+
+        .requirement {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            color: #666;
+        }
+
+        .requirement.met {
+            color: #4caf50;
+        }
+
+        .requirement::before {
+            content: '○';
+            margin-right: 8px;
+            font-weight: bold;
+        }
+
+        .requirement.met::before {
+            content: '●';
+            color: #4caf50;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(118, 75, 162, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #4caf50;
+        }
+
+        .alert-error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef5350;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #2196f3;
+        }
+
+        .welcome-message {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .welcome-message h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .welcome-message p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #764ba2;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+
+        .info-box h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .info-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-box li {
+            padding: 5px 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .info-box li::before {
+            content: '✓';
+            color: #4caf50;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>🎓 Goddard School</h1>
+            <p>Complete Your Parent Registration</p>
+        </div>
+
+        <div class="step-indicator">
+            <div class="step active" id="step1"></div>
+            <div class="step" id="step2"></div>
+            <div class="step" id="step3"></div>
+        </div>
+
+        <div id="alertBox" class="hidden"></div>
+
+        <!-- Step 1: Email Verification -->
+        <div id="emailVerificationSection">
+            <div class="welcome-message">
+                <h2>Welcome to Goddard School!</h2>
+                <p>Please verify your email to continue with the enrollment process.</p>
+            </div>
+
+            <form id="emailVerificationForm">
+                <div class="form-group">
+                    <label for="verificationToken">Verification Token</label>
+                    <input type="text" id="verificationToken" placeholder="Check your email for the verification link" readonly>
+                </div>
+
+                <div class="info-box">
+                    <h3>What happens next?</h3>
+                    <ul>
+                        <li>Click the verification link in your email</li>
+                        <li>You'll be redirected back here to set your password</li>
+                        <li>Complete your child's enrollment forms</li>
+                    </ul>
+                </div>
+
+                <button type="button" id="resendEmailBtn">Resend Verification Email</button>
+            </form>
+        </div>
+
+        <!-- Step 2: Set Password -->
+        <div id="passwordSetupSection" class="hidden">
+            <div class="welcome-message">
+                <h2>Create Your Password</h2>
+                <p>Set a secure password for your account</p>
+            </div>
+
+            <form id="passwordSetupForm">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="newPassword">New Password</label>
+                    <input type="password" id="newPassword" placeholder="Enter your password" required>
+
+                    <div class="password-requirements">
+                        <div class="requirement" id="req-length">At least 8 characters</div>
+                        <div class="requirement" id="req-uppercase">One uppercase letter</div>
+                        <div class="requirement" id="req-lowercase">One lowercase letter</div>
+                        <div class="requirement" id="req-number">One number</div>
+                        <div class="requirement" id="req-special">One special character (!@#$%^&*)</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" placeholder="Re-enter your password" required>
+                </div>
+
+                <button type="submit" id="setPasswordBtn" disabled>Set Password & Continue</button>
+            </form>
+        </div>
+
+        <!-- Step 3: Success -->
+        <div id="successSection" class="hidden">
+            <div class="welcome-message">
+                <h2>🎉 Registration Complete!</h2>
+                <p>Your account has been successfully created.</p>
+            </div>
+
+            <div class="info-box">
+                <h3>Next Steps:</h3>
+                <ul>
+                    <li>You can now log in to your parent portal</li>
+                    <li>Complete your child's enrollment forms</li>
+                    <li>Upload required documents</li>
+                    <li>Schedule a school tour</li>
+                </ul>
+            </div>
+
+            <button type="button" id="goToPortalBtn">Go to Parent Portal</button>
+        </div>
+    </div>
+
+    <script>
+        // Supabase configuration
+        const SUPABASE_URL = 'https://fxsjcrwsnnowlovcnddz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4c2pjcndzbm5vd2xvdmNuZGR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyMzMwMTUsImV4cCI6MjA3MjgwOTAxNX0.U9NKNwSW9msZ5c-AHQLf_ff7lMRLuv453wGYK4gaELU';
+
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const confirmationToken = urlParams.get('token') || urlParams.get('confirmation_token');
+        const type = urlParams.get('type') || 'signup';
+        const access_token = urlParams.get('access_token');
+        const refresh_token = urlParams.get('refresh_token');
+
+        // Elements
+        const emailVerificationSection = document.getElementById('emailVerificationSection');
+        const passwordSetupSection = document.getElementById('passwordSetupSection');
+        const successSection = document.getElementById('successSection');
+        const alertBox = document.getElementById('alertBox');
+        const steps = document.querySelectorAll('.step');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Check if we have tokens from email confirmation
+            if (access_token && refresh_token) {
+                // User has confirmed email, show password setup
+                showPasswordSetup();
+                localStorage.setItem('access_token', access_token);
+                localStorage.setItem('refresh_token', refresh_token);
+
+                // Get user details
+                const user = await getCurrentUser(access_token);
+                if (user) {
+                    document.getElementById('email').value = user.email;
+                }
+            } else if (confirmationToken) {
+                // Process confirmation token
+                await processConfirmation(confirmationToken);
+            } else {
+                // Show email verification step
+                showEmailVerification();
+            }
+        });
+
+        function showAlert(message, type = 'info') {
+            alertBox.className = `alert alert-${type}`;
+            alertBox.textContent = message;
+            alertBox.classList.remove('hidden');
+            setTimeout(() => {
+                alertBox.classList.add('hidden');
+            }, 5000);
+        }
+
+        function updateSteps(step) {
+            steps.forEach((s, index) => {
+                if (index < step) {
+                    s.classList.add('active');
+                } else {
+                    s.classList.remove('active');
+                }
+            });
+        }
+
+        function showEmailVerification() {
+            emailVerificationSection.classList.remove('hidden');
+            passwordSetupSection.classList.add('hidden');
+            successSection.classList.add('hidden');
+            updateSteps(1);
+        }
+
+        function showPasswordSetup() {
+            emailVerificationSection.classList.add('hidden');
+            passwordSetupSection.classList.remove('hidden');
+            successSection.classList.add('hidden');
+            updateSteps(2);
+        }
+
+        function showSuccess() {
+            emailVerificationSection.classList.add('hidden');
+            passwordSetupSection.classList.add('hidden');
+            successSection.classList.remove('hidden');
+            updateSteps(3);
+        }
+
+        async function getCurrentUser(token) {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'apikey': SUPABASE_ANON_KEY
+                    }
+                });
+
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (error) {
+                console.error('Error getting user:', error);
+            }
+            return null;
+        }
+
+        async function processConfirmation(token) {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({
+                        token,
+                        type: 'signup'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    showPasswordSetup();
+
+                    if (data.user) {
+                        document.getElementById('email').value = data.user.email;
+                    }
+
+                    showAlert('Email verified successfully! Please set your password.', 'success');
+                } else {
+                    showAlert('Invalid or expired confirmation token.', 'error');
+                }
+            } catch (error) {
+                showAlert('Error processing confirmation.', 'error');
+                console.error('Confirmation error:', error);
+            }
+        }
+
+        // Password validation
+        const passwordInput = document.getElementById('newPassword');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const setPasswordBtn = document.getElementById('setPasswordBtn');
+
+        const requirements = {
+            length: { regex: /.{8,}/, element: document.getElementById('req-length') },
+            uppercase: { regex: /[A-Z]/, element: document.getElementById('req-uppercase') },
+            lowercase: { regex: /[a-z]/, element: document.getElementById('req-lowercase') },
+            number: { regex: /[0-9]/, element: document.getElementById('req-number') },
+            special: { regex: /[!@#$%^&*(),.?":{}|<>]/, element: document.getElementById('req-special') }
+        };
+
+        function validatePassword() {
+            const password = passwordInput.value;
+            let allMet = true;
+
+            for (const [key, req] of Object.entries(requirements)) {
+                if (req.regex.test(password)) {
+                    req.element.classList.add('met');
+                } else {
+                    req.element.classList.remove('met');
+                    allMet = false;
+                }
+            }
+
+            // Check if passwords match
+            const passwordsMatch = password === confirmPasswordInput.value && password.length > 0;
+
+            setPasswordBtn.disabled = !allMet || !passwordsMatch;
+            return allMet && passwordsMatch;
+        }
+
+        passwordInput.addEventListener('input', validatePassword);
+        confirmPasswordInput.addEventListener('input', validatePassword);
+
+        // Handle password setup form submission
+        document.getElementById('passwordSetupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!validatePassword()) {
+                showAlert('Please meet all password requirements.', 'error');
+                return;
+            }
+
+            const button = setPasswordBtn;
+            const originalText = button.textContent;
+            button.innerHTML = '<span class="loading"></span>';
+            button.disabled = true;
+
+            try {
+                const accessToken = localStorage.getItem('access_token');
+                if (!accessToken) {
+                    showAlert('Session expired. Please request a new verification email.', 'error');
+                    showEmailVerification();
+                    return;
+                }
+
+                const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({
+                        password: passwordInput.value
+                    })
+                });
+
+                if (response.ok) {
+                    showAlert('Password set successfully!', 'success');
+                    showSuccess();
+                } else {
+                    const error = await response.json();
+                    showAlert(error.msg || 'Failed to set password.', 'error');
+                }
+            } catch (error) {
+                showAlert('Network error. Please try again.', 'error');
+                console.error('Password setup error:', error);
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        });
+
+        // Resend verification email
+        document.getElementById('resendEmailBtn').addEventListener('click', async () => {
+            const email = prompt('Please enter your email address:');
+            if (!email) return;
+
+            const button = document.getElementById('resendEmailBtn');
+            const originalText = button.textContent;
+            button.innerHTML = '<span class="loading"></span>';
+            button.disabled = true;
+
+            try {
+                const response = await fetch(`${SUPABASE_URL}/auth/v1/resend`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        type: 'signup'
+                    })
+                });
+
+                if (response.ok) {
+                    showAlert('Verification email sent! Please check your inbox.', 'success');
+                } else {
+                    const error = await response.json();
+                    if (error.msg && error.msg.includes('rate limit')) {
+                        showAlert('Please wait before requesting another email.', 'info');
+                    } else {
+                        showAlert('Failed to send verification email.', 'error');
+                    }
+                }
+            } catch (error) {
+                showAlert('Network error. Please try again.', 'error');
+                console.error('Resend error:', error);
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        });
+
+        // Go to parent portal
+        document.getElementById('goToPortalBtn').addEventListener('click', () => {
+            // Redirect to parent portal or login page
+            window.location.href = '/login';
+        });
+
+        // Auto-populate token if present in URL
+        if (confirmationToken) {
+            document.getElementById('verificationToken').value = 'Token received - processing...';
+        }
+    </script>
+</body>
+</html>

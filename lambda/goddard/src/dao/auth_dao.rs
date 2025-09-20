@@ -141,6 +141,9 @@ impl AuthDao {
 
         match client.query_opt(query, &[&user_id]).await {
             Ok(Some(row)) => {
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+
                 Ok(UserDetails {
                     id: row.get("id"),
                     school_id: row.get("school_id"),
@@ -148,7 +151,7 @@ impl AuthDao {
                     last_name: row.get("last_name"),
                     email: row.get("email"),
                     role: row.get("role"),
-                    created_at: row.get("created_at"),
+                    created_at,
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found".to_string())),

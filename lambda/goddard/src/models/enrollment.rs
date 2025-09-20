@@ -227,7 +227,6 @@ pub struct ParentWithAuthDetails {
     pub last_name: String,
     pub email: String,
     pub role: String,
-    pub is_verified: bool,
     pub created_at: DateTime<Utc>,
     pub id_signed: bool,
 }

@@ -356,7 +356,6 @@ impl EnrollmentService {
                         last_name: parent.last_name,
                         email: parent.email,
                         role: parent.role,
-                        is_verified: parent.is_verified,
                         created_at: parent.created_at.map(|dt| {
                             chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
                         }).unwrap_or_else(chrono::Utc::now),

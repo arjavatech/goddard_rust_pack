@@ -340,48 +340,35 @@ impl AuthService {
     }
 
     pub async fn get_user_profile_from_jwt(&self, jwt_token: &str) -> ApiResult<FilteredUserResponse> {
-        // Verify JWT and get user data from Supabase
+        // Verify JWT to get user ID only (don't need full user data from auth table)
         let user_data = self.supabase_client.verify_jwt_and_get_user(jwt_token).await?;
 
-        // Extract basic user information
-        let user_id = user_data.get("id")
+        // Extract user ID from JWT
+        let user_id_str = user_data.get("id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::ExternalService("Missing user ID in JWT response".to_string()))?;
 
-        let email = user_data.get("email")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::ExternalService("Missing email in JWT response".to_string()))?;
+        let user_id = uuid::Uuid::parse_str(user_id_str)
+            .map_err(|_| AppError::Validation("Invalid user ID format".to_string()))?;
 
-        // Extract metadata
-        let metadata = user_data.get("user_metadata").unwrap_or(&serde_json::Value::Null);
-        let school_id = metadata.get("school_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let role = metadata.get("role")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let first_name = metadata.get("first_name")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-        let last_name = metadata.get("last_name")
-            .and_then(|v| v.as_str())
-            .map(String::from);
+        // Query our users table directly for user information
+        let user = self.dao.get_user_by_id(user_id).await?;
 
         // For parent role, use user_id as both user_id and parent_id
-        let parent_id = if role.to_lowercase() == "parent" {
-            Some(user_id.to_string())
+        let parent_id = if user.role.to_lowercase() == "parent" {
+            Some(user.id.to_string())
         } else {
             None
         };
 
         Ok(FilteredUserResponse {
-            school_id: school_id.to_string(),
-            role: role.to_string(),
-            user_id: user_id.to_string(),
-            email: email.to_string(),
+            school_id: user.school_id.to_string(),
+            role: user.role,
+            user_id: user.id.to_string(),
+            email: user.email,
             parent_id,
-            first_name,
-            last_name,
+            first_name: Some(user.first_name),
+            last_name: Some(user.last_name),
         })
     }
 }

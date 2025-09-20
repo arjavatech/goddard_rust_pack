@@ -224,4 +224,9 @@ impl AuthService {
             timestamp: Utc::now(),
         })
     }
+
+    pub async fn clear_auth_table(&self) -> ApiResult<()> {
+        self.supabase_client.clear_auth_table().await?;
+        Ok(())
+    }
 }

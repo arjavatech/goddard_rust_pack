@@ -237,4 +237,59 @@ impl SupabaseClient {
 
         Ok((email.to_string(), created_at, id_signed))
     }
+
+    pub async fn clear_auth_table(&self) -> Result<(), AppError> {
+        // First, get all users
+        let list_response = self.client
+            .get(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to list users: {}", e)))?;
+
+        if !list_response.status().is_success() {
+            let error_text = list_response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("Failed to list users: {}", error_text)));
+        }
+
+        let users: serde_json::Value = list_response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse users list: {}", e)))?;
+
+        // Extract user IDs
+        let user_ids: Vec<String> = if let Some(users_array) = users.get("users").and_then(|v| v.as_array()) {
+            users_array
+                .iter()
+                .filter_map(|user| user.get("id").and_then(|id| id.as_str()).map(String::from))
+                .collect()
+        } else if let Some(users_array) = users.as_array() {
+            users_array
+                .iter()
+                .filter_map(|user| user.get("id").and_then(|id| id.as_str()).map(String::from))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Delete each user individually
+        for user_id in user_ids {
+            let delete_response = self.client
+                .delete(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+                .header("Authorization", format!("Bearer {}", self.service_role_key))
+                .header("apikey", &self.service_role_key)
+                .send()
+                .await
+                .map_err(|e| AppError::ExternalService(format!("Failed to delete user {}: {}", user_id, e)))?;
+
+            if !delete_response.status().is_success() {
+                let error_text = delete_response.text().await.unwrap_or_default();
+                eprintln!("Failed to delete user {}: {}", user_id, error_text);
+                // Continue with other users even if one fails
+            }
+        }
+
+        Ok(())
+    }
 }

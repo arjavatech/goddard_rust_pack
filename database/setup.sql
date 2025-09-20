@@ -19,13 +19,10 @@ CREATE TABLE schools (
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
-    invite_id UUID,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     role VARCHAR(50) NOT NULL,
-    is_verified BOOLEAN DEFAULT false,
-    id_signed BOOLEAN DEFAULT false,
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP,
@@ -33,21 +30,8 @@ CREATE TABLE users (
     is_active BOOLEAN DEFAULT true
 );
 
--- 3. PARENT_ADDITIONAL_EMAILS Table
-CREATE TABLE parent_additional_emails (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID NOT NULL REFERENCES schools(id),
-    parent_id UUID NOT NULL REFERENCES users(id),
-    email_address VARCHAR(255) NOT NULL,
-    email_type VARCHAR(50),
-    is_verified BOOLEAN DEFAULT false,
-    is_active BOOLEAN DEFAULT true,
-    added_by UUID REFERENCES users(id),
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
 
--- 4. CHILDREN Table
+-- 3. CHILDREN Table
 CREATE TABLE children (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     parent_id UUID NOT NULL REFERENCES users(id),
@@ -63,7 +47,7 @@ CREATE TABLE children (
     updated_at TIMESTAMP
 );
 
--- 5. CLASSROOMS Table
+-- 4. CLASSROOMS Table
 CREATE TABLE classrooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
@@ -76,7 +60,7 @@ CREATE TABLE classrooms (
     updated_at TIMESTAMP
 );
 
--- 6. FORM_TEMPLATES Table
+-- 5. FORM_TEMPLATES Table
 CREATE TABLE form_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
@@ -92,7 +76,7 @@ CREATE TABLE form_templates (
     updated_at TIMESTAMP
 );
 
--- 7. ENROLLMENTS Table
+-- 6. ENROLLMENTS Table
 CREATE TABLE enrollments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     child_id UUID NOT NULL REFERENCES children(id),
@@ -107,7 +91,7 @@ CREATE TABLE enrollments (
     updated_at TIMESTAMP
 );
 
--- 8. CLASS_FORM_OVERRIDES Table
+-- 7. CLASS_FORM_OVERRIDES Table
 CREATE TABLE class_form_overrides (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
@@ -120,7 +104,7 @@ CREATE TABLE class_form_overrides (
     is_active BOOLEAN DEFAULT true
 );
 
--- 9. STUDENT_FORM_ASSIGNMENTS Table
+-- 8. STUDENT_FORM_ASSIGNMENTS Table
 CREATE TABLE student_form_assignments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
@@ -136,7 +120,7 @@ CREATE TABLE student_form_assignments (
     updated_at TIMESTAMP
 );
 
--- 10. FORM_SUBMISSIONS Table
+-- 9. FORM_SUBMISSIONS Table
 CREATE TABLE form_submissions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
@@ -153,7 +137,7 @@ CREATE TABLE form_submissions (
     updated_at TIMESTAMP
 );
 
--- 11. DOCUMENTS Table
+-- 10. DOCUMENTS Table
 CREATE TABLE documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     enrollment_id UUID NOT NULL REFERENCES enrollments(id),
@@ -164,19 +148,7 @@ CREATE TABLE documents (
     uploaded_at TIMESTAMP DEFAULT NOW()
 );
 
--- 12. USER_INVITATIONS Table
-CREATE TABLE user_invitations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    school_id UUID NOT NULL REFERENCES schools(id),
-    email VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL,
-    invite_id UUID UNIQUE NOT NULL,
-    expires_at TIMESTAMP,
-    is_used BOOLEAN DEFAULT false,
-    used_at TIMESTAMP,
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT NOW()
-);
+
 
 -- Create indexes for better performance
 CREATE INDEX idx_users_school_id ON users(school_id);
@@ -225,7 +197,6 @@ CHECK (status IN ('incomplete', 'in_progress', 'completed', 'archived'));
 -- Comments for documentation
 COMMENT ON TABLE schools IS 'School entities in the multi-tenant system';
 COMMENT ON TABLE users IS 'System users including parents, admins, and staff';
-COMMENT ON TABLE parent_additional_emails IS 'Additional email addresses for parents';
 COMMENT ON TABLE children IS 'Student/child records linked to parents';
 COMMENT ON TABLE classrooms IS 'Physical or logical classroom groupings';
 COMMENT ON TABLE form_templates IS 'Fillout.com form templates managed by schools';
@@ -234,3 +205,113 @@ COMMENT ON TABLE class_form_overrides IS 'Classroom-specific form requirements a
 COMMENT ON TABLE student_form_assignments IS 'Individual form assignments to students';
 COMMENT ON TABLE form_submissions IS 'Actual form submissions from Fillout.com webhooks';
 COMMENT ON TABLE documents IS 'File attachments and documents related to enrollments';
+
+-- ==========================================
+-- TRIGGER FUNCTION FOR SUPABASE AUTH INTEGRATION
+-- ==========================================
+-- This function automatically creates a user record in the public.users table
+-- when a new user signs up via Supabase Auth
+-- It extracts user metadata from auth.users and creates corresponding record
+
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Insert new user into public.users table using auth user data
+    INSERT INTO public.users (
+        id,
+        school_id,
+        first_name,
+        last_name,
+        email,
+        role,
+        created_at,
+        metadata,
+        is_active
+    ) VALUES (
+        NEW.id,  -- Use the same UUID from auth.users
+        COALESCE(
+            (NEW.raw_user_meta_data->>'school_id')::UUID,
+            NULL
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'first_name',
+            ''
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'last_name',
+            ''
+        ),
+        NEW.email,
+        COALESCE(
+            NEW.raw_user_meta_data->>'role',
+            'Parent'  -- Default role if not specified
+        ),
+        NOW(),
+        NEW.raw_user_meta_data,  -- Store complete metadata
+        true
+    );
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger on auth.users table
+-- This trigger fires after a new user is inserted in auth.users
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_auth_user();
+
+-- ==========================================
+-- OPTIONAL: Function to sync existing auth users
+-- ==========================================
+-- Run this once if you have existing auth users that need to be synced
+
+CREATE OR REPLACE FUNCTION public.sync_existing_auth_users()
+RETURNS void AS $$
+DECLARE
+    auth_user RECORD;
+BEGIN
+    FOR auth_user IN
+        SELECT * FROM auth.users
+        WHERE id NOT IN (SELECT id FROM public.users)
+    LOOP
+        INSERT INTO public.users (
+            id,
+            school_id,
+            first_name,
+            last_name,
+            email,
+            role,
+            created_at,
+            metadata,
+            is_active
+        ) VALUES (
+            auth_user.id,
+            COALESCE(
+                (auth_user.raw_user_meta_data->>'school_id')::UUID,
+                NULL
+            ),
+            COALESCE(
+                auth_user.raw_user_meta_data->>'first_name',
+                ''
+            ),
+            COALESCE(
+                auth_user.raw_user_meta_data->>'last_name',
+                ''
+            ),
+            auth_user.email,
+            COALESCE(
+                auth_user.raw_user_meta_data->>'role',
+                'Parent'
+            ),
+            auth_user.created_at,
+            auth_user.raw_user_meta_data,
+            true
+        ) ON CONFLICT (id) DO NOTHING;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- To sync existing users (run once if needed):
+-- SELECT public.sync_existing_auth_users();

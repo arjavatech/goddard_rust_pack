@@ -166,34 +166,18 @@ erDiagram
     
     USERS ||--o{ CHILDREN : has
     USERS ||--o{ ENROLLMENTS : creates
-    USERS ||--o{ PARENT_ADDITIONAL_EMAILS : has
     USERS {
         uuid id PK
         uuid school_id FK
-        uuid invite_id FK
         string first_name
         string last_name
         string email UK
         string role
-        boolean id_signed
         uuid created_by FK
         timestamp created_at
         jsonb metadata
     }
-    
-    PARENT_ADDITIONAL_EMAILS {
-        uuid id PK
-        uuid school_id FK
-        uuid parent_id FK
-        string email_address
-        string email_type
-        boolean is_verified
-        boolean is_active
-        uuid added_by FK
-        text notes
-        timestamp created_at
-    }
-    
+
     CHILDREN ||--|| ENROLLMENTS : enrolled_via
     CHILDREN {
         uuid id PK

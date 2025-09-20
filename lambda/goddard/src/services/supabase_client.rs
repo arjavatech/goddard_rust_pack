@@ -3,12 +3,56 @@ use reqwest::Client;
 use serde_json::json;
 use std::env;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserMetadata {
+    #[serde(serialize_with = "serialize_uuid_option", deserialize_with = "deserialize_uuid_option")]
+    pub school_id: Option<Uuid>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub role: Option<String>,
+}
+
+fn serialize_uuid_option<S>(uuid: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match uuid {
+        Some(u) => serializer.serialize_str(&u.to_string()),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_uuid_option<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    match opt {
+        Some(s) => Uuid::parse_str(&s).map(Some).map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
+
+impl UserMetadata {
+    pub fn new(school_id: Option<Uuid>, first_name: Option<String>, last_name: Option<String>, role: Option<String>) -> Self {
+        Self {
+            school_id,
+            first_name,
+            last_name,
+            role,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct SupabaseClient {
     client: Client,
     project_url: String,
     service_role_key: String,
+    anon_key: String,
 }
 
 impl SupabaseClient {
@@ -17,6 +61,8 @@ impl SupabaseClient {
             .map_err(|_| AppError::Internal("SUPABASE_URL must be set".to_string()))?;
         let service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
             .map_err(|_| AppError::Internal("SUPABASE_SERVICE_ROLE_KEY must be set".to_string()))?;
+        let anon_key = env::var("SUPABASE_ANON_KEY")
+            .map_err(|_| AppError::Internal("SUPABASE_ANON_KEY must be set".to_string()))?;
 
         // Check if the service role key is still the placeholder
         if service_role_key == "your_actual_service_role_key_here" {
@@ -29,6 +75,7 @@ impl SupabaseClient {
             client: Client::new(),
             project_url,
             service_role_key,
+            anon_key,
         })
     }
 
@@ -63,6 +110,14 @@ impl SupabaseClient {
         Ok(())
     }
 
+    pub async fn create_user_invitation_enhanced(&self, email: &str, metadata: UserMetadata) -> Result<String, AppError> {
+        // Convert UserMetadata to serde_json::Value
+        let user_metadata = serde_json::to_value(&metadata)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize user metadata: {}", e)))?;
+
+        self.create_user_invitation(email, Some(user_metadata)).await
+    }
+
     pub async fn create_user_invitation(&self, email: &str, user_metadata: Option<serde_json::Value>) -> Result<String, AppError> {
         // Step 1: Create user with email_confirm: false (unconfirmed state)
         let mut create_request_body = json!({
@@ -72,8 +127,13 @@ impl SupabaseClient {
 
         // Add user metadata if provided
         if let Some(metadata) = user_metadata {
+            // Log the metadata being sent for debugging
+            eprintln!("Sending user_metadata to Supabase: {}", serde_json::to_string_pretty(&metadata).unwrap_or_default());
             create_request_body["user_metadata"] = metadata;
         }
+
+        // Log the complete request body
+        eprintln!("Complete Supabase create user request: {}", serde_json::to_string_pretty(&create_request_body).unwrap_or_default());
 
         let create_response = self.client
             .post(&format!("{}/auth/v1/admin/users", self.project_url))
@@ -238,6 +298,44 @@ impl SupabaseClient {
         Ok((email.to_string(), created_at, id_signed))
     }
 
+    pub async fn get_user_metadata(&self, user_id: uuid::Uuid) -> Result<Option<UserMetadata>, AppError> {
+        let user_id_str = user_id.to_string();
+
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id_str))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to get user from Supabase: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            if status_code == 404 {
+                return Ok(None);
+            }
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!(
+                "Failed to get user from Supabase. Status: {}, Error: {}",
+                status_code, error_text
+            )));
+        }
+
+        let user_data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user response: {}", e)))?;
+
+        // Extract user_metadata
+        if let Some(metadata_value) = user_data.get("user_metadata") {
+            let user_metadata: UserMetadata = serde_json::from_value(metadata_value.clone())
+                .unwrap_or_else(|_| UserMetadata::new(None, None, None, None));
+            Ok(Some(user_metadata))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn clear_auth_table(&self) -> Result<(), AppError> {
         // First, get all users
         let list_response = self.client
@@ -291,5 +389,97 @@ impl SupabaseClient {
         }
 
         Ok(())
+    }
+
+    pub async fn debug_list_all_users(&self) -> Result<serde_json::Value, AppError> {
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to list users: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("Failed to list users: {}", error_text)));
+        }
+
+        let users: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse users list: {}", e)))?;
+
+        eprintln!("All Supabase auth users: {}", serde_json::to_string_pretty(&users).unwrap_or_default());
+        Ok(users)
+    }
+
+    pub async fn get_users_by_school_and_role(&self, school_id: &str, role: &str) -> Result<Vec<serde_json::Value>, AppError> {
+        // Get all users and filter manually since Supabase admin API doesn't support direct filtering
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to list users: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("Failed to list users: {}", error_text)));
+        }
+
+        let users_response: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse users list: {}", e)))?;
+
+        let empty_vec = vec![];
+        let users = users_response
+            .get("users")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty_vec);
+
+        let filtered_users: Vec<serde_json::Value> = users
+            .iter()
+            .filter(|user| {
+                let metadata = user.get("user_metadata");
+                if let Some(metadata) = metadata {
+                    let user_school_id = metadata.get("school_id").and_then(|v| v.as_str());
+                    let user_role = metadata.get("role").and_then(|v| v.as_str());
+
+                    user_school_id == Some(school_id) && user_role == Some(role)
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        Ok(filtered_users)
+    }
+
+    pub async fn verify_jwt_and_get_user(&self, jwt_token: &str) -> Result<serde_json::Value, AppError> {
+        let url = format!("{}/auth/v1/user", self.project_url);
+
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", jwt_token))
+            .header("apikey", &self.anon_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to verify JWT: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::Authorization(format!("Invalid JWT token: {}", error_text)));
+        }
+
+        let user_data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user data: {}", e)))?;
+
+        Ok(user_data)
     }
 }

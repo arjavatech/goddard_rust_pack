@@ -2,10 +2,11 @@ use crate::{
     dao::AuthDao,
     error::{AppError, ApiResult},
     utils::ValidationUtils,
-    services::SupabaseClient,
+    services::{SupabaseClient, supabase_client::UserMetadata},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid;
 
 #[derive(Debug, Serialize)]
 pub struct AuthVerificationResponse {
@@ -69,6 +70,15 @@ pub struct CreateInvitationRequest {
     pub user_metadata: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateInvitationRequestEnhanced {
+    pub email: String,
+    pub school_id: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub role: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CreateInvitationResponse {
     pub success: bool,
@@ -76,6 +86,17 @@ pub struct CreateInvitationResponse {
     pub email: String,
     pub user_id: String,
     pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FilteredUserResponse {
+    pub school_id: String,
+    pub role: String,
+    pub user_id: String,
+    pub email: String,
+    pub parent_id: Option<String>,
+    pub last_name: Option<String>,
+    pub first_name: Option<String>,
 }
 
 pub struct AuthService {
@@ -199,6 +220,44 @@ impl AuthService {
         })
     }
 
+    pub async fn create_invitation_enhanced(&self, request: CreateInvitationRequestEnhanced) -> ApiResult<CreateInvitationResponse> {
+        // Validate email format
+        ValidationUtils::validate_email(&request.email)?;
+
+        // Parse and validate school_id if provided
+        let school_uuid = if let Some(ref school_id) = request.school_id {
+            ValidationUtils::validate_uuid(school_id)?;
+            Some(uuid::Uuid::parse_str(school_id)
+                .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?)
+        } else {
+            None
+        };
+
+        // Check if user already exists
+        if self.dao.user_exists_by_email(&request.email).await? {
+            return Err(AppError::Conflict("User already exists".to_string()));
+        }
+
+        // Create user metadata
+        let metadata = UserMetadata::new(
+            school_uuid,
+            request.first_name.clone(),
+            request.last_name.clone(),
+            request.role.clone(),
+        );
+
+        // Create user invitation via Supabase with enhanced metadata
+        let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
+
+        Ok(CreateInvitationResponse {
+            success: true,
+            message: "User invitation created successfully with custom fields. Please check email for confirmation link.".to_string(),
+            email: request.email,
+            user_id,
+            timestamp: Utc::now(),
+        })
+    }
+
     pub async fn create_invitation(&self, request: CreateInvitationRequest) -> ApiResult<CreateInvitationResponse> {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
@@ -228,5 +287,101 @@ impl AuthService {
     pub async fn clear_auth_table(&self) -> ApiResult<()> {
         self.supabase_client.clear_auth_table().await?;
         Ok(())
+    }
+
+    pub async fn debug_list_auth_users(&self) -> ApiResult<serde_json::Value> {
+        let users = self.supabase_client.debug_list_all_users().await?;
+        Ok(users)
+    }
+
+    pub async fn get_users_by_school_and_role(&self, school_id: &str, role: &str) -> ApiResult<Vec<FilteredUserResponse>> {
+        // Validate inputs
+        ValidationUtils::validate_uuid(school_id)?;
+
+        // Get filtered users from Supabase auth
+        let supabase_users = self.supabase_client.get_users_by_school_and_role(school_id, role).await?;
+
+        let mut response_users = Vec::new();
+
+        for user in supabase_users {
+            // Extract user data from Supabase auth response
+            let user_id = user.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+            let email = user.get("email").and_then(|v| v.as_str()).unwrap_or_default();
+
+            let metadata = user.get("user_metadata");
+            let first_name = metadata
+                .and_then(|m| m.get("first_name"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let last_name = metadata
+                .and_then(|m| m.get("last_name"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            // For parent role, use user_id as both user_id and parent_id
+            let parent_id = if role.to_lowercase() == "parent" {
+                Some(user_id.to_string())
+            } else {
+                None
+            };
+
+            response_users.push(FilteredUserResponse {
+                school_id: school_id.to_string(),
+                role: role.to_string(),
+                user_id: user_id.to_string(),
+                email: email.to_string(),
+                parent_id,
+                first_name,
+                last_name,
+            });
+        }
+
+        Ok(response_users)
+    }
+
+    pub async fn get_user_profile_from_jwt(&self, jwt_token: &str) -> ApiResult<FilteredUserResponse> {
+        // Verify JWT and get user data from Supabase
+        let user_data = self.supabase_client.verify_jwt_and_get_user(jwt_token).await?;
+
+        // Extract basic user information
+        let user_id = user_data.get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::ExternalService("Missing user ID in JWT response".to_string()))?;
+
+        let email = user_data.get("email")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::ExternalService("Missing email in JWT response".to_string()))?;
+
+        // Extract metadata
+        let metadata = user_data.get("user_metadata").unwrap_or(&serde_json::Value::Null);
+        let school_id = metadata.get("school_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let role = metadata.get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let first_name = metadata.get("first_name")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let last_name = metadata.get("last_name")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // For parent role, use user_id as both user_id and parent_id
+        let parent_id = if role.to_lowercase() == "parent" {
+            Some(user_id.to_string())
+        } else {
+            None
+        };
+
+        Ok(FilteredUserResponse {
+            school_id: school_id.to_string(),
+            role: role.to_string(),
+            user_id: user_id.to_string(),
+            email: email.to_string(),
+            parent_id,
+            first_name,
+            last_name,
+        })
     }
 }

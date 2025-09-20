@@ -105,4 +105,20 @@ impl AuthDao {
         // TODO: Implement with tokio-postgres
         Ok(())
     }
+
+    pub async fn get_parent_id_by_auth_user_id(&self, auth_user_id: &uuid::Uuid) -> ApiResult<Option<uuid::Uuid>> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = "SELECT id FROM users WHERE auth_user_id = $1 AND role = 'Parent'";
+
+        match client.query_opt(query, &[auth_user_id]).await {
+            Ok(Some(row)) => {
+                let parent_id: uuid::Uuid = row.get("id");
+                Ok(Some(parent_id))
+            },
+            Ok(None) => Ok(None), // User not found or not a parent
+            Err(e) => Err(AppError::Database(format!("Failed to query parent_id: {}", e))),
+        }
+    }
 }

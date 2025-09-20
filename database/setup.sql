@@ -7,8 +7,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. SCHOOLS Table
 CREATE TABLE schools (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    subdomain VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(255) UNIQUE NOT NULL,  -- Globally unique school name
+    subdomain VARCHAR(100) UNIQUE NOT NULL,  -- Globally unique subdomain
     settings JSONB,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -21,7 +21,7 @@ CREATE TABLE users (
     school_id UUID NOT NULL REFERENCES schools(id),
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) NOT NULL,  -- Unique per school (composite constraint below)
     role VARCHAR(50) NOT NULL,
     is_verified BOOLEAN DEFAULT false,
     created_by UUID REFERENCES users(id),
@@ -30,6 +30,9 @@ CREATE TABLE users (
     metadata JSONB,
     is_active BOOLEAN DEFAULT true
 );
+
+-- Add composite unique constraint for email per school
+ALTER TABLE users ADD CONSTRAINT unique_email_per_school UNIQUE (school_id, email);
 
 
 -- 3. CHILDREN Table
@@ -52,7 +55,7 @@ CREATE TABLE children (
 CREATE TABLE classrooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,  -- Unique per school (composite constraint below)
     age_group VARCHAR(50),
     capacity INTEGER,
     enrolled_count INTEGER DEFAULT 0,
@@ -61,11 +64,14 @@ CREATE TABLE classrooms (
     updated_at TIMESTAMP
 );
 
+-- Add composite unique constraint for classroom name per school
+ALTER TABLE classrooms ADD CONSTRAINT unique_classroom_name_per_school UNIQUE (school_id, name);
+
 -- 5. FORM_TEMPLATES Table
 CREATE TABLE form_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     school_id UUID NOT NULL REFERENCES schools(id),
-    form_name VARCHAR(255) NOT NULL,
+    form_name VARCHAR(255) NOT NULL,  -- Unique per school (composite constraint below)
     form_type VARCHAR(100),
     fillout_form_id VARCHAR(255),
     fillout_form_url TEXT,
@@ -76,6 +82,9 @@ CREATE TABLE form_templates (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP
 );
+
+-- Add composite unique constraint for form name per school
+ALTER TABLE form_templates ADD CONSTRAINT unique_form_name_per_school UNIQUE (school_id, form_name);
 
 -- 6. ENROLLMENTS Table
 CREATE TABLE enrollments (

@@ -31,9 +31,9 @@ impl EnrollmentDao {
         role: &str,
     ) -> ApiResult<CreatedUser> {
         let query = r#"
-            INSERT INTO users (id, school_id, first_name, last_name, email, role, is_verified, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, false, true, NOW(), NOW())
-            RETURNING id, school_id, first_name, last_name, email, role, is_verified, created_at
+            INSERT INTO users (id, school_id, first_name, last_name, email, role, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+            RETURNING id, school_id, first_name, last_name, email, role, created_at
         "#;
 
         let client = self.pool.get().await
@@ -236,7 +236,7 @@ impl EnrollmentDao {
     // Helper: Get parent by ID for Section 8.3
     pub async fn get_parent_by_id(&self, parent_id: Uuid, school_id: Uuid) -> ApiResult<CreatedUser> {
         let query = r#"
-            SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at
+            SELECT id, school_id, first_name, last_name, email, role, created_at
             FROM users
             WHERE id = $1 AND school_id = $2 AND role = 'Parent' AND (is_active = true OR is_active IS NULL)
         "#;
@@ -267,7 +267,7 @@ impl EnrollmentDao {
             last_name: row.get("last_name"),
             email: row.get("email"),
             role: row.get("role"),
-            is_verified: row.get("is_verified"),
+            is_verified: false,  // Default value since column doesn't exist
             created_at: row.get("created_at"),
         }
     }
@@ -319,7 +319,7 @@ impl EnrollmentDao {
     // Helper: Get all parents by school_id for Section 8.7
     pub async fn get_parents_by_school(&self, school_id: Uuid) -> ApiResult<Vec<CreatedUser>> {
         let query = r#"
-            SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at
+            SELECT id, school_id, first_name, last_name, email, role, created_at
             FROM users
             WHERE school_id = $1 AND role = 'Parent' AND (is_active = true OR is_active IS NULL)
             ORDER BY first_name, last_name

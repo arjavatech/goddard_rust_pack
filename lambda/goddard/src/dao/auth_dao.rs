@@ -24,6 +24,17 @@ pub struct AuthStats {
     pub users_who_signed_in: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct UserDetails {
+    pub id: uuid::Uuid,
+    pub school_id: uuid::Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub role: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 pub struct AuthDao {
     pool: Pool,
 }
@@ -119,6 +130,29 @@ impl AuthDao {
             },
             Ok(None) => Ok(None), // User not found or not a parent
             Err(e) => Err(AppError::Database(format!("Failed to query parent_id: {}", e))),
+        }
+    }
+
+    pub async fn get_user_by_id(&self, user_id: uuid::Uuid) -> ApiResult<UserDetails> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = "SELECT id, school_id, first_name, last_name, email, role, created_at FROM users WHERE id = $1";
+
+        match client.query_opt(query, &[&user_id]).await {
+            Ok(Some(row)) => {
+                Ok(UserDetails {
+                    id: row.get("id"),
+                    school_id: row.get("school_id"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    email: row.get("email"),
+                    role: row.get("role"),
+                    created_at: row.get("created_at"),
+                })
+            },
+            Ok(None) => Err(AppError::NotFound("User not found".to_string())),
+            Err(e) => Err(AppError::Database(format!("Failed to query user: {}", e))),
         }
     }
 }

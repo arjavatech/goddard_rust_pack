@@ -5,9 +5,24 @@ meta {
 }
 
 post {
-  url: http://localhost:9000/auth/increate-enhanced
-  body: none
+  url: {{base_url}}/auth/invite-create-enhanced
+  body: json
   auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+        "email": "goddard01arjava@gmail.com",
+    "password": "Admin0001",
+        "school_id": "545997c6-0c38-4ece-939b-295d87d7c6e7",
+        "first_name": "Mnai",
+        "last_name": "Mani",
+        "role": "Admin"
+      }
 }
 
 settings {

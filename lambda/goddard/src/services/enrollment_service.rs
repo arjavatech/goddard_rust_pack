@@ -43,21 +43,20 @@ impl EnrollmentService {
         }
 
         // Step 3: Create auth user via Supabase
-        let auth_result = self.create_auth_user(&request.parent_email).await?;
-
-        // Step 4: Create parent user in users table
-        let created_user = self.enrollment_dao.create_user(
-            auth_result.auth_user_id,
+        let auth_result = self.create_auth_user(
+            &request.parent_email,
             request.school_id,
             &request.parent_first_name,
             &request.parent_last_name,
-            &request.parent_email,
-            "Parent",
+            "Parent"
         ).await?;
+
+        // Step 4: Get the created user (automatically created by DB trigger)
+        let created_user = self.enrollment_dao.get_parent_by_id(auth_result.auth_user_id, request.school_id).await?;
 
         // Step 5: Create child in children table
         let created_child = self.enrollment_dao.create_child(
-            created_user.id,
+            auth_result.auth_user_id,
             request.school_id,
             &request.child_first_name,
             &request.child_last_name,
@@ -144,10 +143,27 @@ impl EnrollmentService {
         Ok(response)
     }
 
-    // Step 3: Create auth user via Supabase
-    async fn create_auth_user(&self, email: &str) -> ApiResult<AuthUserResult> {
-        // Call Supabase to create auth user
-        let auth_user_id = self.supabase_client.create_auth_user(email).await?;
+    // Step 3: Create auth user via Supabase with metadata
+    async fn create_auth_user(
+        &self,
+        email: &str,
+        school_id: Uuid,
+        first_name: &str,
+        last_name: &str,
+        role: &str
+    ) -> ApiResult<AuthUserResult> {
+        // Create metadata for the user
+        let metadata = crate::services::supabase_client::UserMetadata::new(
+            Some(school_id),
+            Some(first_name.to_string()),
+            Some(last_name.to_string()),
+            Some(role.to_string()),
+        );
+
+        // Call Supabase to create auth user with metadata
+        let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;
+        let auth_user_id = Uuid::parse_str(&auth_user_id_string)
+            .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
 
         Ok(AuthUserResult {
             auth_user_id,

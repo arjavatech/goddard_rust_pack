@@ -23,6 +23,7 @@ CREATE TABLE users (
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     role VARCHAR(50) NOT NULL,
+    is_verified BOOLEAN DEFAULT false,
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP,
@@ -224,6 +225,7 @@ BEGIN
         last_name,
         email,
         role,
+        is_verified,
         created_at,
         metadata,
         is_active
@@ -246,6 +248,7 @@ BEGIN
             NEW.raw_user_meta_data->>'role',
             'Parent'  -- Default role if not specified
         ),
+        COALESCE(NEW.email_confirmed_at IS NOT NULL, false),  -- Set verified based on email confirmation
         NOW(),
         NEW.raw_user_meta_data,  -- Store complete metadata
         true
@@ -283,6 +286,7 @@ BEGIN
             last_name,
             email,
             role,
+            is_verified,
             created_at,
             metadata,
             is_active
@@ -305,6 +309,7 @@ BEGIN
                 auth_user.raw_user_meta_data->>'role',
                 'Parent'
             ),
+            COALESCE(auth_user.email_confirmed_at IS NOT NULL, false),
             auth_user.created_at,
             auth_user.raw_user_meta_data,
             true

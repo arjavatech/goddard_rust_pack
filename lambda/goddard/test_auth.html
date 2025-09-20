@@ -133,13 +133,13 @@
 
             <div class="form-group">
                 <label for="schoolId">School ID:</label>
-                <input type="text" id="schoolId" placeholder="Enter school UUID" value="123e4567-e89b-12d3-a456-426614174000">
+                <input type="text" id="schoolId" placeholder="Enter school UUID" value="545997c6-0c38-4ece-939b-295d87d7c6e7">
             </div>
 
             <div class="form-group">
                 <label for="role">Role:</label>
                 <select id="role">
-                    <option value="teacher">Teacher</option>
+                    <option value="Teacher">Teacher</option>
                     <option value="Admin">Admin</option>
                     <option value="Parent">Parent</option>
                     <option value="super_admin">Super Admin</option>
@@ -247,7 +247,7 @@
                             first_name: firstName || '',
                             last_name: lastName || '',
                             school_id: schoolId || '',
-                            role: role || 'teacher'
+                            role: role || 'Teacher'
                         }
                     };
 
@@ -285,8 +285,8 @@
             document.getElementById('password').value = 'testpassword123';
             document.getElementById('firstName').value = 'Debug';
             document.getElementById('lastName').value = 'User';
-            document.getElementById('schoolId').value = '123e4567-e89b-12d3-a456-426614174000';
-            document.getElementById('role').value = 'teacher';
+            document.getElementById('schoolId').value = '545997c6-0c38-4ece-939b-295d87d7c6e7';
+            document.getElementById('role').value = 'Teacher';
 
             console.log('🧪 Test user form values:');
             console.log('Email:', document.getElementById('email').value);
@@ -302,7 +302,7 @@
                   'First Name: Debug\n' +
                   'Last Name: User\n' +
                   'School ID: 545997c6-0c38-4ece-939b-295d87d7c6e7\n' +
-                  'Role: teacher\n\n' +
+                  'Role: Teacher\n\n' +
                   'Check console for detailed logs!');
 
             // Sign up with the test data

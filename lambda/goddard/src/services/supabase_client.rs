@@ -175,7 +175,10 @@ impl SupabaseClient {
         // Step 2: Send signup confirmation email using the resend endpoint
         let resend_request_body = json!({
             "email": email,
-            "type": "signup"
+            "type": "signup",
+            "options": {
+                "emailRedirectTo": "https://your-domain.com/set_password.html"
+            }
         });
 
         let resend_response = self.client

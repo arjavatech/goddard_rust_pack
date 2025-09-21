@@ -73,6 +73,10 @@ deploy: ## Deploy to AWS
 	chmod +x scripts/deploy.sh
 	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy.sh
 
+deploy-env: ## Deploy environment variables to Lambda
+	chmod +x scripts/deploy-env-auto.sh
+	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy-env-auto.sh
+
 synth: ## Synthesize CDK stack
 	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run synth
 

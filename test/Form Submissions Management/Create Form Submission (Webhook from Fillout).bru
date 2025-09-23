@@ -15,18 +15,34 @@ headers {
 }
 
 body:json {
-  {      "form_id": "654dab56-a910-4320-b6a0-1382d3b47194",         "school_id": "a78b43f0-4404-4d5d-8e4a-cc162bcee693",        "enrollment_id": "7077def2-97d3-47c6-9cbe-46e6899c726f",        "student_form_assignment_id":                    "81c79e78-c210-49ce-a818-ab89441011ab",        
-    
-    "form_data": {
-      "student_name": "John Doe",
-      "parent_email": "mani@example.com",
-      "additional_fields": "..."
-    },
-    "metadata": {
-      "form_version": "1.2",
-      "submission_ip": "192.168.1.1",
-      "user_agent": "Mozilla/5.0"
-    }
+  {
+    "school_id": "5ea2e4e9-03b6-4145-813d-da4b1b8f0a46",
+    "enrollment_id": "17865420-6ac4-4cbf-be39-8ae72e7f0362",
+    "student_form_assignment_id": "55fc165a-6d04-44c4-8452-912f933067d2",
+    "form_template_id": "1932164c-e9f7-4c9c-bc56-de0101e185de",
+    "fillout_submission_id": "fillout_test_{{$timestamp}}",
+    "student_name": "Arun Paiyan",
+    "parent_name": "John Doe",
+    "parent_email": "parent@example.com",
+    "parent_phone": "555-123-4567",
+    "emergency_contact_name": "Jane Doe",
+    "emergency_contact_phone": "555-987-6543",
+    "allergies": "None",
+    "medications": "None",
+    "medical_conditions": "None",
+    "physician_name": "Dr. Smith",
+    "physician_phone": "555-444-3333",
+    "insurance_provider": "Blue Cross",
+    "insurance_policy_number": "BC123456789",
+    "authorized_pickup_1": "Grandmother - Mary Doe",
+    "authorized_pickup_2": "Uncle - Bob Doe",
+    "photo_permission": true,
+    "field_trip_permission": true,
+    "medication_administration_permission": false,
+    "submission_timestamp": "{{$isoTimestamp}}",
+    "form_version": "2.0",
+    "ip_address": "192.168.1.100",
+    "user_agent": "Fillout/1.0"
   }
 }
 

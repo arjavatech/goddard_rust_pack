@@ -36,12 +36,8 @@ pub enum FormSubmissionStatus {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateFormSubmissionWebhookRequest {
-    pub form_id: String,
-    pub school_id: Uuid,
-    pub enrollment_id: Uuid,
-    pub student_form_assignment_id: Uuid,
-    pub form_data: JsonValue,
-    pub metadata: JsonValue,
+    #[serde(flatten)]
+    pub payload: JsonValue,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

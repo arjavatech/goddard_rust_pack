@@ -20,32 +20,65 @@ impl FormSubmissionService {
         request: CreateFormSubmissionWebhookRequest,
     ) -> Result<FormSubmissionResponse, AppError> {
         println!("[DEBUG] Service: Starting webhook processing");
-        println!("[DEBUG] Service: Request student_form_assignment_id: {}", request.student_form_assignment_id);
 
-        // Get form template ID from student form assignment
-        let form_template_id = match self.dao
-            .get_form_template_id_from_assignment(request.student_form_assignment_id)
-            .await
-        {
-            Ok(Some(id)) => {
-                println!("[DEBUG] Service: Found form_template_id: {}", id);
-                id
-            }
-            Ok(None) => {
-                println!("[ERROR] Service: Student form assignment not found: {}", request.student_form_assignment_id);
-                return Err(AppError::NotFound("Student form assignment not found".to_string()));
-            }
-            Err(e) => {
-                println!("[ERROR] Service: Database error getting form template ID: {:?}", e);
-                return Err(e);
+        // Extract required fields from the flattened JSON payload
+        let payload = &request.payload;
+
+        // Extract school_id
+        let school_id = payload.get("school_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| AppError::Validation("Missing or invalid school_id in payload".to_string()))?;
+
+        // Extract enrollment_id
+        let enrollment_id = payload.get("enrollment_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| AppError::Validation("Missing or invalid enrollment_id in payload".to_string()))?;
+
+        // Extract student_form_assignment_id
+        let student_form_assignment_id = payload.get("student_form_assignment_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| AppError::Validation("Missing or invalid student_form_assignment_id in payload".to_string()))?;
+
+        // Extract form_template_id (optional, can be fetched from assignment)
+        let form_template_id = if let Some(template_id) = payload.get("form_template_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok()) {
+            println!("[DEBUG] Service: Using form_template_id from payload: {}", template_id);
+            template_id
+        } else {
+            // Get form template ID from student form assignment if not provided
+            match self.dao.get_form_template_id_from_assignment(student_form_assignment_id).await {
+                Ok(Some(id)) => {
+                    println!("[DEBUG] Service: Found form_template_id from assignment: {}", id);
+                    id
+                }
+                Ok(None) => {
+                    println!("[ERROR] Service: Student form assignment not found: {}", student_form_assignment_id);
+                    return Err(AppError::NotFound("Student form assignment not found".to_string()));
+                }
+                Err(e) => {
+                    println!("[ERROR] Service: Database error getting form template ID: {:?}", e);
+                    return Err(e);
+                }
             }
         };
 
+        println!("[DEBUG] Service: Extracted IDs - school: {}, enrollment: {}, assignment: {}, template: {}",
+                 school_id, enrollment_id, student_form_assignment_id, form_template_id);
         println!("[DEBUG] Service: About to create form submission");
 
         // Create form submission with version control
         let submission = match self.dao
-            .create_form_submission(&request, form_template_id)
+            .create_form_submission_from_payload(
+                payload.clone(),
+                school_id,
+                enrollment_id,
+                student_form_assignment_id,
+                form_template_id
+            )
             .await
         {
             Ok(sub) => {

@@ -28,6 +28,7 @@ pub async fn create_form_submission_webhook(
     Json(request): Json<CreateFormSubmissionWebhookRequest>,
 ) -> Result<(StatusCode, Json<FormSubmissionResponse>), AppError> {
     println!("[DEBUG] Starting form submission webhook");
+    println!("[DEBUG] Raw payload: {:?}", request.payload);
 
     // Extract webhook secret from X-API-Key header
     let api_key = headers
@@ -48,8 +49,6 @@ pub async fn create_form_submission_webhook(
             return Err(e);
         }
     }
-
-    println!("[DEBUG] Request data: {:?}", request);
 
     // Create form submission with enhanced error handling
     match service.create_form_submission_from_webhook(request).await {

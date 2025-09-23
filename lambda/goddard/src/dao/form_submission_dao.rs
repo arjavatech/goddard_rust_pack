@@ -2,7 +2,7 @@ use crate::models::form_submission::{FormSubmission, FormSubmissionStatus, Creat
 use crate::error::AppError;
 use uuid::Uuid;
 use chrono::{Utc, NaiveDateTime, DateTime};
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
 
@@ -15,12 +15,24 @@ impl FormSubmissionDao {
         Self { pool }
     }
 
+    // Deprecated - keeping for backward compatibility if needed
     pub async fn create_form_submission(
         &self,
-        request: &CreateFormSubmissionWebhookRequest,
+        _request: &CreateFormSubmissionWebhookRequest,
+        _form_template_id: Uuid,
+    ) -> Result<FormSubmission, AppError> {
+        Err(AppError::Validation("This method is deprecated. Use create_form_submission_from_payload instead".to_string()))
+    }
+
+    pub async fn create_form_submission_from_payload(
+        &self,
+        payload: JsonValue,
+        school_id: Uuid,
+        enrollment_id: Uuid,
+        student_form_assignment_id: Uuid,
         form_template_id: Uuid,
     ) -> Result<FormSubmission, AppError> {
-        println!("[DEBUG] DAO: Starting form submission creation");
+        println!("[DEBUG] DAO: Starting form submission creation from payload");
 
         let client = match self.pool.get().await {
             Ok(c) => {
@@ -37,13 +49,31 @@ impl FormSubmissionDao {
         let now = Utc::now().naive_utc();
         println!("[DEBUG] DAO: Generated ID: {}, timestamp: {}", id, now);
 
-        // Extract fillout_submission_id from metadata, or generate a default
-        let fillout_submission_id = request.metadata
+        // Extract fillout_submission_id from payload, or generate a default
+        let fillout_submission_id = payload
             .get("fillout_submission_id")
             .and_then(|v| v.as_str())
-            .unwrap_or(&format!("generated_{}", id))
+            .unwrap_or(&format!("webhook_{}", id))
             .to_string();
         println!("[DEBUG] DAO: Fillout submission ID: {}", fillout_submission_id);
+
+        // The entire payload becomes form_data (after removing the IDs we extracted)
+        let mut form_data = payload.clone();
+        // Remove the extracted fields from form_data to keep only actual form fields
+        if let Some(obj) = form_data.as_object_mut() {
+            obj.remove("school_id");
+            obj.remove("enrollment_id");
+            obj.remove("student_form_assignment_id");
+            obj.remove("form_template_id");
+            obj.remove("fillout_submission_id");
+        }
+
+        // Create metadata from the payload context
+        let metadata = json!({
+            "source": "webhook",
+            "received_at": now.to_string(),
+            "webhook_payload_keys": payload.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()
+        });
 
         println!("[DEBUG] DAO: Executing INSERT query");
         let row = match client.query_one(
@@ -58,13 +88,13 @@ impl FormSubmissionDao {
             "#,
             &[
                 &id,
-                &request.school_id,
-                &request.enrollment_id,
-                &request.student_form_assignment_id,
+                &school_id,
+                &enrollment_id,
+                &student_form_assignment_id,
                 &form_template_id,
                 &fillout_submission_id,
-                &request.form_data,
-                &request.metadata,
+                &form_data,
+                &metadata,
                 &"completed",
                 &1i32, // First version
                 &now,

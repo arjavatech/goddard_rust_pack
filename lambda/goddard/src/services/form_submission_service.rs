@@ -21,48 +21,47 @@ impl FormSubmissionService {
     ) -> Result<FormSubmissionResponse, AppError> {
         println!("[DEBUG] Service: Starting webhook processing");
 
-        // Extract required fields from the flattened JSON payload
-        let payload = &request.payload;
-
-        // Extract school_id
-        let school_id = payload.get("school_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| AppError::Validation("Missing or invalid school_id in payload".to_string()))?;
-
-        // Extract enrollment_id
-        let enrollment_id = payload.get("enrollment_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| AppError::Validation("Missing or invalid enrollment_id in payload".to_string()))?;
-
-        // Extract student_form_assignment_id
-        let student_form_assignment_id = payload.get("student_form_assignment_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| AppError::Validation("Missing or invalid student_form_assignment_id in payload".to_string()))?;
-
-        // Extract form_template_id (optional, can be fetched from assignment)
-        let form_template_id = if let Some(template_id) = payload.get("form_template_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok()) {
-            println!("[DEBUG] Service: Using form_template_id from payload: {}", template_id);
-            template_id
+        // Handle both nested payload (for local testing) and flat payload (for production webhook)
+        let actual_payload = if let Some(nested) = request.payload.get("payload") {
+            println!("[DEBUG] Service: Using nested payload structure");
+            nested
         } else {
-            // Get form template ID from student form assignment if not provided
-            match self.dao.get_form_template_id_from_assignment(student_form_assignment_id).await {
-                Ok(Some(id)) => {
-                    println!("[DEBUG] Service: Found form_template_id from assignment: {}", id);
-                    id
-                }
-                Ok(None) => {
-                    println!("[ERROR] Service: Student form assignment not found: {}", student_form_assignment_id);
-                    return Err(AppError::NotFound("Student form assignment not found".to_string()));
-                }
-                Err(e) => {
-                    println!("[ERROR] Service: Database error getting form template ID: {:?}", e);
-                    return Err(e);
-                }
+            println!("[DEBUG] Service: Using flat payload structure");
+            &request.payload
+        };
+
+        // Extract student_form_assignment_id (this is the only required field)
+        println!("[DEBUG] Service: Looking for student_form_assignment_id in payload: {:?}", actual_payload);
+        let student_form_assignment_id = actual_payload.get("student_form_assignment_id")
+            .and_then(|v| {
+                println!("[DEBUG] Service: Found student_form_assignment_id value: {:?}", v);
+                v.as_str()
+            })
+            .and_then(|s| {
+                println!("[DEBUG] Service: Parsing UUID from string: {}", s);
+                Uuid::parse_str(s).ok()
+            })
+            .ok_or_else(|| {
+                println!("[ERROR] Service: Failed to extract student_form_assignment_id from payload");
+                AppError::Validation("Missing or invalid student_form_assignment_id in payload".to_string())
+            })?;
+
+        println!("[DEBUG] Service: Extracted student_form_assignment_id: {}", student_form_assignment_id);
+
+        // Query the student_form_assignments table to get school_id, enrollment_id, and form_template_id
+        let (school_id, enrollment_id, form_template_id) = match self.dao.get_assignment_details(student_form_assignment_id).await {
+            Ok(Some(details)) => {
+                println!("[DEBUG] Service: Found assignment details - school: {}, enrollment: {}, template: {}",
+                         details.0, details.1, details.2);
+                details
+            }
+            Ok(None) => {
+                println!("[ERROR] Service: Student form assignment not found: {}", student_form_assignment_id);
+                return Err(AppError::NotFound("Student form assignment not found".to_string()));
+            }
+            Err(e) => {
+                println!("[ERROR] Service: Database error getting assignment details: {:?}", e);
+                return Err(e);
             }
         };
 
@@ -73,7 +72,7 @@ impl FormSubmissionService {
         // Create form submission with version control
         let submission = match self.dao
             .create_form_submission_from_payload(
-                payload.clone(),
+                actual_payload.clone(),
                 school_id,
                 enrollment_id,
                 student_form_assignment_id,

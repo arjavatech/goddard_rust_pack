@@ -5,13 +5,13 @@ meta {
 }
 
 get {
-  url: {{base_url}}/classrooms?school_id=5ea2e4e9-03b6-4145-813d-da4b1b8f0a46
+  url: {{base_url}}/classrooms?school_id={{school_id}}
   body: none
   auth: inherit
 }
 
 params:query {
-  school_id: 5ea2e4e9-03b6-4145-813d-da4b1b8f0a46
+  school_id: {{school_id}}
 }
 
 headers {

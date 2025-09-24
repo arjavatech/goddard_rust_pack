@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
@@ -32,24 +33,52 @@ impl EnrollmentService {
     }
 
     pub async fn create_parent_invite(&self, request: ParentInviteRequest) -> ApiResult<ParentInviteResponse> {
+        println!("Starting parent invite for school_id: {}, class_id: {}", request.school_id, request.class_id);
+
         // Step 1: Validate classroom belongs to school
-        if !self.enrollment_dao.verify_classroom_belongs_to_school(request.class_id, request.school_id).await? {
+        let timeout_duration = Duration::from_secs(10);
+        println!("Step 1: Verifying classroom belongs to school with 10s timeout");
+        let classroom_validation = self.enrollment_dao.verify_classroom_belongs_to_school(request.class_id, request.school_id);
+        let classroom_belongs = match tokio::time::timeout(timeout_duration, classroom_validation).await {
+            Ok(Ok(belongs)) => belongs,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(AppError::Database("Database operation timeout (10s) during classroom validation - please try again".to_string()))
+        };
+
+        if !classroom_belongs {
             return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
         }
+        println!("Step 1: Classroom validation completed successfully");
 
         // Step 2: Check if parent email already exists for this school
-        if self.enrollment_dao.check_email_exists(&request.parent_email, request.school_id).await? {
+        println!("Step 2: Checking if parent email exists with 10s timeout");
+        let email_check = self.enrollment_dao.check_email_exists(&request.parent_email, request.school_id);
+        let email_exists = match tokio::time::timeout(timeout_duration, email_check).await {
+            Ok(Ok(exists)) => exists,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(AppError::Database("Database operation timeout (10s) during email check - please try again".to_string()))
+        };
+
+        if email_exists {
             return Err(AppError::Conflict("Parent email already exists for this school".to_string()));
         }
+        println!("Step 2: Email check completed successfully");
 
         // Step 3: Create auth user via Supabase
-        let auth_result = self.create_auth_user(
+        println!("Step 3: About to create auth user via Supabase for email: {} with 15s timeout", request.parent_email);
+        let create_auth_user = self.create_auth_user(
             &request.parent_email,
             request.school_id,
             &request.parent_first_name,
             &request.parent_last_name,
             "Parent"
-        ).await?;
+        );
+        let auth_result = match tokio::time::timeout(Duration::from_secs(15), create_auth_user).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(AppError::Database("Supabase operation timeout (15s) during user creation - please try again".to_string()))
+        };
+        println!("Step 3: Auth user created successfully with ID: {}", auth_result.auth_user_id);
 
         // Step 4: Get the created user (automatically created by DB trigger)
         let created_user = self.enrollment_dao.get_parent_by_id(auth_result.auth_user_id, request.school_id).await?;
@@ -143,7 +172,7 @@ impl EnrollmentService {
         Ok(response)
     }
 
-    // Step 3: Create auth user via Supabase with metadata
+    // Create auth user via Supabase
     async fn create_auth_user(
         &self,
         email: &str,
@@ -152,18 +181,22 @@ impl EnrollmentService {
         last_name: &str,
         role: &str
     ) -> ApiResult<AuthUserResult> {
-        // Create metadata for the user
+        println!("[DEBUG] About to call supabase_client.create_user_invitation_enhanced for email: {}", email);
+
+        // Create user metadata with school_id and other details
         let metadata = crate::services::supabase_client::UserMetadata::new(
             Some(school_id),
             Some(first_name.to_string()),
             Some(last_name.to_string()),
-            Some(role.to_string()),
+            Some(role.to_string())
         );
 
-        // Call Supabase to create auth user with metadata
         let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;
+        println!("[DEBUG] Supabase create_user_invitation_enhanced returned: {}", auth_user_id_string);
+
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
+        println!("[DEBUG] Successfully parsed UUID: {} with school_id: {}", auth_user_id, school_id);
 
         Ok(AuthUserResult {
             auth_user_id,
@@ -171,7 +204,7 @@ impl EnrollmentService {
         })
     }
 
-    // Step 9: Process form assignments logic
+    // Process form assignments logic
     async fn process_form_assignments(
         &self,
         school_forms: &[FormTemplate],
@@ -202,13 +235,12 @@ impl EnrollmentService {
                     final_forms.remove(&override_form.form_template_id);
                 }
                 _ => {
-                    // Handle other actions (including None) if needed
                     continue;
                 }
             }
         }
 
-        // Create form assignments for all final forms
+        // Create form assignments
         let mut assigned_forms = Vec::new();
         for (form_id, (form_template, assignment_source)) in final_forms {
             let assignment = self.enrollment_dao.create_student_form_assignment(
@@ -382,7 +414,7 @@ impl EnrollmentService {
         Ok(response)
     }
 
-    // 8.6 Get Enrollment Children with Form Assignments
+    // Get Enrollment Children with Form Assignments
     pub async fn get_enrollment_children_with_forms(&self, request: GetEnrollmentChildrenRequest) -> ApiResult<GetEnrollmentChildrenResponse> {
         // Get enrollment children with their form assignments
         let children = self.enrollment_dao.get_enrollment_children_with_forms(request.school_id).await?;
@@ -394,7 +426,7 @@ impl EnrollmentService {
         Ok(response)
     }
 
-    // 8.4 Get All Enrollment Form Details by School
+    // Get All Enrollment Form Details by School
     pub async fn get_school_forms(&self, request: GetSchoolFormsRequest) -> ApiResult<GetSchoolFormsResponse> {
         // Get all enrollment form details for the school
         let enrollments = self.enrollment_dao.get_school_forms(request.school_id).await?;
@@ -406,7 +438,7 @@ impl EnrollmentService {
         Ok(response)
     }
 
-    // 8.5 Get Class-wise Child Count Details
+    // Get Class-wise Child Count Details
     pub async fn get_class_wise_count(&self, request: GetClassWiseCountRequest) -> ApiResult<GetClassWiseCountResponse> {
         // Get class-wise count details
         let classes = self.enrollment_dao.get_class_wise_count(request.school_id).await?;

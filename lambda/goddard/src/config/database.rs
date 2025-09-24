@@ -44,13 +44,17 @@ impl DatabaseConfig {
             config.manager = Some(deadpool_postgres::ManagerConfig {
                 recycling_method: deadpool_postgres::RecyclingMethod::Fast,
             });
-            config.connect_timeout = Some(std::time::Duration::from_secs(5));
+            config.connect_timeout = Some(std::time::Duration::from_secs(30));
         } else {
             return Err(AppError::Database("Invalid DATABASE_URL format".to_string()));
         }
 
-        // Connection pool settings with timeouts
-        config.pool = Some(deadpool_postgres::PoolConfig::new(16));
+        // Lambda-optimized connection pool settings - very aggressive timeouts for fast fail
+        let mut pool_config = deadpool_postgres::PoolConfig::new(1);
+        pool_config.timeouts.wait = Some(std::time::Duration::from_secs(2));
+        pool_config.timeouts.create = Some(std::time::Duration::from_secs(3));
+        pool_config.timeouts.recycle = Some(std::time::Duration::from_secs(2));
+        config.pool = Some(pool_config);
 
         config.create_pool(Some(Runtime::Tokio1), NoTls)
             .map_err(|e| AppError::Database(format!("Failed to create connection pool: {}", e)))
@@ -67,7 +71,7 @@ pub async fn initialize_database() -> Result<(), AppError> {
     let pool = config.create_pool()?;
 
     // Test the connection with timeout
-    let timeout_duration = std::time::Duration::from_secs(5);
+    let timeout_duration = std::time::Duration::from_secs(30);
     let get_connection = pool.get();
 
     match tokio::time::timeout(timeout_duration, get_connection).await {

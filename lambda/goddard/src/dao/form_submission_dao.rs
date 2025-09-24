@@ -5,6 +5,7 @@ use chrono::{Utc, NaiveDateTime, DateTime};
 use serde_json::{json, Value as JsonValue};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
+use std::str::FromStr;
 
 pub struct FormSubmissionDao {
     pool: Pool,
@@ -34,6 +35,7 @@ impl FormSubmissionDao {
     ) -> Result<FormSubmission, AppError> {
         println!("[DEBUG] DAO: Starting form submission creation from payload");
 
+        // ALTERNATIVE APPROACH: Skip transactions entirely, use direct client operations
         let client = match self.pool.get().await {
             Ok(c) => {
                 println!("[DEBUG] DAO: Database connection acquired");
@@ -45,26 +47,25 @@ impl FormSubmissionDao {
             }
         };
 
-        let id = Uuid::new_v4();
+        println!("[DEBUG] DAO: Using direct client operations (no transaction)");
+
         let now = Utc::now().naive_utc();
-        println!("[DEBUG] DAO: Generated ID: {}, timestamp: {}", id, now);
+        println!("[DEBUG] DAO: Generated timestamp: {}", now);
 
         // Extract fillout_submission_id from payload, or generate a default
         let fillout_submission_id = payload
             .get("fillout_submission_id")
             .and_then(|v| v.as_str())
-            .unwrap_or(&format!("webhook_{}", id))
-            .to_string();
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("webhook_{}", Uuid::new_v4()));
         println!("[DEBUG] DAO: Fillout submission ID: {}", fillout_submission_id);
 
-        // The entire payload becomes form_data (after removing the IDs we extracted)
+        // The entire payload becomes form_data (after removing only the IDs that might be present)
         let mut form_data = payload.clone();
-        // Remove the extracted fields from form_data to keep only actual form fields
+        // Remove only the student_form_assignment_id and fillout_submission_id if present
+        // Other IDs are not passed in the payload anymore
         if let Some(obj) = form_data.as_object_mut() {
-            obj.remove("school_id");
-            obj.remove("enrollment_id");
             obj.remove("student_form_assignment_id");
-            obj.remove("form_template_id");
             obj.remove("fillout_submission_id");
         }
 
@@ -76,54 +77,113 @@ impl FormSubmissionDao {
         });
 
         println!("[DEBUG] DAO: Executing INSERT query");
-        let row = match client.query_one(
+        println!("[DEBUG] DAO: Full INSERT query with parameters:");
+        println!("INSERT INTO form_submissions (");
+        println!("    school_id, enrollment_id, student_form_assignment_id,");
+        println!("    form_template_id, fillout_submission_id, form_data, metadata,");
+        println!("    submitted_at, processed_at, is_active, created_at, updated_at,");
+        println!("    status, revision_number, revision_reason");
+        println!(") VALUES (");
+        println!("    '{}', -- school_id", school_id);
+        println!("    '{}', -- enrollment_id", enrollment_id);
+        println!("    '{}', -- student_form_assignment_id", student_form_assignment_id);
+        println!("    '{}', -- form_template_id", form_template_id);
+        println!("    '{}', -- fillout_submission_id", fillout_submission_id);
+        println!("    '{}', -- form_data", form_data);
+        println!("    '{}', -- metadata", metadata);
+        println!("    '{}', -- submitted_at", now);
+        println!("    '{}', -- processed_at", now);
+        println!("    {}, -- is_active", true);
+        println!("    '{}', -- created_at", now);
+        println!("    '{}', -- updated_at", now);
+        println!("    '{}', -- status", "completed");
+        println!("    {}, -- revision_number", 1i32);
+        println!("    NULL -- revision_reason");
+        println!(");");
+
+        // SOLUTION: Use simple_query to avoid prepared statement conflicts
+        println!("[DEBUG] DAO: Using simple_query approach to avoid prepared statements");
+
+        let submission_id = uuid::Uuid::new_v4();
+        println!("[DEBUG] DAO: Generated submission ID: {}", submission_id);
+
+        // Build the INSERT query using simple_query to avoid prepared statements
+        let insert_query = format!(
             r#"
             INSERT INTO form_submissions (
                 id, school_id, enrollment_id, student_form_assignment_id,
                 form_template_id, fillout_submission_id, form_data, metadata,
-                status, revision_number, submitted_at, processed_at, created_at, updated_at
+                submitted_at, processed_at, is_active, created_at, updated_at,
+                status, revision_number
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            RETURNING *
+            VALUES (
+                '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}',
+                '{}', '{}', true, '{}', '{}', 'completed', 1
+            )
             "#,
-            &[
-                &id,
-                &school_id,
-                &enrollment_id,
-                &student_form_assignment_id,
-                &form_template_id,
-                &fillout_submission_id,
-                &form_data,
-                &metadata,
-                &"completed",
-                &1i32, // First version
-                &now,
-                &Some(now),
-                &now,
-                &now,
-            ],
-        ).await {
-            Ok(row) => {
-                println!("[DEBUG] DAO: INSERT query executed successfully");
-                row
-            }
-            Err(e) => {
-                println!("[ERROR] DAO: INSERT query failed: {}", e);
-                return Err(AppError::Database(e.to_string()));
+            submission_id,
+            school_id,
+            enrollment_id,
+            student_form_assignment_id,
+            form_template_id,
+            fillout_submission_id,
+            form_data.to_string().replace("'", "''"), // Escape single quotes
+            metadata.to_string().replace("'", "''"),  // Escape single quotes
+            now,
+            now,
+            now,
+            now
+        );
+
+        println!("[DEBUG] DAO: Executing INSERT with direct client execute method");
+        let insert_future = client.execute(&insert_query, &[]);
+
+        let _insert_result = match tokio::time::timeout(std::time::Duration::from_secs(10), insert_future).await {
+            Ok(insert_result) => match insert_result {
+                Ok(result) => {
+                    println!("[DEBUG] DAO: INSERT executed successfully: {} rows affected", result);
+                    result
+                }
+                Err(e) => {
+                    println!("[ERROR] DAO: INSERT execution failed: {}", e);
+                    return Err(AppError::Database(format!("INSERT execution failed: {}", e)));
+                }
+            },
+            Err(_timeout_err) => {
+                println!("[ERROR] DAO: INSERT execution timed out after 10 seconds");
+                return Err(AppError::Database("INSERT execution timed out".to_string()));
             }
         };
 
-        println!("[DEBUG] DAO: Converting row to form submission");
-        match self.row_to_form_submission(row) {
-            Ok(submission) => {
-                println!("[DEBUG] DAO: Row conversion successful");
-                Ok(submission)
-            }
-            Err(e) => {
-                println!("[ERROR] DAO: Row conversion failed: {:?}", e);
-                Err(e)
-            }
-        }
+        println!("[DEBUG] DAO: Constructing FormSubmission directly (school controller pattern - single DB operation)");
+
+        // Create current timestamp for record creation
+        let now = chrono::Utc::now();
+
+        // Create FormSubmission with all required fields - using data we already have
+        let submission = FormSubmission {
+            id: submission_id,
+            school_id,
+            enrollment_id,
+            student_form_assignment_id,
+            form_template_id,
+            fillout_submission_id,
+            form_data: payload.clone(),
+            metadata: serde_json::json!({}), // Default empty metadata
+            status: FormSubmissionStatus::Pending, // Default status
+            revision_number: 1, // First revision
+            revision_reason: None, // No revision reason for initial creation
+            submitted_at: now,
+            processed_at: None, // Not processed yet
+            created_at: now,
+            updated_at: now,
+        };
+
+        println!("[DEBUG] DAO: Form submission object constructed successfully with direct approach");
+
+        println!("[DEBUG] DAO: Single-operation webhook processing completed (school controller pattern)");
+
+        Ok(submission)
     }
 
     pub async fn get_latest_form_submission(
@@ -337,6 +397,100 @@ impl FormSubmissionDao {
                 Ok(None)
             }
         }
+    }
+
+    pub async fn get_assignment_details(
+        &self,
+        student_form_assignment_id: Uuid,
+    ) -> Result<Option<(Uuid, Uuid, Uuid)>, AppError> {
+        println!("[DEBUG] DAO: Looking up assignment details for: {}", student_form_assignment_id);
+
+        println!("[DEBUG] DAO: Attempting to get connection from pool...");
+        let client = match tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => {
+                println!("[DEBUG] DAO: Database connection acquired for assignment lookup");
+                c
+            }
+            Ok(Err(e)) => {
+                println!("[ERROR] DAO: Failed to get database connection: {}", e);
+                return Err(AppError::Database(e.to_string()));
+            }
+            Err(_) => {
+                println!("[ERROR] DAO: Timeout getting database connection");
+                return Err(AppError::Database("Connection pool timeout".to_string()));
+            }
+        };
+
+        println!("[DEBUG] DAO: Connection acquired, preparing to execute query");
+
+        // Use simple_query to avoid prepared statement conflicts
+        let query = format!(
+            r#"SELECT school_id, enrollment_id, form_template_id
+               FROM student_form_assignments
+               WHERE id = '{}'
+               LIMIT 1"#,
+            student_form_assignment_id
+        );
+
+        println!("[DEBUG] DAO: Executing assignment lookup query: {}", query);
+
+        let rows = match tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            client.simple_query(&query)
+        ).await {
+            Ok(Ok(rows)) => {
+                println!("[DEBUG] DAO: Assignment lookup query executed successfully, got {} results", rows.len());
+                rows
+            }
+            Ok(Err(e)) => {
+                println!("[ERROR] DAO: Failed to query assignment details: {}", e);
+                return Err(AppError::Database(e.to_string()));
+            }
+            Err(_) => {
+                println!("[ERROR] DAO: Query timeout");
+                return Err(AppError::Database("Query timeout".to_string()));
+            }
+        };
+
+        println!("[DEBUG] DAO: Processing query results");
+
+        // Parse the results
+        for message in rows {
+            if let tokio_postgres::SimpleQueryMessage::Row(row) = message {
+                println!("[DEBUG] DAO: Found row, extracting values");
+
+                let school_id = row.get("school_id")
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .ok_or_else(|| {
+                        println!("[ERROR] DAO: Failed to parse school_id");
+                        AppError::Database("Invalid school_id in database".to_string())
+                    })?;
+
+                let enrollment_id = row.get("enrollment_id")
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .ok_or_else(|| {
+                        println!("[ERROR] DAO: Failed to parse enrollment_id");
+                        AppError::Database("Invalid enrollment_id in database".to_string())
+                    })?;
+
+                let form_template_id = row.get("form_template_id")
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .ok_or_else(|| {
+                        println!("[ERROR] DAO: Failed to parse form_template_id");
+                        AppError::Database("Invalid form_template_id in database".to_string())
+                    })?;
+
+                println!("[DEBUG] DAO: Found assignment details - school: {}, enrollment: {}, template: {}",
+                         school_id, enrollment_id, form_template_id);
+                return Ok(Some((school_id, enrollment_id, form_template_id)));
+            }
+        }
+
+        println!("[DEBUG] DAO: No assignment found for ID: {}", student_form_assignment_id);
+        Ok(None)
     }
 
     fn row_to_form_submission(&self, row: Row) -> Result<FormSubmission, AppError> {

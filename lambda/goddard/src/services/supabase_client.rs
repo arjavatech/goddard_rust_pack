@@ -127,13 +127,8 @@ impl SupabaseClient {
 
         // Add user metadata if provided
         if let Some(metadata) = user_metadata {
-            // Log the metadata being sent for debugging
-            eprintln!("Sending user_metadata to Supabase: {}", serde_json::to_string_pretty(&metadata).unwrap_or_default());
             create_request_body["user_metadata"] = metadata;
         }
-
-        // Log the complete request body
-        eprintln!("Complete Supabase create user request: {}", serde_json::to_string_pretty(&create_request_body).unwrap_or_default());
 
         let create_response = self.client
             .post(&format!("{}/auth/v1/admin/users", self.project_url))
@@ -162,7 +157,8 @@ impl SupabaseClient {
             .await
             .map_err(|e| AppError::ExternalService(format!("Failed to parse create user response: {}", e)))?;
 
-        // Log the response for debugging
+        // Response logged only in debug builds for performance
+        #[cfg(debug_assertions)]
         eprintln!("Supabase create user response: {}", serde_json::to_string_pretty(&create_data).unwrap_or_default());
 
         let user_id = create_data
@@ -194,6 +190,7 @@ impl SupabaseClient {
         // Resend endpoint might return 200 even if rate limited, but we still want to proceed
         if !resend_response.status().is_success() {
             // Log the error but don't fail the entire operation since user was created
+            #[cfg(debug_assertions)]
             eprintln!("Warning: Failed to send signup confirmation email, but user was created successfully. Status: {}", resend_response.status());
         }
 

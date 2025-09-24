@@ -2,7 +2,8 @@ use axum::{
     extract::Request,
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     middleware::Next,
-    response::Response,
+    response::{Response, IntoResponse},
+    Json,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,12 @@ use uuid::Uuid;
 use crate::models::schema::UserRole;
 use crate::error::error_types::AppError;
 
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    success: bool,
+    message: String,
+    timestamp: String,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
@@ -34,17 +41,39 @@ pub async fn api_key_middleware(
     headers: HeaderMap,
     request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, Response> {
     let api_key = headers
         .get("X-API-Key")
-        .and_then(|value| value.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .and_then(|value| value.to_str().ok());
 
-    let owner_api_key = env::var("OWNER_API_KEY")
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if api_key.is_none() {
+        let error_response = ErrorResponse {
+            success: false,
+            message: "API key is required. Please provide X-API-Key header".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+        return Err((StatusCode::UNAUTHORIZED, Json(error_response)).into_response());
+    }
 
-    if api_key != owner_api_key {
-        return Err(StatusCode::UNAUTHORIZED);
+    let owner_api_key = match env::var("OWNER_API_KEY") {
+        Ok(key) => key,
+        Err(_) => {
+            let error_response = ErrorResponse {
+                success: false,
+                message: "Server configuration error".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            };
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response());
+        }
+    };
+
+    if api_key.unwrap() != owner_api_key {
+        let error_response = ErrorResponse {
+            success: false,
+            message: "Invalid API key".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+        return Err((StatusCode::UNAUTHORIZED, Json(error_response)).into_response());
     }
 
     Ok(next.run(request).await)

@@ -39,11 +39,17 @@ impl DatabaseConfig {
                     .to_string()
             });
             config.dbname = Some(parsed.path().trim_start_matches('/').to_string());
+
+            // Add connection timeout and keepalive settings
+            config.manager = Some(deadpool_postgres::ManagerConfig {
+                recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+            });
+            config.connect_timeout = Some(std::time::Duration::from_secs(5));
         } else {
             return Err(AppError::Database("Invalid DATABASE_URL format".to_string()));
         }
 
-        // Connection pool settings
+        // Connection pool settings with timeouts
         config.pool = Some(deadpool_postgres::PoolConfig::new(16));
 
         config.create_pool(Some(Runtime::Tokio1), NoTls)
@@ -60,10 +66,21 @@ pub async fn initialize_database() -> Result<(), AppError> {
     let config = DatabaseConfig::from_env();
     let pool = config.create_pool()?;
 
-    // Test the connection
-    let _client = pool.get()
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to get connection from pool: {}", e)))?;
+    // Test the connection with timeout
+    let timeout_duration = std::time::Duration::from_secs(5);
+    let get_connection = pool.get();
+
+    match tokio::time::timeout(timeout_duration, get_connection).await {
+        Ok(Ok(_client)) => {
+            // Connection successful
+        },
+        Ok(Err(e)) => {
+            return Err(AppError::Database(format!("Failed to get connection from pool: {}", e)));
+        },
+        Err(_) => {
+            return Err(AppError::Database("Database connection timeout - please check DATABASE_URL and ensure database is accessible".to_string()));
+        }
+    }
 
     DB_POOL.set(pool)
         .map_err(|_| AppError::Internal("Failed to set database pool".to_string()))?;

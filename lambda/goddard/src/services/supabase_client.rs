@@ -2,6 +2,7 @@ use crate::error::AppError;
 use reqwest::Client;
 use serde_json::json;
 use std::env;
+use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -71,8 +72,16 @@ impl SupabaseClient {
             ));
         }
 
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Duration::from_secs(30))
+            .pool_max_idle_per_host(10)
+            .build()
+            .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
         Ok(Self {
-            client: Client::new(),
+            client,
             project_url,
             service_role_key,
             anon_key,

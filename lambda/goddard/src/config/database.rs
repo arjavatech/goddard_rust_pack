@@ -39,22 +39,12 @@ impl DatabaseConfig {
                     .to_string()
             });
             config.dbname = Some(parsed.path().trim_start_matches('/').to_string());
-
-            // Add connection timeout and keepalive settings
-            config.manager = Some(deadpool_postgres::ManagerConfig {
-                recycling_method: deadpool_postgres::RecyclingMethod::Fast,
-            });
-            config.connect_timeout = Some(std::time::Duration::from_secs(30));
         } else {
             return Err(AppError::Database("Invalid DATABASE_URL format".to_string()));
         }
 
-        // Lambda-optimized connection pool settings - very aggressive timeouts for fast fail
-        let mut pool_config = deadpool_postgres::PoolConfig::new(1);
-        pool_config.timeouts.wait = Some(std::time::Duration::from_secs(2));
-        pool_config.timeouts.create = Some(std::time::Duration::from_secs(3));
-        pool_config.timeouts.recycle = Some(std::time::Duration::from_secs(2));
-        config.pool = Some(pool_config);
+        // Connection pool settings
+        config.pool = Some(deadpool_postgres::PoolConfig::new(16));
 
         config.create_pool(Some(Runtime::Tokio1), NoTls)
             .map_err(|e| AppError::Database(format!("Failed to create connection pool: {}", e)))
@@ -70,21 +60,10 @@ pub async fn initialize_database() -> Result<(), AppError> {
     let config = DatabaseConfig::from_env();
     let pool = config.create_pool()?;
 
-    // Test the connection with timeout
-    let timeout_duration = std::time::Duration::from_secs(30);
-    let get_connection = pool.get();
-
-    match tokio::time::timeout(timeout_duration, get_connection).await {
-        Ok(Ok(_client)) => {
-            // Connection successful
-        },
-        Ok(Err(e)) => {
-            return Err(AppError::Database(format!("Failed to get connection from pool: {}", e)));
-        },
-        Err(_) => {
-            return Err(AppError::Database("Database connection timeout - please check DATABASE_URL and ensure database is accessible".to_string()));
-        }
-    }
+    // Test the connection
+    let _client = pool.get()
+        .await
+        .map_err(|e| AppError::Database(format!("Failed to get connection from pool: {}", e)))?;
 
     DB_POOL.set(pool)
         .map_err(|_| AppError::Internal("Failed to set database pool".to_string()))?;

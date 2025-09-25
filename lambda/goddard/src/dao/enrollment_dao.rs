@@ -100,14 +100,96 @@ impl EnrollmentDao {
         })
     }
 
-    // Step 5: Create child in children table
-    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str) -> ApiResult<CreatedChild> {
-        let query = "INSERT INTO children (parent_id, school_id, first_name, last_name, birth_date, gender) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+    // Create parent in users table
+    pub async fn create_parent(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, email: &str, role: &str) -> ApiResult<CreatedUser> {
+        let query = "INSERT INTO users (id, school_id, first_name, last_name, email, role) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, school_id, first_name, last_name, email, role, is_verified, created_at";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
-        let row = client.query_one(query, &[&parent_id, &school_id, &first_name, &last_name, &birth_date, &gender]).await
-            .map_err(|e| AppError::Database(format!("Failed to create child: {}", e)))?;
+        let row = client.query_one(query, &[&parent_id, &school_id, &first_name, &last_name, &email, &role]).await
+            .map_err(|e| AppError::Database(format!("Failed to create parent: {}", e)))?;
+
+        Ok(CreatedUser {
+            id: row.get("id"),
+            school_id: row.get("school_id"),
+            first_name: row.get("first_name"),
+            last_name: row.get("last_name"),
+            email: row.get("email"),
+            role: row.get("role"),
+            is_verified: row.get("is_verified"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    // Single transaction method to create child with explicit parent verification
+    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str) -> ApiResult<CreatedChild> {
+        println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}", parent_id, school_id);
+
+        use tokio::time::{timeout, Duration};
+
+        println!("[DEBUG] [create_child] Getting database connection with 5s timeout");
+        let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
+        let mut client = match client_result {
+            Ok(client) => client.map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?,
+            Err(_) => return Err(AppError::Database("Timeout getting database connection for child creation".to_string()))
+        };
+        println!("[DEBUG] [create_child] Got database connection successfully");
+
+        // Single transaction with parent verification to avoid foreign key issues
+        println!("[DEBUG] [create_child] Starting transaction with parent verification");
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // First verify parent exists in transaction
+        let parent_check_query = "SELECT id FROM users WHERE id = $1 AND school_id = $2 LIMIT 1";
+        println!("[DEBUG] [create_child] Verifying parent exists: {} in school: {}", parent_id, school_id);
+
+        let parent_check_result = timeout(Duration::from_secs(5),
+            transaction.query_opt(parent_check_query, &[&parent_id, &school_id])
+        ).await;
+
+        let parent_exists = match parent_check_result {
+            Ok(result) => {
+                match result.map_err(|e| AppError::Database(format!("Failed to verify parent: {}", e)))? {
+                    Some(_) => {
+                        println!("[DEBUG] [create_child] Parent verified successfully");
+                        true
+                    },
+                    None => {
+                        println!("[DEBUG] [create_child] Parent not found in database");
+                        false
+                    }
+                }
+            },
+            Err(_) => return Err(AppError::Database("Timeout verifying parent exists".to_string()))
+        };
+
+        if !parent_exists {
+            transaction.rollback().await.ok();
+            return Err(AppError::Database(format!("Parent with id {} not found in school {}", parent_id, school_id)));
+        }
+
+        // Now insert child in same transaction
+        let child_insert_query = "INSERT INTO children (parent_id, school_id, first_name, last_name, birth_date, gender) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+
+        println!("[DEBUG] [create_child] Inserting child with verified parent");
+        let child_result = timeout(Duration::from_secs(10),
+            transaction.query_one(child_insert_query, &[&parent_id, &school_id, &first_name, &last_name, &birth_date, &gender])
+        ).await;
+
+        let row = match child_result {
+            Ok(result) => result.map_err(|e| AppError::Database(format!("Failed to create child: {}", e)))?,
+            Err(_) => {
+                transaction.rollback().await.ok();
+                return Err(AppError::Database("Timeout during child creation INSERT query".to_string()));
+            }
+        };
+
+        // Commit transaction
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit child creation: {}", e)))?;
+
+        println!("[DEBUG] [create_child] Child created successfully in single transaction");
 
         Ok(CreatedChild {
             id: row.get("id"),
@@ -124,12 +206,25 @@ impl EnrollmentDao {
 
     // Step 6: Create enrollment
     pub async fn create_enrollment(&self, child_id: Uuid, school_id: Uuid, classroom_id: Uuid) -> ApiResult<CreatedEnrollment> {
-        let query = "INSERT INTO enrollments (child_id, school_id, classroom_id) VALUES ($1, $2, $3) RETURNING id, child_id, school_id, classroom_id, status, application_status, created_at";
-        let client = self.pool.get().await
-            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        // Use timeout to prevent hanging - school controller pattern consistency
+        use tokio::time::{timeout, Duration};
 
-        let row = client.query_one(query, &[&child_id, &school_id, &classroom_id]).await
-            .map_err(|e| AppError::Database(format!("Failed to create enrollment: {}", e)))?;
+        let query = "INSERT INTO enrollments (child_id, school_id, classroom_id) VALUES ($1, $2, $3) RETURNING id, child_id, school_id, classroom_id, status, application_status, created_at";
+
+        let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
+        let client = match client_result {
+            Ok(client) => client.map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?,
+            Err(_) => return Err(AppError::Database("Timeout getting database connection for enrollment creation".to_string()))
+        };
+
+        let query_result = timeout(Duration::from_secs(10),
+            client.query_one(query, &[&child_id, &school_id, &classroom_id])
+        ).await;
+
+        let row = match query_result {
+            Ok(result) => result.map_err(|e| AppError::Database(format!("Failed to create enrollment: {}", e)))?,
+            Err(_) => return Err(AppError::Database("Timeout during enrollment creation INSERT query".to_string()))
+        };
 
         Ok(CreatedEnrollment {
             id: row.get("id"),
@@ -208,6 +303,71 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get form name: {}", e)))?;
 
         Ok(row.get("form_name"))
+    }
+
+    // Batch form assignment creation (school controller pattern - single DB operation)
+    pub async fn create_student_form_assignments_batch(
+        &self,
+        enrollment_id: Uuid,
+        child_id: Uuid,
+        school_id: Uuid,
+        final_forms: std::collections::HashMap<Uuid, (crate::models::enrollment::FormTemplate, String)>,
+    ) -> ApiResult<Vec<CreatedFormAssignment>> {
+        if final_forms.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        // Build batch insert query with form names included (avoiding N+1)
+        let mut query_values = Vec::new();
+        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
+        let mut param_idx = 1;
+
+        for (form_template_id, (form_template, assignment_source)) in &final_forms {
+            query_values.push(format!(
+                "(${}::uuid, ${}::uuid, ${}::uuid, ${}::uuid, ${}, ${}::boolean)",
+                param_idx, param_idx + 1, param_idx + 2, param_idx + 3, param_idx + 4, param_idx + 5
+            ));
+            params.push(&enrollment_id);
+            params.push(&child_id);
+            params.push(&school_id);
+            params.push(form_template_id);
+            params.push(assignment_source);
+            params.push(&form_template.is_required);
+            param_idx += 6;
+        }
+
+        let query = format!(
+            "INSERT INTO student_form_assignments (enrollment_id, child_id, school_id, form_template_id, assignment_source, is_required)
+             VALUES {}
+             RETURNING id, form_template_id, assignment_source, status, is_required",
+            query_values.join(", ")
+        );
+
+        let rows = client.query(&query, &params).await
+            .map_err(|e| AppError::Database(format!("Failed to create student form assignments batch: {}", e)))?;
+
+        // Build result with form names from HashMap (no additional DB queries)
+        let mut assigned_forms = Vec::new();
+        for row in rows {
+            let form_template_id: Uuid = row.get("form_template_id");
+            let form_name = final_forms.get(&form_template_id)
+                .map(|(template, _)| template.form_name.clone())
+                .unwrap_or_else(|| "Unknown Form".to_string());
+
+            assigned_forms.push(CreatedFormAssignment {
+                id: row.get("id"),
+                form_template_id,
+                form_name,
+                assignment_source: row.get("assignment_source"),
+                status: row.get("status"),
+                is_required: row.get("is_required"),
+            });
+        }
+
+        Ok(assigned_forms)
     }
 
     // Additional method for getting parents by school (used in get_parent_details_by_school)

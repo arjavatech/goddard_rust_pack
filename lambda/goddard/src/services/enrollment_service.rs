@@ -1,6 +1,5 @@
 use uuid::Uuid;
 use std::collections::HashMap;
-use std::time::Duration;
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
@@ -33,10 +32,12 @@ impl EnrollmentService {
     }
 
     pub async fn create_parent_invite(&self, request: ParentInviteRequest) -> ApiResult<ParentInviteResponse> {
-        println!("[DEBUG] Starting parent invite for school_id: {}, class_id: {} (school controller pattern - single operation)", request.school_id, request.class_id);
+        // Step 1: Validate classroom belongs to school
+        if !self.enrollment_dao.verify_classroom_belongs_to_school(request.class_id, request.school_id).await? {
+            return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
+        }
 
-        // Step 1: Create auth user via Supabase (only external call we need)
-        println!("[DEBUG] Creating auth user via Supabase for email: {}", request.parent_email);
+        // Step 2: Create auth user via Supabase
         let auth_result = self.create_auth_user(
             &request.parent_email,
             request.school_id,
@@ -44,70 +45,108 @@ impl EnrollmentService {
             &request.parent_last_name,
             "Parent"
         ).await?;
-        println!("[DEBUG] Auth user created successfully with ID: {}", auth_result.auth_user_id);
 
-        // Step 2: Generate all required IDs upfront (school controller pattern)
-        let child_id = Uuid::new_v4();
-        let enrollment_id = Uuid::new_v4();
-        let form_assignment_id = Uuid::new_v4();
-        let now = chrono::Utc::now().naive_utc();
+        // Step 3: Get or create parent (may have been created by DB trigger)
+        let created_parent = match self.enrollment_dao.get_parent_by_id(auth_result.auth_user_id, request.school_id).await {
+            Ok(existing_parent) => existing_parent,
+            Err(_) => {
+                self.enrollment_dao.create_parent(
+                    auth_result.auth_user_id,
+                    request.school_id,
+                    &request.parent_first_name,
+                    &request.parent_last_name,
+                    &request.parent_email,
+                    "Parent"
+                ).await?
+            }
+        };
 
-        println!("[DEBUG] Generated IDs - child_id: {}, enrollment_id: {}, form_assignment_id: {}",
-                 child_id, enrollment_id, form_assignment_id);
+        // Step 4: Create child
+        let created_child = self.enrollment_dao.create_child(
+            auth_result.auth_user_id,
+            request.school_id,
+            &request.child_first_name,
+            &request.child_last_name,
+            request.child_birth_date,
+            &request.gender,
+        ).await?;
 
-        // Step 3: Direct object construction (following school controller pattern - no SELECT queries)
-        println!("[DEBUG] Constructing response objects directly (school controller pattern - single DB operation)");
+        // Step 5: Create enrollment
+        let created_enrollment = self.enrollment_dao.create_enrollment(
+            created_child.id,
+            request.school_id,
+            request.class_id,
+        ).await?;
+
+        // Step 6: Get school default forms
+        let school_forms = self.enrollment_dao.get_school_default_forms(request.school_id).await?;
+
+        // Step 7: Get classroom form overrides
+        let classroom_overrides = self.enrollment_dao.get_classroom_form_overrides(
+            request.class_id,
+            request.school_id,
+        ).await?;
+
+        // Step 8: Process forms and create assignments
+        let assigned_forms = self.process_form_assignments(
+            &school_forms,
+            &classroom_overrides,
+            created_enrollment.id,
+            created_child.id,
+            request.school_id,
+        ).await?;
+
+        let assigned_forms_count = assigned_forms.len();
 
         let parent = ParentDetails {
-            id: auth_result.auth_user_id,
-            school_id: request.school_id,
-            first_name: request.parent_first_name.clone(),
-            last_name: request.parent_last_name.clone(),
-            email: request.parent_email.clone(),
-            role: "Parent".to_string(),
-            is_verified: false,
-            created_at: Some(now),
+            id: created_parent.id,
+            school_id: created_parent.school_id,
+            first_name: created_parent.first_name.clone(),
+            last_name: created_parent.last_name.clone(),
+            email: created_parent.email.clone(),
+            role: created_parent.role.clone(),
+            is_verified: created_parent.is_verified,
+            created_at: created_parent.created_at,
         };
 
         let child = ChildDetails {
-            id: child_id,
-            parent_id: auth_result.auth_user_id,
-            school_id: request.school_id,
-            first_name: request.child_first_name.clone(),
-            last_name: request.child_last_name.clone(),
-            birth_date: request.child_birth_date,
-            gender: request.gender.clone(),
-            status: "Active".to_string(),
-            created_at: Some(now),
+            id: created_child.id,
+            parent_id: created_child.parent_id,
+            school_id: created_child.school_id,
+            first_name: created_child.first_name.clone(),
+            last_name: created_child.last_name.clone(),
+            birth_date: created_child.birth_date,
+            gender: created_child.gender.clone(),
+            status: created_child.status.clone(),
+            created_at: created_child.created_at,
         };
 
         let enrollment = EnrollmentDetails {
-            id: enrollment_id,
-            child_id,
-            school_id: request.school_id,
-            classroom_id: request.class_id,
-            status: "Active".to_string(),
-            application_status: Some(serde_json::json!("Pending")),
-            created_at: Some(now),
+            id: created_enrollment.id,
+            child_id: created_enrollment.child_id,
+            school_id: created_enrollment.school_id,
+            classroom_id: created_enrollment.classroom_id,
+            status: created_enrollment.status.clone(),
+            application_status: created_enrollment.application_status.clone(),
+            created_at: created_enrollment.created_at,
         };
 
-        // Assume basic form assignment (school controller pattern - minimal data)
-        let assigned_forms = vec![AssignedFormDetails {
-            id: form_assignment_id,
-            form_template_id: Uuid::new_v4(), // Generate placeholder
-            form_name: "Enrollment Form".to_string(),
-            assignment_source: "school_default".to_string(),
-            status: "Pending".to_string(),
-            is_required: true,
-        }];
+        // Convert form assignments to response format
+        let assigned_form_details: Vec<AssignedFormDetails> = assigned_forms.into_iter().map(|form| AssignedFormDetails {
+            id: form.id,
+            form_template_id: form.form_template_id,
+            form_name: form.form_name,
+            assignment_source: form.assignment_source,
+            status: form.status,
+            is_required: form.is_required,
+        }).collect();
 
-        // Step 4: Generate instant response (school controller pattern)
-        println!("[DEBUG] Generating instant response (school controller pattern - 0.2s response time)");
+        // Step 9: Generate response
         let response = ParentInviteResponse {
             parent_id: auth_result.auth_user_id,
-            child_id,
-            enrollment_id,
-            assigned_forms_count: assigned_forms.len(),
+            child_id: created_child.id,
+            enrollment_id: created_enrollment.id,
+            assigned_forms_count,
             invite_id: auth_result.auth_user_id,
             signup_email_sent: true,
             message: "Parent invite created successfully and signup email sent".to_string(),
@@ -115,11 +154,10 @@ impl EnrollmentService {
                 parent,
                 child,
                 enrollment,
-                assigned_forms,
+                assigned_forms: assigned_form_details,
             },
         };
 
-        println!("[DEBUG] Parent invite response generated successfully (school controller pattern applied)");
         Ok(response)
     }
 
@@ -132,8 +170,6 @@ impl EnrollmentService {
         last_name: &str,
         role: &str
     ) -> ApiResult<AuthUserResult> {
-        println!("[DEBUG] About to call supabase_client.create_user_invitation_enhanced for email: {}", email);
-
         // Create user metadata with school_id and other details
         let metadata = crate::services::supabase_client::UserMetadata::new(
             Some(school_id),
@@ -143,11 +179,9 @@ impl EnrollmentService {
         );
 
         let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;
-        println!("[DEBUG] Supabase create_user_invitation_enhanced returned: {}", auth_user_id_string);
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
-        println!("[DEBUG] Successfully parsed UUID: {} with school_id: {}", auth_user_id, school_id);
 
         Ok(AuthUserResult {
             auth_user_id,
@@ -191,20 +225,13 @@ impl EnrollmentService {
             }
         }
 
-        // Create form assignments
-        let mut assigned_forms = Vec::new();
-        for (form_id, (form_template, assignment_source)) in final_forms {
-            let assignment = self.enrollment_dao.create_student_form_assignment(
-                enrollment_id,
-                child_id,
-                school_id,
-                form_id,
-                &assignment_source,
-                form_template.is_required,
-            ).await?;
-
-            assigned_forms.push(assignment);
-        }
+        // Create form assignments using batch operation
+        let assigned_forms = self.enrollment_dao.create_student_form_assignments_batch(
+            enrollment_id,
+            child_id,
+            school_id,
+            final_forms,
+        ).await?;
 
         Ok(assigned_forms)
     }

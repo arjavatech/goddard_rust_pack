@@ -155,6 +155,45 @@ impl FormSubmissionDao {
             }
         };
 
+        // Step 2: Update student_form_assignments table with submission status
+        println!("[DEBUG] DAO: Updating student_form_assignments status to 'submitted' for assignment_id: {}", student_form_assignment_id);
+
+        let update_query = r#"
+            UPDATE student_form_assignments
+            SET
+                status = 'submitted',
+                recent_form_submission_id = $1,
+                updated_at = NOW()
+            WHERE id = $2
+        "#;
+
+        let submission_id_param: &(dyn tokio_postgres::types::ToSql + Sync) = &submission_id;
+        let assignment_id_param: &(dyn tokio_postgres::types::ToSql + Sync) = &student_form_assignment_id;
+        let update_params = vec![submission_id_param, assignment_id_param];
+        let update_future = client.execute(
+            update_query,
+            &update_params
+        );
+
+        let _update_result = match tokio::time::timeout(std::time::Duration::from_secs(5), update_future).await {
+            Ok(update_result) => match update_result {
+                Ok(result) => {
+                    println!("[DEBUG] DAO: UPDATE student_form_assignments executed successfully: {} rows affected", result);
+                    result
+                }
+                Err(e) => {
+                    println!("[ERROR] DAO: UPDATE student_form_assignments failed: {}", e);
+                    // Log error but continue - submission is already saved
+                    0
+                }
+            },
+            Err(_timeout_err) => {
+                println!("[ERROR] DAO: UPDATE student_form_assignments timed out after 5 seconds");
+                // Log timeout but continue - submission is already saved
+                0
+            }
+        };
+
         println!("[DEBUG] DAO: Constructing FormSubmission directly (school controller pattern - single DB operation)");
 
         // Create current timestamp for record creation

@@ -262,9 +262,13 @@ erDiagram
         uuid child_id FK
         uuid form_template_id FK
         string assignment_source "-- school_default, class_override, manual"
-        string status "-- incomplete, in_progress, completed, archived"
+        string status "-- Not Started, in_progress, completed, archived"
         boolean is_required
         timestamp assigned_at
+        uuid recent_form_submission_id FK "-- Most recent form submission ID"
+        uuid approved_by FK "-- User ID who approved"
+        text notes "-- Additional notes"
+        timestamp approved_on "-- Approval timestamp"
     }
 
     FORM_SUBMISSIONS {

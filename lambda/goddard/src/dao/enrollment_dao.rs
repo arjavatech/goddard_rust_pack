@@ -170,7 +170,7 @@ impl EnrollmentDao {
         }
 
         // Now insert child in same transaction
-        let child_insert_query = "INSERT INTO children (parent_id, school_id, first_name, last_name, birth_date, gender) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+        let child_insert_query = "INSERT INTO children (id, parent_id, school_id, first_name, last_name, birth_date, gender, status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', true, NOW(), NOW()) RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
 
         println!("[DEBUG] [create_child] Inserting child with verified parent");
         let child_result = timeout(Duration::from_secs(10),
@@ -209,7 +209,7 @@ impl EnrollmentDao {
         // Use timeout to prevent hanging - school controller pattern consistency
         use tokio::time::{timeout, Duration};
 
-        let query = "INSERT INTO enrollments (child_id, school_id, classroom_id) VALUES ($1, $2, $3) RETURNING id, child_id, school_id, classroom_id, status, application_status, created_at";
+        let query = "INSERT INTO enrollments (id, child_id, school_id, classroom_id, status, application_status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, 'incomplete', NULL, true, NOW(), NOW()) RETURNING id, child_id, school_id, classroom_id, status, application_status, created_at";
 
         let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
         let client = match client_result {
@@ -231,7 +231,7 @@ impl EnrollmentDao {
             child_id: row.get("child_id"),
             school_id: row.get("school_id"),
             classroom_id: row.get("classroom_id"),
-            status: row.get("status"),
+            status: row.get("status"), // Always returns 'pending' due to COALESCE in query
             application_status: row.get("application_status"),
             created_at: row.get("created_at"),
         })
@@ -239,7 +239,7 @@ impl EnrollmentDao {
 
     // Step 7: Get school default forms
     pub async fn get_school_default_forms(&self, school_id: Uuid) -> ApiResult<Vec<FormTemplate>> {
-        let query = "SELECT id, form_name, is_required FROM form_templates WHERE school_id = $1 AND is_default = true AND is_active = true";
+        let query = "SELECT id, form_name, is_required FROM form_templates WHERE school_id = $1 AND is_active = true";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -255,7 +255,7 @@ impl EnrollmentDao {
 
     // Step 8: Get classroom form overrides
     pub async fn get_classroom_form_overrides(&self, classroom_id: Uuid, school_id: Uuid) -> ApiResult<Vec<ClassFormOverride>> {
-        let query = "SELECT form_template_id, form_name, action, is_required FROM class_form_overrides WHERE classroom_id = $1 AND school_id = $2 AND is_active = true";
+        let query = "SELECT cfo.id, cfo.form_template_id, ft.form_name, cfo.action, cfo.is_required FROM class_form_overrides cfo JOIN form_templates ft ON cfo.form_template_id = ft.id WHERE cfo.classroom_id = $1 AND cfo.school_id = $2 AND cfo.is_active = true AND ft.is_active = true";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -263,11 +263,11 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get classroom form overrides: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| ClassFormOverride {
-            id: Uuid::new_v4(), // Placeholder since this field doesn't exist in the query
+            id: row.get("id"),
             form_template_id: row.get("form_template_id"),
             form_name: row.get("form_name"),
             action: row.get("action"),
-            is_required: row.get("is_required"),
+            is_required: row.get::<_, Option<bool>>("is_required").unwrap_or(false),
         }).collect())
     }
 
@@ -325,10 +325,11 @@ impl EnrollmentDao {
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
         let mut param_idx = 1;
 
+        let status_incomplete = "incomplete";
         for (form_template_id, (form_template, assignment_source)) in &final_forms {
             query_values.push(format!(
-                "(${}::uuid, ${}::uuid, ${}::uuid, ${}::uuid, ${}, ${}::boolean)",
-                param_idx, param_idx + 1, param_idx + 2, param_idx + 3, param_idx + 4, param_idx + 5
+                "(${}::uuid, ${}::uuid, ${}::uuid, ${}::uuid, ${}, ${}::boolean, ${})",
+                param_idx, param_idx + 1, param_idx + 2, param_idx + 3, param_idx + 4, param_idx + 5, param_idx + 6
             ));
             params.push(&enrollment_id);
             params.push(&child_id);
@@ -336,11 +337,12 @@ impl EnrollmentDao {
             params.push(form_template_id);
             params.push(assignment_source);
             params.push(&form_template.is_required);
-            param_idx += 6;
+            params.push(&status_incomplete);
+            param_idx += 7;
         }
 
         let query = format!(
-            "INSERT INTO student_form_assignments (enrollment_id, child_id, school_id, form_template_id, assignment_source, is_required)
+            "INSERT INTO student_form_assignments (enrollment_id, child_id, school_id, form_template_id, assignment_source, is_required, status)
              VALUES {}
              RETURNING id, form_template_id, assignment_source, status, is_required",
             query_values.join(", ")

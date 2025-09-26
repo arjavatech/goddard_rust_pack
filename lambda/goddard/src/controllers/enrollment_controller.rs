@@ -69,7 +69,7 @@ pub async fn get_enrollment_children_with_forms(
     Ok(ResponseUtils::success(response))
 }
 
-/// GET /enrollments/school-forms?school_id={uuid}
+/// GET /enrollments?school_id={uuid}
 /// Get all enrollment form details by school (API Key protected)
 pub async fn get_school_forms(
     State(enrollment_service): State<Arc<EnrollmentService>>,

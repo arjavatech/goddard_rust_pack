@@ -352,32 +352,50 @@ impl EnrollmentService {
         // Step 1: Get all parents from the school
         let parents = self.enrollment_dao.get_parents_by_school(request.school_id).await?;
 
-        // Step 2: Get auth details for each parent
-        let mut parents_with_auth = Vec::new();
+        if parents.is_empty() {
+            return Ok(GetParentDetailsBySchoolResponse {
+                school_id: request.school_id,
+                total_parents: 0,
+                message: "No parents found for this school".to_string(),
+                parents: vec![],
+            });
+        }
 
+        // Step 2: Get auth details for all parents in parallel (batch processing)
+        let mut tasks = Vec::new();
         for parent in parents {
-            // Get auth details from Supabase using parent ID as auth user ID
-            match self.supabase_client.get_user_auth_details(parent.id).await {
-                Ok((auth_email, auth_created_at, id_signed)) => {
-                    let parent_with_auth = ParentWithAuthDetails {
-                        id: parent.id,
-                        school_id: parent.school_id,
-                        first_name: parent.first_name,
-                        last_name: parent.last_name,
-                        email: parent.email,
-                        role: parent.role,
-                        created_at: parent.created_at.map(|dt| {
-                            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
-                        }).unwrap_or_else(chrono::Utc::now),
-                        id_signed,
-                    };
-                    parents_with_auth.push(parent_with_auth);
+            let supabase_client = self.supabase_client.clone();
+            let task = tokio::spawn(async move {
+                match supabase_client.get_user_auth_details(parent.id).await {
+                    Ok((auth_email, auth_created_at, id_signed)) => {
+                        Some(ParentWithAuthDetails {
+                            id: parent.id,
+                            school_id: parent.school_id,
+                            first_name: parent.first_name,
+                            last_name: parent.last_name,
+                            email: parent.email,
+                            role: parent.role,
+                            created_at: parent.created_at.map(|dt| {
+                                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                            }).unwrap_or_else(chrono::Utc::now),
+                            id_signed,
+                        })
+                    }
+                    Err(e) => {
+                        // Log warning and return None if auth details not found
+                        eprintln!("Warning: Could not get auth details for parent {}: {}", parent.id, e);
+                        None
+                    }
                 }
-                Err(e) => {
-                    // Log warning and skip this parent if auth details not found
-                    eprintln!("Warning: Could not get auth details for parent {}: {}", parent.id, e);
-                    continue;
-                }
+            });
+            tasks.push(task);
+        }
+
+        // Wait for all tasks to complete and collect results
+        let mut parents_with_auth = Vec::new();
+        for task in tasks {
+            if let Ok(Some(parent_with_auth)) = task.await {
+                parents_with_auth.push(parent_with_auth);
             }
         }
 

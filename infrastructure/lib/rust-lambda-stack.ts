@@ -43,7 +43,7 @@ export class RustLambdaStack extends cdk.Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'Authorization'],
+        allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-school-id', 'x-api-key'],
       },
     });
 

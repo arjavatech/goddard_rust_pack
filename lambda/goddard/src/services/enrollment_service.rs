@@ -78,14 +78,11 @@ impl EnrollmentService {
             request.class_id,
         ).await?;
 
-        // Step 6: Get school default forms
-        let school_forms = self.enrollment_dao.get_school_default_forms(request.school_id).await?;
-
-        // Step 7: Get classroom form overrides
-        let classroom_overrides = self.enrollment_dao.get_classroom_form_overrides(
-            request.class_id,
-            request.school_id,
-        ).await?;
+        // Step 6 & 7: Get forms data in parallel for better performance
+        let (school_forms, classroom_overrides) = tokio::try_join!(
+            self.enrollment_dao.get_school_default_forms(request.school_id),
+            self.enrollment_dao.get_classroom_form_overrides(request.class_id, request.school_id)
+        )?;
 
         // Step 8: Process forms and create assignments
         let assigned_forms = self.process_form_assignments(

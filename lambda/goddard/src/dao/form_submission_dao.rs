@@ -81,8 +81,7 @@ impl FormSubmissionDao {
         println!("INSERT INTO form_submissions (");
         println!("    school_id, enrollment_id, student_form_assignment_id,");
         println!("    form_template_id, fillout_submission_id, form_data, metadata,");
-        println!("    submitted_at, processed_at, is_active, created_at, updated_at,");
-        println!("    status, revision_number, revision_reason");
+        println!("    submitted_at, processed_at, is_active, created_at, updated_at");
         println!(") VALUES (");
         println!("    '{}', -- school_id", school_id);
         println!("    '{}', -- enrollment_id", enrollment_id);
@@ -96,9 +95,6 @@ impl FormSubmissionDao {
         println!("    {}, -- is_active", true);
         println!("    '{}', -- created_at", now);
         println!("    '{}', -- updated_at", now);
-        println!("    '{}', -- status", "completed");
-        println!("    {}, -- revision_number", 1i32);
-        println!("    NULL -- revision_reason");
         println!(");");
 
         // SOLUTION: Use simple_query to avoid prepared statement conflicts
@@ -113,12 +109,11 @@ impl FormSubmissionDao {
             INSERT INTO form_submissions (
                 id, school_id, enrollment_id, student_form_assignment_id,
                 form_template_id, fillout_submission_id, form_data, metadata,
-                submitted_at, processed_at, is_active, created_at, updated_at,
-                status, revision_number
+                submitted_at, processed_at, is_active, created_at, updated_at
             )
             VALUES (
                 '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}',
-                '{}', '{}', true, '{}', '{}', 'completed', 1
+                '{}', '{}', true, '{}', '{}'
             )
             "#,
             submission_id,

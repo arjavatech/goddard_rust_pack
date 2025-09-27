@@ -409,6 +409,7 @@ impl EnrollmentDao {
                     e.id as enrollment_id,
                     cl.id as classroom_id,
                     cl.name as classroom_name,
+                    sfa.id as student_form_assignment_id,
                     sfa.form_template_id,
                     ft.form_name,
                     ft.fillout_form_id,
@@ -441,7 +442,13 @@ impl EnrollmentDao {
                         CASE WHEN form_template_id IS NOT NULL THEN
                             json_build_object(
                                 'form_id', 'form_' || COALESCE(form_template_id::text, ''),
-                                'fillout_form_id', fillout_form_id,
+                                'student_form_assignment_id', student_form_assignment_id,
+                                'fillout_form_id',
+                                CASE
+                                    WHEN fillout_form_id IS NOT NULL AND student_form_assignment_id IS NOT NULL
+                                    THEN REPLACE(fillout_form_id, 'xxxxx', student_form_assignment_id::text)
+                                    ELSE fillout_form_id
+                                END,
                                 'form_name', form_name,
                                 'status', form_status,
                                 'is_required', is_required

@@ -212,11 +212,37 @@ pub struct GetParentDetailsBySchoolRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(transparent)]
 pub struct GetParentDetailsBySchoolResponse {
-    pub school_id: Uuid,
-    pub total_parents: usize,
-    pub message: String,
-    pub parents: Vec<ParentWithAuthDetails>,
+    pub parents: Vec<ParentWithChildren>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ParentWithChildren {
+    pub parent_id: Uuid,
+    pub parent_email: String,
+    pub parent_first_name: String,
+    pub parent_last_name: String,
+    pub children: Vec<ChildWithForms>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ChildWithForms {
+    pub child_id: Uuid,
+    pub child_full_name: String,
+    pub child_dob: NaiveDate,
+    pub enrollment_id: Uuid,
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub forms: Vec<FormStatus>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FormStatus {
+    pub form_id: String,
+    pub form_name: String,
+    pub status: String,
+    pub is_required: bool,
 }
 
 #[derive(Debug, Serialize)]

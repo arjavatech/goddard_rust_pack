@@ -27,25 +27,11 @@ pub struct ResponseUtils;
 
 impl ResponseUtils {
     pub fn success<T: Serialize>(data: T) -> impl IntoResponse {
-        let response = ApiResponse {
-            success: true,
-            data: Some(data),
-            message: None,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        };
-
-        (StatusCode::OK, Json(response))
+        (StatusCode::OK, Json(data))
     }
 
     pub fn created<T: Serialize>(data: T) -> impl IntoResponse {
-        let response = ApiResponse {
-            success: true,
-            data: Some(data),
-            message: Some("Resource created successfully".to_string()),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        };
-
-        (StatusCode::CREATED, Json(response))
+        (StatusCode::CREATED, Json(data))
     }
 
     pub fn no_content() -> impl IntoResponse {
@@ -53,14 +39,7 @@ impl ResponseUtils {
     }
 
     pub fn success_with_message(message: &str) -> impl IntoResponse {
-        let response = ApiResponse {
-            success: true,
-            data: None::<()>,
-            message: Some(message.to_string()),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        };
-
-        (StatusCode::OK, Json(response))
+        (StatusCode::OK, Json(message.to_string()))
     }
 
     pub fn paginated<T: Serialize>(

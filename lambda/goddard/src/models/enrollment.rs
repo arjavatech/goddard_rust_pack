@@ -240,6 +240,7 @@ pub struct ChildWithForms {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FormStatus {
     pub form_id: String,
+    pub fillout_form_id: Option<String>,
     pub form_name: String,
     pub status: String,
     pub is_required: bool,

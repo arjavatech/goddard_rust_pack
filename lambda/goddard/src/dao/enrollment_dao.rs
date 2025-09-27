@@ -411,6 +411,7 @@ impl EnrollmentDao {
                     cl.name as classroom_name,
                     sfa.form_template_id,
                     ft.form_name,
+                    ft.fillout_form_id,
                     COALESCE(sfa.status, 'incomplete') as form_status,
                     COALESCE(sfa.is_required, false) as is_required
                 FROM users u
@@ -440,6 +441,7 @@ impl EnrollmentDao {
                         CASE WHEN form_template_id IS NOT NULL THEN
                             json_build_object(
                                 'form_id', 'form_' || COALESCE(form_template_id::text, ''),
+                                'fillout_form_id', fillout_form_id,
                                 'form_name', form_name,
                                 'status', form_status,
                                 'is_required', is_required

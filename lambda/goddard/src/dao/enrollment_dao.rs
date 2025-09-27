@@ -7,6 +7,7 @@ use std::time::Duration;
 use crate::models::enrollment::{
     CreatedUser, CreatedChild, CreatedEnrollment, FormTemplate,
     ClassFormOverride, CreatedFormAssignment, ParentWithAuthDetails,
+    ParentWithChildren, ChildWithForms, FormStatus,
     EnrollmentChildWithForms, SchoolFormDetails, ClassWiseCount
 };
 use crate::error::AppError;
@@ -391,6 +392,113 @@ impl EnrollmentDao {
             is_verified: row.get("is_verified"),
             created_at: row.get("created_at"),
         }).collect())
+    }
+
+    // New method to get parent details with children and forms
+    pub async fn get_parent_details_with_children_and_forms(&self, school_id: Uuid) -> ApiResult<Vec<ParentWithChildren>> {
+        let query = "
+            WITH parent_children_forms AS (
+                SELECT
+                    u.id as parent_id,
+                    u.email as parent_email,
+                    u.first_name as parent_first_name,
+                    u.last_name as parent_last_name,
+                    c.id as child_id,
+                    CONCAT(c.first_name, ' ', c.last_name) as child_full_name,
+                    c.birth_date as child_dob,
+                    e.id as enrollment_id,
+                    cl.id as classroom_id,
+                    cl.name as classroom_name,
+                    sfa.form_template_id,
+                    ft.form_name,
+                    COALESCE(sfa.status, 'incomplete') as form_status,
+                    COALESCE(sfa.is_required, false) as is_required
+                FROM users u
+                INNER JOIN children c ON c.parent_id = u.id
+                INNER JOIN enrollments e ON e.child_id = c.id
+                INNER JOIN classrooms cl ON cl.id = e.classroom_id
+                LEFT JOIN student_form_assignments sfa ON sfa.child_id = c.id
+                LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
+                WHERE u.school_id = $1
+                    AND u.role = 'Parent'
+                    AND (u.is_active = true OR u.is_active IS NULL)
+                ORDER BY u.email, c.id, sfa.form_template_id
+            )
+            SELECT
+                parent_id,
+                parent_email,
+                parent_first_name,
+                parent_last_name,
+                child_id,
+                child_full_name,
+                child_dob,
+                enrollment_id,
+                classroom_id,
+                classroom_name,
+                COALESCE(
+                    json_agg(
+                        CASE WHEN form_template_id IS NOT NULL THEN
+                            json_build_object(
+                                'form_id', 'form_' || COALESCE(form_template_id::text, ''),
+                                'form_name', form_name,
+                                'status', form_status,
+                                'is_required', is_required
+                            )
+                        ELSE NULL END
+                    ) FILTER (WHERE form_template_id IS NOT NULL),
+                    '[]'::json
+                ) as forms
+            FROM parent_children_forms
+            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name,
+                     child_id, child_full_name, child_dob, enrollment_id,
+                     classroom_id, classroom_name
+            ORDER BY parent_email, child_full_name
+        ";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client.query(query, &[&school_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get parent details with children: {}", e)))?;
+
+        // Group results by parent
+        let mut parents_map: std::collections::HashMap<Uuid, ParentWithChildren> = std::collections::HashMap::new();
+
+        for row in rows {
+            let parent_id: Uuid = row.get("parent_id");
+            let forms_json: serde_json::Value = row.get("forms");
+
+            // Parse forms from JSON
+            let forms: Vec<FormStatus> = serde_json::from_value(forms_json)
+                .unwrap_or_else(|_| vec![]);
+
+            let child = ChildWithForms {
+                child_id: row.get("child_id"),
+                child_full_name: row.get("child_full_name"),
+                child_dob: row.get("child_dob"),
+                enrollment_id: row.get("enrollment_id"),
+                classroom_id: row.get("classroom_id"),
+                classroom_name: row.get("classroom_name"),
+                forms,
+            };
+
+            // Add to parent or create new parent entry
+            parents_map.entry(parent_id)
+                .and_modify(|parent| parent.children.push(child.clone()))
+                .or_insert_with(|| ParentWithChildren {
+                    parent_id,
+                    parent_email: row.get("parent_email"),
+                    parent_first_name: row.get("parent_first_name"),
+                    parent_last_name: row.get("parent_last_name"),
+                    children: vec![child],
+                });
+        }
+
+        // Convert to vec and return
+        let mut parents: Vec<ParentWithChildren> = parents_map.into_values().collect();
+        parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+
+        Ok(parents)
     }
 
     // Method for getting enrollment children with form assignments

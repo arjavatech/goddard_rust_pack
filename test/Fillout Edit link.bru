@@ -1,0 +1,19 @@
+meta {
+  name: Fillout Edit link 
+  type: http
+  seq: 16
+}
+
+get {
+  url: https://api.fillout.com/v1/api/forms/tdKTQWnb3Wus/submissions/e193aef0-8cc8-4e49-8d60-4d5916b576ad?includeEditLink=true
+  body: none
+  auth: inherit
+}
+
+params:query {
+  includeEditLink: true
+}
+
+settings {
+  encodeUrl: true
+}

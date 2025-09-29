@@ -63,7 +63,7 @@ use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService
 };
 use middleware::auth::{api_key_middleware, jwt_middleware};
 use std::sync::Arc;
@@ -112,6 +112,20 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let supabase_client = SupabaseClient::new()
         .map_err(|e| lambda_http::Error::from(format!("Supabase client error: {}", e)))?;
 
+    // Initialize Fillout service (optional - only if environment variables are present)
+    let fillout_service = std::env::var("FILLOUT_API_KEY")
+        .map(|api_key| {
+            let base_url = std::env::var("FILLOUT_API_BASE_URL").ok();
+            FilloutService::new(api_key, base_url)
+        })
+        .ok();
+
+    if fillout_service.is_some() {
+        println!("[DEBUG] Fillout service initialized successfully");
+    } else {
+        println!("[WARN] Fillout service not initialized - missing environment variables");
+    }
+
     // Initialize services
     let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client.clone()));
     let school_service = Arc::new(SchoolService::new(school_dao));
@@ -119,7 +133,13 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
-    let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
+    let form_submission_service = Arc::new(
+        if let Some(fillout) = fillout_service {
+            FormSubmissionService::new_with_fillout(form_submission_dao, fillout)
+        } else {
+            FormSubmissionService::new(form_submission_dao)
+        }
+    );
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     
@@ -248,6 +268,20 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
 
+    // Initialize Fillout service (optional - only if environment variables are present)
+    let fillout_service = std::env::var("FILLOUT_API_KEY")
+        .map(|api_key| {
+            let base_url = std::env::var("FILLOUT_API_BASE_URL").ok();
+            FilloutService::new(api_key, base_url)
+        })
+        .ok();
+
+    if fillout_service.is_some() {
+        println!("[DEBUG] Fillout service initialized successfully");
+    } else {
+        println!("[WARN] Fillout service not initialized - missing environment variables");
+    }
+
     // Initialize services
     let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client.clone()));
     let school_service = Arc::new(SchoolService::new(school_dao));
@@ -255,7 +289,13 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
-    let form_submission_service = Arc::new(FormSubmissionService::new(form_submission_dao));
+    let form_submission_service = Arc::new(
+        if let Some(fillout) = fillout_service {
+            FormSubmissionService::new_with_fillout(form_submission_dao, fillout)
+        } else {
+            FormSubmissionService::new(form_submission_dao)
+        }
+    );
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
 

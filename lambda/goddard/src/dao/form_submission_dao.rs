@@ -53,8 +53,10 @@ impl FormSubmissionDao {
         println!("[DEBUG] DAO: Generated timestamp: {}", now);
 
         // Extract fillout_submission_id from payload, or generate a default
+        // Check for both fillout_submission_id and form_submission_id (different naming conventions)
         let fillout_submission_id = payload
             .get("fillout_submission_id")
+            .or_else(|| payload.get("form_submission_id"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("webhook_{}", Uuid::new_v4()));
@@ -151,12 +153,12 @@ impl FormSubmissionDao {
         };
 
         // Step 2: Update student_form_assignments table with submission status
-        println!("[DEBUG] DAO: Updating student_form_assignments status to 'submitted' for assignment_id: {}", student_form_assignment_id);
+        println!("[DEBUG] DAO: Updating student_form_assignments status to 'in_progress' for assignment_id: {}", student_form_assignment_id);
 
         let update_query = r#"
             UPDATE student_form_assignments
             SET
-                status = 'submitted',
+                status = 'in_progress',
                 recent_form_submission_id = $1,
                 updated_at = NOW()
             WHERE id = $2
@@ -641,5 +643,65 @@ impl FormSubmissionDao {
 
         println!("[DEBUG] DAO: Row conversion completed successfully");
         Ok(submission)
+    }
+
+    pub async fn update_submission_links(
+        &self,
+        submission_id: Uuid,
+        edit_link: Option<String>,
+        pdf_link: Option<String>,
+    ) -> Result<(), AppError> {
+        println!("[DEBUG] DAO: Updating submission links for ID: {}", submission_id);
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE form_submissions
+            SET edit_link = $2, pdf_link = $3, updated_at = NOW()
+            WHERE id = $1
+        "#;
+
+        let rows_affected = client.execute(query, &[&submission_id, &edit_link, &pdf_link])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to update submission links: {}", e)))?;
+
+        if rows_affected == 0 {
+            println!("[WARN] DAO: No rows updated for submission_id: {}", submission_id);
+            return Err(AppError::NotFound("Form submission not found".to_string()));
+        }
+
+        println!("[DEBUG] DAO: Successfully updated submission links for {} rows", rows_affected);
+        Ok(())
+    }
+
+    pub async fn update_assignment_links(
+        &self,
+        student_form_assignment_id: Uuid,
+        recent_edit_link: Option<String>,
+        recent_pdf_link: Option<String>,
+    ) -> Result<(), AppError> {
+        println!("[DEBUG] DAO: Updating assignment links for ID: {}", student_form_assignment_id);
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE student_form_assignments
+            SET recent_edit_link = $2, recent_pdf_link = $3, updated_at = NOW()
+            WHERE id = $1
+        "#;
+
+        let rows_affected = client.execute(query, &[&student_form_assignment_id, &recent_edit_link, &recent_pdf_link])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to update assignment links: {}", e)))?;
+
+        if rows_affected == 0 {
+            println!("[WARN] DAO: No rows updated for assignment_id: {}", student_form_assignment_id);
+            return Err(AppError::NotFound("Student form assignment not found".to_string()));
+        }
+
+        println!("[DEBUG] DAO: Successfully updated assignment links for {} rows", rows_affected);
+        Ok(())
     }
 }

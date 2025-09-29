@@ -44,6 +44,17 @@ fn is_allowed_origin(origin: &str) -> bool {
         }
     }
 
+    // Allow 127.0.0.1 3000 series as well
+    if origin.starts_with("http://127.0.0.1:3") || origin.starts_with("https://127.0.0.1:3") {
+        if let Some(port_start) = origin.rfind(':') {
+            if let Ok(port) = origin[port_start + 1..].parse::<u16>() {
+                if (3000..=3999).contains(&port) {
+                    return true;
+                }
+            }
+        }
+    }
+
     false
 }
 
@@ -69,9 +80,13 @@ pub async fn add_cors_headers(
     let headers = response.headers_mut();
 
     // Set allowed origin based on the request origin
-    let allowed_origin = if is_allowed_origin(&origin) {
+    // For development, be more permissive
+    let allowed_origin = if origin.is_empty() {
+        HeaderValue::from_static("*")
+    } else if is_allowed_origin(&origin) {
         HeaderValue::from_str(&origin).unwrap_or(HeaderValue::from_static("*"))
     } else {
+        // For Lambda/production, still allow all origins for now (can be restricted later)
         HeaderValue::from_static("*")
     };
 

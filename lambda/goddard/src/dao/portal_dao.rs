@@ -241,7 +241,7 @@ impl PortalDao {
                 sfa.status,
                 NULL::date as due_date,
                 COALESCE(sfa.updated_at, sfa.created_at) as last_updated,
-                ft.fillout_form_url as launch_url
+                ft.fillout_form_id as launch_url
             FROM student_form_assignments sfa
             JOIN form_templates ft ON sfa.form_template_id = ft.id
             WHERE sfa.child_id = $1

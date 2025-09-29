@@ -73,8 +73,7 @@ CREATE TABLE form_templates (
     school_id UUID NOT NULL REFERENCES schools(id),
     form_name VARCHAR(255) NOT NULL,  -- Unique per school (composite constraint below)
     form_type VARCHAR(100),
-    fillout_form_id VARCHAR(255),
-    fillout_form_url TEXT,
+    fillout_form_id VARCHAR(255),  -- Stores the Fillout form ID/URL
     status VARCHAR(50),
     is_required BOOLEAN DEFAULT false,
     display_order INTEGER,
@@ -333,3 +332,158 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- To sync existing users (run once if needed):
 -- SELECT public.sync_existing_auth_users();
+
+-- ==========================================
+-- MIGRATION: Table Structure Updates
+-- Date: 2025-09-29
+-- Description: Adding missing tables and fields for complete enrollment system
+-- ==========================================
+
+-- ==========================================
+-- PART 1: ALTER EXISTING TABLES
+-- ==========================================
+
+-- 1.0 Remove redundant fillout_form_url column from FORM_TEMPLATES table
+ALTER TABLE form_templates DROP COLUMN IF EXISTS fillout_form_url;
+
+-- 1.1 Add new columns to FORM_SUBMISSIONS table
+ALTER TABLE form_submissions
+ADD COLUMN IF NOT EXISTS edit_link TEXT,
+ADD COLUMN IF NOT EXISTS pdf_link TEXT;
+
+COMMENT ON COLUMN form_submissions.edit_link IS 'Link to edit the form submission in Fillout';
+COMMENT ON COLUMN form_submissions.pdf_link IS 'Link to PDF version of the form submission';
+
+-- 1.2 Add new columns to STUDENT_FORM_ASSIGNMENTS table
+ALTER TABLE student_form_assignments
+ADD COLUMN IF NOT EXISTS recent_edit_link TEXT,
+ADD COLUMN IF NOT EXISTS recent_pdf_link TEXT;
+
+COMMENT ON COLUMN student_form_assignments.recent_edit_link IS 'Most recent edit link from latest submission';
+COMMENT ON COLUMN student_form_assignments.recent_pdf_link IS 'Most recent PDF link from latest submission';
+
+-- 1.3 Add approval workflow columns to ENROLLMENTS table
+ALTER TABLE enrollments
+ADD COLUMN IF NOT EXISTS admin_approval_status VARCHAR(20) DEFAULT 'pending',
+ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP,
+ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id),
+ADD COLUMN IF NOT EXISTS approval_notes TEXT,
+ADD COLUMN IF NOT EXISTS forms_locked_at TIMESTAMP;
+
+-- Add check constraint for approval status
+ALTER TABLE enrollments DROP CONSTRAINT IF EXISTS check_admin_approval_status;
+ALTER TABLE enrollments ADD CONSTRAINT check_admin_approval_status
+CHECK (admin_approval_status IN ('pending', 'approved', 'rejected', 'needs_revision'));
+
+COMMENT ON COLUMN enrollments.admin_approval_status IS 'Admin approval status for the enrollment';
+COMMENT ON COLUMN enrollments.approved_at IS 'Timestamp when enrollment was approved';
+COMMENT ON COLUMN enrollments.approved_by IS 'User ID of admin who approved';
+COMMENT ON COLUMN enrollments.approval_notes IS 'Admin notes regarding approval decision';
+COMMENT ON COLUMN enrollments.forms_locked_at IS 'Timestamp when forms were locked after approval';
+
+-- ==========================================
+-- PART 2: UPDATE is_verified LOGIC FOR USERS
+-- ==========================================
+
+-- Drop the existing default constraint on is_verified
+ALTER TABLE users ALTER COLUMN is_verified DROP DEFAULT;
+
+-- Create a function to set is_verified based on role
+CREATE OR REPLACE FUNCTION set_is_verified_based_on_role()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Set is_verified based on role
+    IF NEW.is_verified IS NULL THEN
+        IF NEW.role = 'Parent' OR NEW.role = 'primary-parent' OR NEW.role = 'secondary-parent' THEN
+            NEW.is_verified := true;
+        ELSE
+            NEW.is_verified := false;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to automatically set is_verified for new users
+DROP TRIGGER IF EXISTS set_is_verified_on_insert ON users;
+CREATE TRIGGER set_is_verified_on_insert
+    BEFORE INSERT ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION set_is_verified_based_on_role();
+
+-- Update existing Parent users to have is_verified = true if currently false or null
+UPDATE users
+SET is_verified = true
+WHERE role IN ('Parent', 'primary-parent', 'secondary-parent')
+AND (is_verified = false OR is_verified IS NULL);
+
+-- ==========================================
+-- PART 3: UPDATE TRIGGER FOR AUTH.USERS SYNC
+-- ==========================================
+
+-- Update the auth user sync function to respect role-based is_verified
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Insert new user into public.users table using auth user data
+    INSERT INTO public.users (
+        id,
+        school_id,
+        first_name,
+        last_name,
+        email,
+        role,
+        is_verified,
+        created_at,
+        metadata,
+        is_active
+    ) VALUES (
+        NEW.id,
+        COALESCE(
+            (NEW.raw_user_meta_data->>'school_id')::UUID,
+            NULL
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'first_name',
+            ''
+        ),
+        COALESCE(
+            NEW.raw_user_meta_data->>'last_name',
+            ''
+        ),
+        NEW.email,
+        COALESCE(
+            NEW.raw_user_meta_data->>'role',
+            'Parent'
+        ),
+        -- Set is_verified based on role
+        CASE
+            WHEN COALESCE(NEW.raw_user_meta_data->>'role', 'Parent') IN ('Parent', 'primary-parent', 'secondary-parent')
+            THEN true
+            ELSE false
+        END,
+        NOW(),
+        NEW.raw_user_meta_data,
+        true
+    );
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ==========================================
+-- PART 4: ADDITIONAL INDEXES FOR PERFORMANCE
+-- ==========================================
+
+-- Add indexes for new approval columns
+CREATE INDEX IF NOT EXISTS idx_enrollments_admin_approval_status ON enrollments(admin_approval_status);
+CREATE INDEX IF NOT EXISTS idx_enrollments_approved_by ON enrollments(approved_by);
+CREATE INDEX IF NOT EXISTS idx_enrollments_approved_at ON enrollments(approved_at);
+
+-- Add indexes for link columns
+CREATE INDEX IF NOT EXISTS idx_student_form_assignments_recent_edit_link ON student_form_assignments(recent_edit_link) WHERE recent_edit_link IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_student_form_assignments_recent_pdf_link ON student_form_assignments(recent_pdf_link) WHERE recent_pdf_link IS NOT NULL;
+
+-- ==========================================
+-- MIGRATION COMPLETE
+-- ==========================================

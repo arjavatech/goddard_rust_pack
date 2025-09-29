@@ -274,7 +274,7 @@ impl EnrollmentDao {
 
     // Step 9: Create student form assignment (optimized to avoid N+1)
     pub async fn create_student_form_assignment(&self, enrollment_id: Uuid, child_id: Uuid, school_id: Uuid, form_template_id: Uuid, assignment_source: &str, is_required: bool) -> ApiResult<CreatedFormAssignment> {
-        let query = "INSERT INTO student_form_assignments (enrollment_id, child_id, school_id, form_template_id, assignment_source, is_required) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, form_template_id, assignment_source, status, is_required";
+        let query = "INSERT INTO student_form_assignments (enrollment_id, child_id, school_id, form_template_id, assignment_source, is_required) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, form_template_id, assignment_source, status, is_required, recent_edit_link, recent_pdf_link";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -291,6 +291,8 @@ impl EnrollmentDao {
             assignment_source: row.get("assignment_source"),
             status: row.get("status"),
             is_required: row.get("is_required"),
+            recent_edit_link: row.get("recent_edit_link"),
+            recent_pdf_link: row.get("recent_pdf_link"),
         })
     }
 
@@ -345,7 +347,7 @@ impl EnrollmentDao {
         let query = format!(
             "INSERT INTO student_form_assignments (enrollment_id, child_id, school_id, form_template_id, assignment_source, is_required, status)
              VALUES {}
-             RETURNING id, form_template_id, assignment_source, status, is_required",
+             RETURNING id, form_template_id, assignment_source, status, is_required, recent_edit_link, recent_pdf_link",
             query_values.join(", ")
         );
 
@@ -367,6 +369,8 @@ impl EnrollmentDao {
                 assignment_source: row.get("assignment_source"),
                 status: row.get("status"),
                 is_required: row.get("is_required"),
+                recent_edit_link: row.get("recent_edit_link"),
+                recent_pdf_link: row.get("recent_pdf_link"),
             });
         }
 

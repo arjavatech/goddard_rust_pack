@@ -71,7 +71,6 @@ pub async fn update_form_template(
         form_name: form_template.form_name,
         form_type: form_template.form_type,
         fillout_form_id: form_template.fillout_form_id,
-        fillout_form_url: form_template.fillout_form_url,
         status: form_template.status,
         is_required: form_template.is_required,
         display_order: form_template.display_order,

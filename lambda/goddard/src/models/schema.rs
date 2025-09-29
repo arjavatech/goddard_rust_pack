@@ -173,8 +173,7 @@ pub struct FormTemplate {
     pub form_name: String,
     pub form_description: Option<String>,
     pub form_type: FormType,
-    pub fillout_form_id: String,
-    pub fillout_form_url: String,
+    pub fillout_form_id: String, // Stores the Fillout form ID/URL
     pub status: FormStatus,
     pub is_required: bool,
     pub display_order: i32,
@@ -332,7 +331,6 @@ pub struct CreateFormTemplateRequest {
     pub form_description: Option<String>,
     pub form_type: FormType,
     pub fillout_form_id: String,
-    pub fillout_form_url: String,
     pub is_required: Option<bool>,
 }
 

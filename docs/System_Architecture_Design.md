@@ -183,7 +183,7 @@ erDiagram
         uuid created_by FK
         timestamp created_at
         jsonb metadata
-        boolean is_verified "-- Default: false"
+        boolean is_verified "-- Role-based: true for Parents, false for Admin/others"
         boolean is_active "-- Default: true"
     }
 
@@ -212,6 +212,11 @@ erDiagram
         string status
         jsonb application_status "-- Optional, initially null"
         jsonb progress
+        string admin_approval_status "-- Default: pending (pending, approved, rejected, needs_revision)"
+        timestamp approved_at
+        uuid approved_by FK
+        text approval_notes
+        timestamp forms_locked_at
         timestamp submitted_at
     }
     
@@ -224,8 +229,7 @@ erDiagram
         uuid school_id FK
         string form_name "-- Unique per school (school_id, form_name)"
         string form_type
-        string fillout_form_id
-        string fillout_form_url
+        string fillout_form_id "-- Stores the Fillout form ID/URL"
         string status
         boolean is_required
         integer display_order
@@ -266,6 +270,8 @@ erDiagram
         boolean is_required
         timestamp assigned_at
         uuid recent_form_submission_id FK "-- Most recent form submission ID"
+        text recent_edit_link "-- Most recent edit link from latest submission"
+        text recent_pdf_link "-- Most recent PDF link from latest submission"
         uuid approved_by FK "-- User ID who approved"
         text notes "-- Additional notes"
         timestamp approved_on "-- Approval timestamp"
@@ -280,6 +286,8 @@ erDiagram
         string fillout_submission_id UK "-- Unique ID from Fillout webhook"
         jsonb form_data "-- Actual form responses"
         jsonb metadata "-- Submission metadata"
+        text edit_link "-- Link to edit the form submission in Fillout"
+        text pdf_link "-- Link to PDF version of the form submission"
         timestamp submitted_at
         timestamp processed_at
     }
@@ -307,6 +315,7 @@ erDiagram
 | **form_templates** | `form_name` | **School-Level Unique** | `UNIQUE (school_id, form_name)` | Schools can have same form names (e.g., "Enrollment Form") |
 | **form_templates** | `fillout_form_id` | **Globally Unique** | `UNIQUE (fillout_form_id)` | Fillout.com form IDs are globally unique |
 | **form_submissions** | `fillout_submission_id` | **Globally Unique** | `UNIQUE (fillout_submission_id)` | Prevents duplicate form submission processing |
+| **users** | `is_verified` | **Role-Based Default** | `Trigger: set_is_verified_based_on_role()` | Parents auto-verified, Admins require verification |
 
 #### 2.2.3 Multi-Tenant Business Rules
 
@@ -328,6 +337,34 @@ erDiagram
 3. **Administrative Clarity**: Clear data separation prevents cross-school contamination
 4. **System Scalability**: Database can grow to hundreds of schools without naming conflicts
 5. **Compliance**: Proper tenant isolation supports COPPA/FERPA requirements
+
+#### 2.2.5 Recent Schema Updates (2025-09-29)
+
+**Enhanced Tables:**
+1. **USERS Table**:
+   - Modified `is_verified` logic with role-based defaults via trigger
+   - Parents receive `is_verified = true` automatically
+   - Admins and other roles receive `is_verified = false` by default
+
+2. **FORM_SUBMISSIONS Table**:
+   - Added `edit_link` TEXT - Direct link to edit form in Fillout
+   - Added `pdf_link` TEXT - Link to PDF version of submission
+
+3. **STUDENT_FORM_ASSIGNMENTS Table**:
+   - Added `recent_edit_link` TEXT - Latest edit link from submissions
+   - Added `recent_pdf_link` TEXT - Latest PDF link from submissions
+
+4. **ENROLLMENTS Table**:
+   - Added `admin_approval_status` VARCHAR(20) - Approval workflow status
+   - Added `approved_at` TIMESTAMP - When enrollment was approved
+   - Added `approved_by` UUID - Admin who approved
+   - Added `approval_notes` TEXT - Admin notes on decision
+   - Added `forms_locked_at` TIMESTAMP - When forms were locked
+
+5. **FORM_TEMPLATES Table**:
+   - Removed redundant `fillout_form_url` field (keeping only `fillout_form_id` as both stored the same value)
+
+These updates support enhanced form management and approval workflows while maintaining backward compatibility with existing data.
 
 ---
 

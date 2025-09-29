@@ -16,6 +16,8 @@ pub struct FormSubmission {
     pub status: FormSubmissionStatus,
     pub revision_number: i32,
     pub revision_reason: Option<String>,
+    pub edit_link: Option<String>,
+    pub pdf_link: Option<String>,
     pub submitted_at: DateTime<Utc>,
     pub processed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -53,6 +55,8 @@ pub struct FormSubmissionResponse {
     pub status: FormSubmissionStatus,
     pub revision_number: i32,
     pub revision_reason: Option<String>,
+    pub edit_link: Option<String>,
+    pub pdf_link: Option<String>,
     pub submitted_at: DateTime<Utc>,
     pub processed_at: Option<DateTime<Utc>>,
 }
@@ -98,6 +102,8 @@ impl From<FormSubmission> for FormSubmissionResponse {
             status: submission.status,
             revision_number: submission.revision_number,
             revision_reason: submission.revision_reason,
+            edit_link: submission.edit_link,
+            pdf_link: submission.pdf_link,
             submitted_at: submission.submitted_at,
             processed_at: submission.processed_at,
         }

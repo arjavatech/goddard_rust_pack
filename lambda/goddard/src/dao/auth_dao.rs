@@ -32,6 +32,7 @@ pub struct UserDetails {
     pub last_name: String,
     pub email: String,
     pub role: String,
+    pub is_verified: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -137,7 +138,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, created_at FROM users WHERE id = $1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, created_at FROM users WHERE id = $1";
 
         match client.query_opt(query, &[&user_id]).await {
             Ok(Some(row)) => {
@@ -151,6 +152,7 @@ impl AuthDao {
                     last_name: row.get("last_name"),
                     email: row.get("email"),
                     role: row.get("role"),
+                    is_verified: row.get("is_verified"),
                     created_at,
                 })
             },

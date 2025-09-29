@@ -354,6 +354,11 @@ impl AuthService {
         // Query our users table directly for user information
         let user = self.dao.get_user_by_id(user_id).await?;
 
+        // Check if user is verified
+        if !user.is_verified {
+            return Err(AppError::Authorization("User verification failed. Please verify your account.".to_string()));
+        }
+
         // For parent role, use user_id as both user_id and parent_id
         let parent_id = if user.role.to_lowercase() == "parent" {
             Some(user.id.to_string())

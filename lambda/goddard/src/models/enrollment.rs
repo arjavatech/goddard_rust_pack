@@ -247,6 +247,10 @@ pub struct FormStatus {
     pub form_name: String,
     pub status: String,
     pub is_required: bool,
+    pub recent_edit_link: Option<String>,
+    pub recent_pdf_link: Option<String>,
+    pub approved_by: Option<Uuid>,
+    pub approved_on: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Serialize)]

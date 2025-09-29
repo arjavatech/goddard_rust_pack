@@ -418,7 +418,11 @@ impl EnrollmentDao {
                     ft.form_name,
                     ft.fillout_form_id,
                     COALESCE(sfa.status, 'incomplete') as form_status,
-                    COALESCE(sfa.is_required, false) as is_required
+                    COALESCE(sfa.is_required, false) as is_required,
+                    sfa.recent_edit_link,
+                    sfa.recent_pdf_link,
+                    sfa.approved_by,
+                    sfa.approved_on
                 FROM users u
                 INNER JOIN children c ON c.parent_id = u.id
                 INNER JOIN enrollments e ON e.child_id = c.id
@@ -455,7 +459,11 @@ impl EnrollmentDao {
                                 END,
                                 'form_name', form_name,
                                 'status', form_status,
-                                'is_required', is_required
+                                'is_required', is_required,
+                                'recent_edit_link', recent_edit_link,
+                                'recent_pdf_link', recent_pdf_link,
+                                'approved_by', approved_by,
+                                'approved_on', approved_on
                             )
                         ELSE NULL END
                     ) FILTER (WHERE form_template_id IS NOT NULL),

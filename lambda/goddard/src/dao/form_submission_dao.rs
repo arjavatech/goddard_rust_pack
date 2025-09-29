@@ -209,6 +209,8 @@ impl FormSubmissionDao {
             revision_reason: None, // No revision reason for initial creation
             submitted_at: now,
             processed_at: None, // Not processed yet
+            edit_link: None, // No edit link initially
+            pdf_link: None, // No PDF link initially
             created_at: now,
             updated_at: now,
         };
@@ -613,6 +615,14 @@ impl FormSubmissionDao {
                 })?;
                 naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
             },
+            edit_link: row.try_get("edit_link").map_err(|e| {
+                println!("[ERROR] DAO: Failed to extract edit_link: {}", e);
+                AppError::Database(format!("Failed to extract edit_link: {}", e))
+            })?,
+            pdf_link: row.try_get("pdf_link").map_err(|e| {
+                println!("[ERROR] DAO: Failed to extract pdf_link: {}", e);
+                AppError::Database(format!("Failed to extract pdf_link: {}", e))
+            })?,
             created_at: {
                 let naive_dt: NaiveDateTime = row.try_get("created_at").map_err(|e| {
                     println!("[ERROR] DAO: Failed to extract created_at: {}", e);

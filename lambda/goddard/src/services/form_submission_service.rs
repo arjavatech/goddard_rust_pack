@@ -3,16 +3,28 @@ use crate::models::form_submission::{
     CreateFormSubmissionWebhookRequest, FormSubmission, FormSubmissionResponse,
     FormSubmissionStatus, FormSubmissionVersionResponse, UpdateFormSubmissionStatusRequest,
 };
+use crate::services::fillout_service::FilloutService;
 use crate::error::AppError;
 use uuid::Uuid;
 
 pub struct FormSubmissionService {
     dao: FormSubmissionDao,
+    fillout_service: Option<FilloutService>,
 }
 
 impl FormSubmissionService {
     pub fn new(dao: FormSubmissionDao) -> Self {
-        Self { dao }
+        Self {
+            dao,
+            fillout_service: None,
+        }
+    }
+
+    pub fn new_with_fillout(dao: FormSubmissionDao, fillout_service: FilloutService) -> Self {
+        Self {
+            dao,
+            fillout_service: Some(fillout_service),
+        }
     }
 
     pub async fn create_form_submission_from_webhook(
@@ -90,8 +102,74 @@ impl FormSubmissionService {
             }
         };
 
-        println!("[DEBUG] Service: Converting to response format");
-        Ok(submission.into())
+        // Extract fillout_submission_id from the submission for Fillout API call
+        let fillout_submission_id = &submission.fillout_submission_id;
+        println!("[DEBUG] Service: Extracted fillout_submission_id: {}", fillout_submission_id);
+
+        // Extract form_id from the payload (optional for graceful degradation)
+        let form_id_opt = actual_payload.get("form_id")
+            .or_else(|| actual_payload.get("formId"))
+            .and_then(|v| v.as_str());
+
+        if let Some(form_id) = form_id_opt {
+            println!("[DEBUG] Service: Extracted form_id: {}", form_id);
+
+            // Fetch additional details from Fillout API if service is available
+            if let Some(ref fillout_service) = self.fillout_service {
+                println!("[DEBUG] Service: Fillout service available, fetching submission details");
+
+                match fillout_service.fetch_submission_details(form_id, fillout_submission_id).await {
+                Ok(fillout_details) => {
+                    println!("[DEBUG] Service: Successfully fetched Fillout details - edit_link: {:?}, pdf_link: {:?}",
+                             fillout_details.edit_link, fillout_details.pdf_link);
+
+                    // Update form_submissions table with links
+                    if let Err(e) = self.dao.update_submission_links(
+                        submission.id,
+                        fillout_details.edit_link.clone(),
+                        fillout_details.pdf_link.clone(),
+                    ).await {
+                        println!("[WARN] Service: Failed to update submission links: {:?}", e);
+                        // Don't fail the webhook - just log the warning
+                    } else {
+                        println!("[DEBUG] Service: Successfully updated submission links");
+                    }
+
+                    // Update student_form_assignments table with recent links
+                    if let Err(e) = self.dao.update_assignment_links(
+                        student_form_assignment_id,
+                        fillout_details.edit_link.clone(),
+                        fillout_details.pdf_link.clone(),
+                    ).await {
+                        println!("[WARN] Service: Failed to update assignment links: {:?}", e);
+                        // Don't fail the webhook - just log the warning
+                    } else {
+                        println!("[DEBUG] Service: Successfully updated assignment links");
+                    }
+
+                    // Create enhanced response with the fetched links
+                    let mut response = FormSubmissionResponse::from(submission);
+                    response.edit_link = fillout_details.edit_link;
+                    response.pdf_link = fillout_details.pdf_link;
+
+                    println!("[DEBUG] Service: Created enhanced response with Fillout links");
+                    Ok(response)
+                }
+                Err(e) => {
+                    println!("[WARN] Service: Failed to fetch Fillout details: {:?}", e);
+                    println!("[DEBUG] Service: Continuing with standard response (graceful degradation)");
+                    // Graceful degradation - return the submission without links
+                    Ok(submission.into())
+                }
+            }
+            } else {
+                println!("[DEBUG] Service: Fillout service not configured, skipping link fetching");
+                Ok(submission.into())
+            }
+        } else {
+            println!("[DEBUG] Service: form_id not provided in payload, skipping Fillout API integration");
+            Ok(submission.into())
+        }
     }
 
     pub async fn get_latest_form_submission(

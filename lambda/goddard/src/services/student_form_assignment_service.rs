@@ -3,6 +3,9 @@ use crate::models::student_form_assignment::{
     StudentFormAssignment, StudentFormAssignmentResponse, CreateStudentFormAssignmentRequest,
     UpdateStudentFormAssignmentRequest, DeleteStudentFormAssignmentResponse
 };
+use crate::models::student_form_assignment_review::{
+    ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
+};
 use crate::error::AppError;
 use uuid::Uuid;
 
@@ -78,6 +81,33 @@ impl StudentFormAssignmentService {
             assignment_id,
             school_id,
         })
+    }
+
+    pub async fn review_student_form_assignment(
+        &self,
+        request: ReviewStudentFormAssignmentRequest,
+    ) -> Result<ReviewStudentFormAssignmentResponse, AppError> {
+        println!("[DEBUG] StudentFormAssignmentService: Starting assignment review");
+        println!("[DEBUG] StudentFormAssignmentService: Review request: {:?}", request);
+
+        // Validate that the status is either Approved or Rejected
+        match request.status {
+            crate::models::student_form_assignment::StudentFormAssignmentStatus::Approved |
+            crate::models::student_form_assignment::StudentFormAssignmentStatus::Rejected => {
+                // Status is valid for review
+            }
+            _ => {
+                println!("[ERROR] StudentFormAssignmentService: Invalid review status: {:?}", request.status);
+                return Err(AppError::Validation("Review status must be 'approved' or 'rejected'".to_string()));
+            }
+        }
+
+        let response = self.dao
+            .review_student_form_assignment(&request)
+            .await?;
+
+        println!("[DEBUG] StudentFormAssignmentService: Assignment reviewed successfully");
+        Ok(response)
     }
 
     pub async fn validate_api_key(&self, api_key: &str) -> Result<(), AppError> {

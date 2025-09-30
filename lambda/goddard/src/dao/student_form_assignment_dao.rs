@@ -2,6 +2,9 @@ use crate::models::student_form_assignment::{
     StudentFormAssignment, StudentFormAssignmentStatus, CreateStudentFormAssignmentRequest,
     UpdateStudentFormAssignmentRequest
 };
+use crate::models::student_form_assignment_review::{
+    ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
+};
 use crate::error::AppError;
 use uuid::Uuid;
 use chrono::{Utc, NaiveDateTime, DateTime};
@@ -43,6 +46,8 @@ impl StudentFormAssignmentDao {
             StudentFormAssignmentStatus::Incomplete => "incomplete",
             StudentFormAssignmentStatus::InProgress => "in_progress",
             StudentFormAssignmentStatus::Completed => "completed",
+            StudentFormAssignmentStatus::Approved => "approved",
+            StudentFormAssignmentStatus::Rejected => "rejected",
         };
 
         println!("[DEBUG] StudentFormAssignmentDAO: Executing INSERT query");
@@ -190,6 +195,8 @@ impl StudentFormAssignmentDao {
             StudentFormAssignmentStatus::Incomplete => "incomplete".to_string(),
             StudentFormAssignmentStatus::InProgress => "in_progress".to_string(),
             StudentFormAssignmentStatus::Completed => "completed".to_string(),
+            StudentFormAssignmentStatus::Approved => "approved".to_string(),
+            StudentFormAssignmentStatus::Rejected => "rejected".to_string(),
         });
         if let Some(status_value) = &status_str {
             params.push(status_value);
@@ -233,6 +240,103 @@ impl StudentFormAssignmentDao {
         Ok(())
     }
 
+    pub async fn review_student_form_assignment(
+        &self,
+        request: &ReviewStudentFormAssignmentRequest,
+    ) -> Result<ReviewStudentFormAssignmentResponse, AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Starting assignment review for ID: {}", request.assignment_id);
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let status_str = match request.status {
+            StudentFormAssignmentStatus::Approved => "approved",
+            StudentFormAssignmentStatus::Rejected => "rejected",
+            _ => return Err(AppError::Validation("Review status must be 'approved' or 'rejected'".to_string())),
+        };
+
+        let now = Utc::now().naive_utc();
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Executing review update query");
+        let row = client.query_one(
+            r#"
+            UPDATE student_form_assignments
+            SET
+                status = $1,
+                notes = $2,
+                approved_by = $3,
+                approved_on = $4,
+                updated_at = $4
+            WHERE id = $5
+            RETURNING
+                id, school_id, enrollment_id, child_id, form_template_id,
+                assignment_source, status, is_required, assigned_at,
+                notes, approved_by, approved_on, updated_at
+            "#,
+            &[
+                &status_str,
+                &request.notes,
+                &request.approved_by,
+                &now,
+                &request.assignment_id,
+            ],
+        )
+        .await
+        .map_err(|e| {
+            println!("[ERROR] StudentFormAssignmentDAO: Review update failed: {}", e);
+            AppError::Database(e.to_string())
+        })?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Review update completed successfully");
+
+        // Convert row to response
+        let status_str: String = row.try_get("status")
+            .map_err(|e| AppError::Database(format!("Failed to extract status: {}", e)))?;
+
+        let status = match status_str.as_str() {
+            "approved" => StudentFormAssignmentStatus::Approved,
+            "rejected" => StudentFormAssignmentStatus::Rejected,
+            _ => return Err(AppError::Database(format!("Invalid status after update: {}", status_str))),
+        };
+
+        Ok(ReviewStudentFormAssignmentResponse {
+            id: row.try_get("id")
+                .map_err(|e| AppError::Database(format!("Failed to extract id: {}", e)))?,
+            school_id: row.try_get("school_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract school_id: {}", e)))?,
+            enrollment_id: row.try_get("enrollment_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract enrollment_id: {}", e)))?,
+            child_id: row.try_get("child_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract child_id: {}", e)))?,
+            form_template_id: row.try_get("form_template_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract form_template_id: {}", e)))?,
+            assignment_source: row.try_get("assignment_source")
+                .map_err(|e| AppError::Database(format!("Failed to extract assignment_source: {}", e)))?,
+            status,
+            is_required: row.try_get("is_required")
+                .map_err(|e| AppError::Database(format!("Failed to extract is_required: {}", e)))?,
+            assigned_at: {
+                let naive_dt: NaiveDateTime = row.try_get("assigned_at")
+                    .map_err(|e| AppError::Database(format!("Failed to extract assigned_at: {}", e)))?;
+                DateTime::from_naive_utc_and_offset(naive_dt, Utc)
+            },
+            notes: row.try_get("notes")
+                .map_err(|e| AppError::Database(format!("Failed to extract notes: {}", e)))?,
+            approved_by: row.try_get("approved_by")
+                .map_err(|e| AppError::Database(format!("Failed to extract approved_by: {}", e)))?,
+            approved_on: {
+                let naive_dt_opt: Option<NaiveDateTime> = row.try_get("approved_on")
+                    .map_err(|e| AppError::Database(format!("Failed to extract approved_on: {}", e)))?;
+                naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+            },
+            updated_at: {
+                let naive_dt_opt: Option<NaiveDateTime> = row.try_get("updated_at")
+                    .map_err(|e| AppError::Database(format!("Failed to extract updated_at: {}", e)))?;
+                naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+            },
+        })
+    }
+
     fn row_to_student_form_assignment(&self, row: Row) -> Result<StudentFormAssignment, AppError> {
         println!("[DEBUG] StudentFormAssignmentDAO: Starting row conversion");
 
@@ -251,6 +355,8 @@ impl StudentFormAssignmentDao {
             "incomplete" => StudentFormAssignmentStatus::Incomplete,
             "in_progress" => StudentFormAssignmentStatus::InProgress,
             "completed" => StudentFormAssignmentStatus::Completed,
+            "approved" => StudentFormAssignmentStatus::Approved,
+            "rejected" => StudentFormAssignmentStatus::Rejected,
             _ => {
                 println!("[WARN] StudentFormAssignmentDAO: Unknown status '{}', defaulting to Incomplete", status_str);
                 StudentFormAssignmentStatus::Incomplete

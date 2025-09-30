@@ -51,6 +51,9 @@ use controllers::{
     student_form_assignment_controller::{
         create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment
     },
+    student_form_assignment_review_controller::{
+        review_student_form_assignment
+    },
     portal_controller::{
         get_user_context, get_parent_children, get_child_profile, get_child_forms,
         get_classroom_details, get_classroom_forms, assign_classroom_form, remove_classroom_form,
@@ -228,6 +231,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/student-form-assignments", get(get_assignments_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(student_form_assignment_service)
 
         // Section 10 Portal APIs (API Key Protected - Testing)
@@ -382,6 +386,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/student-form-assignments", get(get_assignments_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(student_form_assignment_service)
 
         // Section 10 Portal APIs (API Key Protected - Testing)

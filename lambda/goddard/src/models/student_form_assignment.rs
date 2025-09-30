@@ -8,6 +8,8 @@ pub enum StudentFormAssignmentStatus {
     Incomplete,
     InProgress,
     Completed,
+    Approved,
+    Rejected,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

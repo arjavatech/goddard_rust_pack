@@ -4,6 +4,7 @@ use chrono::{NaiveDate, NaiveDateTime};
 use tokio_postgres::Row;
 use std::time::Duration;
 
+use crate::models::parent_details::{ParentDetailsRow};
 use crate::models::enrollment::{
     CreatedUser, CreatedChild, CreatedEnrollment, FormTemplate,
     ClassFormOverride, CreatedFormAssignment, ParentWithAuthDetails,
@@ -626,6 +627,77 @@ impl EnrollmentDao {
             count: row.get("count"),
             forms: serde_json::from_str(&row.get::<_, String>("forms")).unwrap_or_default(),
             default_forms: row.get("default_forms"),
+        }).collect())
+    }
+
+    // Get parent details by parent ID with children and forms
+    pub async fn get_parent_details_by_id(&self, parent_id: Uuid) -> ApiResult<Vec<ParentDetailsRow>> {
+        let query = "
+            SELECT
+                u.id as parent_id,
+                u.email as parent_email,
+                u.first_name as parent_first_name,
+                u.last_name as parent_last_name,
+                c.id as child_id,
+                c.first_name as child_first_name,
+                c.last_name as child_last_name,
+                c.birth_date as child_dob,
+                e.id as enrollment_id,
+                cl.id as classroom_id,
+                cl.name as classroom_name,
+                sfa.id as student_form_assignment_id,
+                ft.id as form_template_id,
+                ft.form_name,
+                ft.fillout_form_id,
+                sfa.status,
+                sfa.is_required,
+                sfa.recent_edit_link,
+                sfa.recent_pdf_link,
+                sfa.approved_by,
+                sfa.approved_on
+            FROM users u
+            LEFT JOIN children c ON c.parent_id = u.id OR c.secondary_parent_id = u.id
+            LEFT JOIN enrollments e ON e.child_id = c.id AND (e.is_active = true OR e.is_active IS NULL)
+            LEFT JOIN classrooms cl ON cl.id = e.classroom_id
+            LEFT JOIN student_form_assignments sfa ON sfa.enrollment_id = e.id AND (sfa.is_active = true OR sfa.is_active IS NULL)
+            LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
+            WHERE u.id = $1
+                AND u.role IN ('Parent', 'primary-parent', 'secondary-parent')
+                AND (u.is_active = true OR u.is_active IS NULL)
+            ORDER BY c.id, sfa.id";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client.query(query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get parent details: {}", e)))?;
+
+        if rows.is_empty() {
+            return Err(AppError::NotFound(format!("Parent with ID {} not found", parent_id)));
+        }
+
+        Ok(rows.into_iter().map(|row| ParentDetailsRow {
+            parent_id: row.get("parent_id"),
+            parent_email: row.get("parent_email"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
+            child_id: row.get("child_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+            child_dob: row.get("child_dob"),
+            enrollment_id: row.get("enrollment_id"),
+            classroom_id: row.get("classroom_id"),
+            classroom_name: row.get("classroom_name"),
+            student_form_assignment_id: row.get("student_form_assignment_id"),
+            form_template_id: row.get("form_template_id"),
+            form_name: row.get("form_name"),
+            fillout_form_id: row.get("fillout_form_id"),
+            status: row.get("status"),
+            is_required: row.get("is_required"),
+            recent_edit_link: row.get("recent_edit_link"),
+            recent_pdf_link: row.get("recent_pdf_link"),
+            approved_by: row.get("approved_by"),
+            approved_on: row.get("approved_on"),
         }).collect())
     }
 }

@@ -3,6 +3,9 @@ use std::collections::HashMap;
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
+use crate::models::parent_details::{
+    ParentDetailsResponse, ParentChild, ParentChildForm
+};
 use crate::models::enrollment::{
     ParentInviteRequest, ParentInviteResponse, ParentInviteDetails,
     ParentDetails, ChildDetails, EnrollmentDetails, AssignedFormDetails,
@@ -392,5 +395,106 @@ impl EnrollmentService {
         };
 
         Ok(response)
+    }
+
+    // Get parent details by parent ID
+    pub async fn get_parent_details_by_id(&self, parent_id: Uuid) -> ApiResult<ParentDetailsResponse> {
+        println!("[DEBUG] EnrollmentService: Getting parent details for ID: {}", parent_id);
+
+        // Get parent details from DAO
+        let rows = self.enrollment_dao.get_parent_details_by_id(parent_id).await?;
+
+        if rows.is_empty() {
+            return Err(AppError::NotFound(format!("Parent with ID {} not found", parent_id)));
+        }
+
+        // Group data by child
+        let mut children_map: HashMap<Uuid, ParentChild> = HashMap::new();
+
+        // Get parent info from first row
+        let first_row = &rows[0];
+        let parent_id = first_row.parent_id;
+        let parent_email = first_row.parent_email.clone();
+        let parent_first_name = first_row.parent_first_name.clone();
+        let parent_last_name = first_row.parent_last_name.clone();
+
+        for row in rows {
+            // Skip rows without child data (parent exists but has no children)
+            if let (Some(child_id), Some(child_first_name), Some(child_last_name)) =
+                (&row.child_id, &row.child_first_name, &row.child_last_name) {
+
+                let child = children_map.entry(*child_id).or_insert_with(|| {
+                    ParentChild {
+                        child_id: *child_id,
+                        child_full_name: format!("{} {}", child_first_name, child_last_name),
+                        child_dob: row.child_dob,
+                        enrollment_id: row.enrollment_id.unwrap_or_default(),
+                        classroom_id: row.classroom_id.unwrap_or_default(),
+                        classroom_name: row.classroom_name.clone().unwrap_or_default(),
+                        forms: Vec::new(),
+                    }
+                });
+
+                // Add form if present
+                if let (Some(assignment_id), Some(form_template_id), Some(form_name)) =
+                    (&row.student_form_assignment_id, &row.form_template_id, &row.form_name) {
+
+                    // Build fillout_form_id if fillout_form_id exists
+                    let fillout_form_id = if let Some(fillout_id) = &row.fillout_form_id {
+                        Some(format!("{}?student_form_assignment_id={}", fillout_id, assignment_id))
+                    } else {
+                        None
+                    };
+
+                    child.forms.push(ParentChildForm {
+                        form_id: format!("form_{}", form_template_id),
+                        student_form_assignment_id: *assignment_id,
+                        fillout_form_id,
+                        form_name: form_name.clone(),
+                        status: row.status.clone().unwrap_or_else(|| "incomplete".to_string()),
+                        is_required: row.is_required.unwrap_or(false),
+                        recent_edit_link: row.recent_edit_link.clone(),
+                        recent_pdf_link: row.recent_pdf_link.clone(),
+                        approved_by: row.approved_by,
+                        approved_on: row.approved_on,
+                    });
+                }
+            }
+        }
+
+        let response = ParentDetailsResponse {
+            parent_id,
+            parent_email,
+            parent_first_name,
+            parent_last_name,
+            children: children_map.into_values().collect(),
+        };
+
+        println!("[DEBUG] EnrollmentService: Successfully retrieved parent details with {} children", response.children.len());
+        Ok(response)
+    }
+
+    pub async fn validate_api_key(&self, api_key: &str) -> ApiResult<()> {
+        println!("[DEBUG] EnrollmentService: Validating API key");
+
+        // Use the same API key validation as other endpoints
+        let expected_api_key = match std::env::var("OWNER_API_KEY") {
+            Ok(key) => {
+                println!("[DEBUG] EnrollmentService: OWNER_API_KEY found");
+                key
+            }
+            Err(e) => {
+                println!("[ERROR] EnrollmentService: OWNER_API_KEY not configured: {:?}", e);
+                return Err(AppError::Internal("OWNER_API_KEY not configured".to_string()));
+            }
+        };
+
+        if api_key != expected_api_key {
+            println!("[ERROR] EnrollmentService: API key mismatch");
+            return Err(AppError::Authentication("Invalid API key".to_string()));
+        }
+
+        println!("[DEBUG] EnrollmentService: API key validation successful");
+        Ok(())
     }
 }

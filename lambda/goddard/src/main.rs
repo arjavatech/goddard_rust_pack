@@ -71,7 +71,7 @@ use dao::{
 use services::{
     AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService
 };
-use middleware::auth::{api_key_middleware, jwt_middleware};
+use middleware::auth::{api_key_middleware, jwt_middleware, jwt_admin_only, jwt_or_api_key_middleware, jwt_or_api_key_admin_only};
 use std::sync::Arc;
 
 
@@ -159,11 +159,12 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .init();
 
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::PUT, Method::DELETE])
         .allow_origin(Any)
         .allow_headers(vec![
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderName::from_static("x-api-key"),
         ]);
 
     let app = Router::new()
@@ -210,16 +211,16 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/class-form-overrides", delete(delete_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(class_form_override_service)
 
-        // Enrollment Management APIs (API Key Protected for Testing)
-        .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/resend-confirmation", post(resend_parent_confirmation).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/add-child", post(add_child).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/parent-details-by-school", get(get_parent_details_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parent/details", get(get_parent_details_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments", get(get_school_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(api_key_middleware)))
+        // Enrollment Management APIs (Admin JWT or API Key)
+        .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments/resend-confirmation", post(resend_parent_confirmation).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments/add-child", post(add_child).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments/parent-details-by-school", get(get_parent_details_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/parent/details", get(get_parent_details_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments", get(get_school_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(enrollment_service)
 
         // Form Submissions Management APIs (Version Control)
@@ -238,16 +239,16 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(student_form_assignment_service)
 
-        // Section 10 Portal APIs (API Key Protected - Testing)
-        .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id", get(get_classroom_details).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id/forms", get(get_classroom_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id/forms", post(assign_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id/forms/:form_id", delete(remove_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(api_key_middleware)))
+        // Section 10 Portal APIs (JWT or API Key with parent isolation for JWT)
+        .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/classrooms/:id", get(get_classroom_details).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms/:id/forms", get(get_classroom_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms/:id/forms", post(assign_classroom_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms/:id/forms/:form_id", delete(remove_classroom_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(portal_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
@@ -367,15 +368,15 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/class-form-overrides", delete(delete_class_form_override).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(class_form_override_service)
 
-        // Enrollment Management APIs (API Key Protected for Testing)
-        .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/resend-confirmation", post(resend_parent_confirmation).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/add-child", post(add_child).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parent/details", get(get_parent_details_by_school).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments", get(get_school_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(api_key_middleware)))
+        // Enrollment Management APIs (Admin-only JWT Protected)
+        .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/enrollments/resend-confirmation", post(resend_parent_confirmation).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/enrollments/add-child", post(add_child).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/parent/details", get(get_parent_details_by_school).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/enrollments", get(get_school_forms).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(jwt_admin_only)))
+        .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(jwt_middleware)))
         .with_state(enrollment_service)
 
         // Form Submissions Management APIs (Version Control)
@@ -394,16 +395,16 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(api_key_middleware)))
         .with_state(student_form_assignment_service)
 
-        // Section 10 Portal APIs (API Key Protected - Testing)
-        .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id", get(get_classroom_details).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id/forms", get(get_classroom_forms).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id/forms", post(assign_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/classrooms/:id/forms/:form_id", delete(remove_classroom_form).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(api_key_middleware)))
-        .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(api_key_middleware)))
+        // Section 10 Portal APIs (JWT or API Key with parent isolation for JWT)
+        .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/profile", get(get_child_profile).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/parents/:parent_id/children/:child_id/forms", get(get_child_forms).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/classrooms/:id", get(get_classroom_details).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms/:id/forms", get(get_classroom_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms/:id/forms", post(assign_classroom_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms/:id/forms/:form_id", delete(remove_classroom_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(portal_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))

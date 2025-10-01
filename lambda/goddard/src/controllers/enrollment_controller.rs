@@ -1,11 +1,12 @@
 use axum::{
-    extract::State,
+    extract::{State, Extension},
     response::IntoResponse,
     Json,
 };
 use std::sync::Arc;
 
 use crate::{
+    middleware::auth::AuthContext,
     services::enrollment_service::EnrollmentService,
     models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest},
     utils::ResponseUtils,
@@ -15,11 +16,13 @@ use crate::{
 /// POST /enrollments/parent-invite
 /// Create a parent invite for child enrollment (JWT protected - Admin/SuperAdmin)
 pub async fn create_parent_invite(
+    Extension(auth): Extension<AuthContext>,
     State(enrollment_service): State<Arc<EnrollmentService>>,
     Json(payload): Json<ParentInviteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // JWT middleware will handle authentication and authorization
+    // JWT admin_only middleware will handle authentication and authorization
     // The service will validate business logic and permissions
+    println!("[DEBUG] Creating parent invite - User: {}, Role: {:?}", auth.email, auth.role);
     let response = enrollment_service.create_parent_invite(payload).await?;
     Ok(ResponseUtils::success(response))
 }
@@ -39,11 +42,13 @@ pub async fn resend_parent_confirmation(
 /// POST /enrollments/add-child
 /// Add additional child to existing parent (JWT protected - Admin/SuperAdmin)
 pub async fn add_child(
+    Extension(auth): Extension<AuthContext>,
     State(enrollment_service): State<Arc<EnrollmentService>>,
     Json(payload): Json<AddChildRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // JWT middleware will handle authentication and authorization
+    // JWT admin_only middleware will handle authentication and authorization
     // The service will validate business logic and permissions
+    println!("[DEBUG] Adding child - User: {}, Role: {:?}", auth.email, auth.role);
     let response = enrollment_service.add_child(payload).await?;
     Ok(ResponseUtils::success(response))
 }
@@ -62,9 +67,12 @@ pub async fn get_parent_details_by_school(
 /// GET /enrollments/children-forms?school_id={uuid}
 /// Get enrollment children with form assignments (JWT protected)
 pub async fn get_enrollment_children_with_forms(
+    Extension(auth): Extension<AuthContext>,
     State(enrollment_service): State<Arc<EnrollmentService>>,
     axum::extract::Query(query): axum::extract::Query<GetEnrollmentChildrenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // JWT admin_only middleware will handle authentication and authorization
+    println!("[DEBUG] Getting children forms - User: {}, Role: {:?}", auth.email, auth.role);
     let response = enrollment_service.get_enrollment_children_with_forms(query).await?;
     Ok(ResponseUtils::success(response))
 }

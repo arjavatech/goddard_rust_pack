@@ -6,8 +6,21 @@ meta {
 
 put {
   url: {{base_url}}/student-form-assignments/review
-  body: none
+  body: json
   auth: inherit
+}
+
+headers {
+  X-API-Key: test-owner-key-2024
+}
+
+body:json {
+  {
+      "assignment_id": "2f72f4cc-cd50-4145-9d7c-0926dafd0f80",
+      "status": "approved",
+      "notes": "optional review notes",
+      "approved_by": "3a002d00-a50d-4c5d-b126-e17aa3bcd711"
+  }
 }
 
 settings {

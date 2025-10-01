@@ -251,7 +251,7 @@ impl EnrollmentDao {
         Ok(rows.into_iter().map(|row| FormTemplate {
             id: row.get("id"),
             form_name: row.get("form_name"),
-            is_required: row.get("is_required"),
+            is_required: row.get::<_, Option<bool>>("is_required").unwrap_or(false),
         }).collect())
     }
 

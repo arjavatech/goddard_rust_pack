@@ -285,14 +285,14 @@ pub async fn remove_classroom_form(
 }
 
 /// GET /parents/{parent_id}
-/// Get parent profile (Admin/SuperAdmin only)
+/// Get parent profile (Parents can access their own, Admins can access any)
 pub async fn get_parent_profile(
     Extension(auth): Extension<AuthContext>,
     Path(parent_id): Path<Uuid>,
     State(portal_service): State<Arc<PortalService>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify admin permissions
-    portal_service.verify_admin_access(&auth)?;
+    // Allow parents to access their own profile OR admins to access any
+    validate_parent_access(&auth, &parent_id)?;
 
     let response = portal_service.get_parent_profile(&parent_id).await?;
     Ok(ResponseUtils::success(response))

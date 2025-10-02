@@ -565,13 +565,14 @@ impl EnrollmentDao {
     pub async fn get_school_forms(&self, school_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
         let query = "
             SELECT
+                c.parent_id as parent_id,
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
                 cl.name as class_name,
                 u.email as primary_email,
-                'active' as form_status,
-                '{}' as forms,
+                COALESCE(e.status, 'pending') as form_status,
+                COALESCE(e.application_status, '{}') as forms,
                 NULL as additional_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
@@ -588,13 +589,14 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get school forms: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            parent_id: row.get("parent_id"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
             class_name: row.get("class_name"),
             primary_email: row.get("primary_email"),
             form_status: row.get("form_status"),
-            forms: serde_json::from_str(&row.get::<_, String>("forms")).unwrap_or_default(),
+            forms: row.get("forms"),
             additional_parent_email: row.get("additional_parent_email"),
         }).collect())
     }

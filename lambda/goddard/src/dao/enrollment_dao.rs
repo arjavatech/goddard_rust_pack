@@ -408,6 +408,7 @@ impl EnrollmentDao {
                     u.email as parent_email,
                     u.first_name as parent_first_name,
                     u.last_name as parent_last_name,
+                    CASE WHEN au.last_sign_in_at IS NOT NULL THEN 'signed' ELSE 'not signed' END as signed_status,
                     c.id as child_id,
                     CONCAT(c.first_name, ' ', c.last_name) as child_full_name,
                     c.birth_date as child_dob,
@@ -425,6 +426,7 @@ impl EnrollmentDao {
                     sfa.approved_by,
                     sfa.approved_on
                 FROM users u
+                LEFT JOIN auth.users au ON au.email = u.email
                 INNER JOIN children c ON c.parent_id = u.id
                 INNER JOIN enrollments e ON e.child_id = c.id
                 INNER JOIN classrooms cl ON cl.id = e.classroom_id
@@ -440,6 +442,7 @@ impl EnrollmentDao {
                 parent_email,
                 parent_first_name,
                 parent_last_name,
+                signed_status,
                 child_id,
                 child_full_name,
                 child_dob,
@@ -471,7 +474,7 @@ impl EnrollmentDao {
                     '[]'::json
                 ) as forms
             FROM parent_children_forms
-            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name,
+            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, signed_status,
                      child_id, child_full_name, child_dob, enrollment_id,
                      classroom_id, classroom_name
             ORDER BY parent_email, child_full_name
@@ -512,6 +515,7 @@ impl EnrollmentDao {
                     parent_email: row.get("parent_email"),
                     parent_first_name: row.get("parent_first_name"),
                     parent_last_name: row.get("parent_last_name"),
+                    signed_status: row.get("signed_status"),
                     children: vec![child],
                 });
         }
@@ -640,6 +644,7 @@ impl EnrollmentDao {
                 u.email as parent_email,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
+                CASE WHEN au.last_sign_in_at IS NOT NULL THEN 'signed' ELSE 'not signed' END as signed_status,
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
@@ -658,6 +663,7 @@ impl EnrollmentDao {
                 sfa.approved_by,
                 sfa.approved_on
             FROM users u
+            LEFT JOIN auth.users au ON au.email = u.email
             LEFT JOIN children c ON c.parent_id = u.id OR c.secondary_parent_id = u.id
             LEFT JOIN enrollments e ON e.child_id = c.id AND (e.is_active = true OR e.is_active IS NULL)
             LEFT JOIN classrooms cl ON cl.id = e.classroom_id
@@ -683,6 +689,7 @@ impl EnrollmentDao {
             parent_email: row.get("parent_email"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
+            signed_status: row.get("signed_status"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),

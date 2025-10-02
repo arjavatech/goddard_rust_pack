@@ -8,6 +8,7 @@ pub struct ParentDetailsResponse {
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    pub signed_status: String,
     pub children: Vec<ParentChild>,
 }
 
@@ -43,6 +44,7 @@ pub struct ParentDetailsRow {
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    pub signed_status: String,
     pub child_id: Option<Uuid>,
     pub child_first_name: Option<String>,
     pub child_last_name: Option<String>,

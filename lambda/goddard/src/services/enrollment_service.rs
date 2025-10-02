@@ -417,6 +417,7 @@ impl EnrollmentService {
         let parent_email = first_row.parent_email.clone();
         let parent_first_name = first_row.parent_first_name.clone();
         let parent_last_name = first_row.parent_last_name.clone();
+        let signed_status = first_row.signed_status.clone();
 
         for row in rows {
             // Skip rows without child data (parent exists but has no children)
@@ -467,6 +468,7 @@ impl EnrollmentService {
             parent_email,
             parent_first_name,
             parent_last_name,
+            signed_status,
             children: children_map.into_values().collect(),
         };
 

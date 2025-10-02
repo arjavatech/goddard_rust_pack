@@ -363,3 +363,12 @@ pub struct EnrollmentWithApproval {
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
+
+// Deactivate Parent Response
+#[derive(Debug, Serialize)]
+pub struct DeactivateParentResponse {
+    pub parent_id: Uuid,
+    pub deactivated_children_count: usize,
+    pub deactivated_enrollments_count: usize,
+    pub message: String,
+}

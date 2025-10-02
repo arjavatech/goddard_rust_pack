@@ -16,7 +16,8 @@ use crate::models::enrollment::{
     ParentWithChildren, ChildWithForms, FormStatus,
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
     GetClassWiseCountRequest, GetClassWiseCountResponse,
-    GetSchoolFormsRequest, GetSchoolFormsResponse
+    GetSchoolFormsRequest, GetSchoolFormsResponse,
+    DeactivateParentResponse
 };
 use crate::error::AppError;
 
@@ -498,5 +499,11 @@ impl EnrollmentService {
 
         println!("[DEBUG] EnrollmentService: API key validation successful");
         Ok(())
+    }
+
+    // Deactivate parent and all related children and enrollments
+    pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
+        println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
+        self.enrollment_dao.deactivate_parent(parent_id).await
     }
 }

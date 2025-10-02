@@ -490,6 +490,7 @@ pub async fn jwt_or_api_key_middleware(
     }
 
     // JWT not present or invalid, try API key authentication
+    println!("[DEBUG] JWT authentication failed or not present, trying API key fallback");
     api_key_fallback(headers, request, next).await
 }
 
@@ -522,7 +523,16 @@ pub async fn jwt_or_api_key_admin_only(
                         }
                         _ => {
                             println!("[DEBUG] JWT Auth failed: User does not have admin role");
-                            // Not an admin, but might have API key, so continue to API key check
+                            // User is authenticated but not authorized (not admin) - return 403 Forbidden
+                            let error_response = ErrorResponse {
+                                success: false,
+                                message: "Access forbidden. Admin role required.".to_string(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                            };
+                            return Err((
+                                axum::http::StatusCode::FORBIDDEN,
+                                Json(error_response),
+                            ).into_response());
                         }
                     }
                 }
@@ -535,6 +545,7 @@ pub async fn jwt_or_api_key_admin_only(
     }
 
     // JWT not present, invalid, or not admin - try API key authentication
+    println!("[DEBUG] JWT admin authentication failed or not present, trying API key fallback");
     api_key_fallback(headers, request, next).await
 }
 
@@ -544,11 +555,16 @@ async fn api_key_fallback(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
+    println!("[DEBUG] api_key_fallback: Checking for X-API-Key header");
+
     let api_key = headers
         .get("X-API-Key")
         .and_then(|value| value.to_str().ok());
 
+    println!("[DEBUG] api_key_fallback: X-API-Key present: {}", api_key.is_some());
+
     if api_key.is_none() {
+        println!("[DEBUG] api_key_fallback: No X-API-Key found, returning 401");
         let error_response = ErrorResponse {
             success: false,
             message: "Authentication required. Please provide either Bearer token or X-API-Key header".to_string(),

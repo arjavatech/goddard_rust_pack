@@ -308,6 +308,7 @@ pub struct GetSchoolFormsResponse {
 
 #[derive(Debug, Serialize)]
 pub struct SchoolFormDetails {
+    pub parent_id: Uuid,
     pub child_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,

@@ -1,9 +1,11 @@
 use axum::{
-    extract::{State, Extension},
+    extract::{State, Extension, Path},
     response::IntoResponse,
     Json,
+    http::StatusCode,
 };
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::{
     middleware::auth::AuthContext,
@@ -95,4 +97,18 @@ pub async fn get_class_wise_count(
 ) -> Result<impl IntoResponse, AppError> {
     let response = enrollment_service.get_class_wise_count(query).await?;
     Ok(ResponseUtils::success(response))
+}
+
+/// DELETE /parent/:parent_id
+/// Deactivate parent and all related children and enrollments (JWT protected - Admin/SuperAdmin)
+pub async fn deactivate_parent(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(parent_id): Path<Uuid>,
+) -> Result<(StatusCode, impl IntoResponse), AppError> {
+    println!("[DEBUG] Deactivating parent - User: {}, Role: {:?}, Parent ID: {}",
+        auth.email, auth.role, parent_id);
+
+    let response = enrollment_service.deactivate_parent(parent_id).await?;
+    Ok((StatusCode::OK, ResponseUtils::success(response)))
 }

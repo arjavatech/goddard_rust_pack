@@ -9,7 +9,8 @@ use crate::models::enrollment::{
     CreatedUser, CreatedChild, CreatedEnrollment, FormTemplate,
     ClassFormOverride, CreatedFormAssignment, ParentWithAuthDetails,
     ParentWithChildren, ChildWithForms, FormStatus,
-    EnrollmentChildWithForms, SchoolFormDetails, ClassWiseCount
+    EnrollmentChildWithForms, SchoolFormDetails, ClassWiseCount,
+    DeactivateParentResponse
 };
 use crate::error::AppError;
 
@@ -434,7 +435,7 @@ impl EnrollmentDao {
                 LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
                 WHERE u.school_id = $1
                     AND u.role = 'Parent'
-                    AND (u.is_active = true OR u.is_active IS NULL)
+                    AND u.is_active = true
                 ORDER BY u.email, c.id, sfa.form_template_id
             )
             SELECT
@@ -544,6 +545,7 @@ impl EnrollmentDao {
             JOIN users u ON c.parent_id = u.id
             JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE e.school_id = $1
+                AND u.is_active = true
             ORDER BY e.created_at DESC
         ";
 
@@ -583,6 +585,7 @@ impl EnrollmentDao {
             JOIN users u ON c.parent_id = u.id
             JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE e.school_id = $1
+                AND u.is_active = true
             ORDER BY e.created_at DESC
         ";
 
@@ -708,5 +711,68 @@ impl EnrollmentDao {
             approved_by: row.get("approved_by"),
             approved_on: row.get("approved_on"),
         }).collect())
+    }
+
+    // Deactivate parent and all related children and enrollments
+    pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        // Start transaction
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // Step 1: Deactivate enrollments for all children of this parent
+        let enrollment_query = "
+            UPDATE enrollments e
+            SET is_active = false, updated_at = NOW()
+            FROM children c
+            WHERE e.child_id = c.id AND c.parent_id = $1
+            RETURNING e.id
+        ";
+
+        let enrollment_rows = transaction.query(enrollment_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to deactivate enrollments: {}", e)))?;
+
+        let deactivated_enrollments_count = enrollment_rows.len();
+
+        // Step 2: Deactivate all children of this parent
+        let children_query = "
+            UPDATE children
+            SET is_active = false, updated_at = NOW()
+            WHERE parent_id = $1
+            RETURNING id
+        ";
+
+        let children_rows = transaction.query(children_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to deactivate children: {}", e)))?;
+
+        let deactivated_children_count = children_rows.len();
+
+        // Step 3: Deactivate the parent user
+        let parent_query = "
+            UPDATE users
+            SET is_active = false, updated_at = NOW()
+            WHERE id = $1 AND role = 'Parent'
+            RETURNING id
+        ";
+
+        let parent_rows = transaction.query(parent_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to deactivate parent: {}", e)))?;
+
+        if parent_rows.is_empty() {
+            return Err(AppError::NotFound(format!("Parent with ID {} not found", parent_id)));
+        }
+
+        // Commit transaction
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        Ok(DeactivateParentResponse {
+            parent_id,
+            deactivated_children_count,
+            deactivated_enrollments_count,
+            message: "Parent and related records deactivated successfully".to_string(),
+        })
     }
 }

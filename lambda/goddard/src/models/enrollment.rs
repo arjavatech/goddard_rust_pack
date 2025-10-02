@@ -225,6 +225,7 @@ pub struct ParentWithChildren {
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    pub signed_status: String,
     pub children: Vec<ChildWithForms>,
 }
 

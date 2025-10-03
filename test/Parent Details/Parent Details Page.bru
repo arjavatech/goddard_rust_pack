@@ -5,13 +5,18 @@ meta {
 }
 
 get {
-  url: http://localhost:9000/parent/2d0dadec-a34f-4b9b-8c44-22a0ac8916cb
+  url: http://localhost:9000/parent/details?school_id={{school_id}}
   body: none
   auth: inherit
 }
 
+params:query {
+  school_id: {{school_id}}
+}
+
 headers {
   X-API-Key: test-owner-key-2024
+  ~Authorization: Bearer {{token}}
 }
 
 settings {

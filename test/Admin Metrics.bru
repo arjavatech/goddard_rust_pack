@@ -1,0 +1,19 @@
+meta {
+  name: Admin Metrics
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{base_url/admin/dashboard-metrics?school_id={uuid}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  school_id: {uuid}
+}
+
+settings {
+  encodeUrl: true
+}

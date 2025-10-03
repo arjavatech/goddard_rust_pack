@@ -242,7 +242,7 @@ impl EnrollmentDao {
 
     // Step 7: Get school default forms
     pub async fn get_school_default_forms(&self, school_id: Uuid) -> ApiResult<Vec<FormTemplate>> {
-        let query = "SELECT id, form_name, is_required FROM form_templates WHERE school_id = $1 AND is_active = true";
+        let query = "SELECT id, form_name, is_required FROM form_templates WHERE school_id = $1 AND is_active = true AND status = 'school_default' ORDER BY form_name ASC"; ;
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 

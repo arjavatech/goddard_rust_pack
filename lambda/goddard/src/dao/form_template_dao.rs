@@ -35,8 +35,8 @@ impl FormTemplateDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let query = r#"
-            INSERT INTO form_templates (id, school_id, form_name, fillout_form_id, is_active, created_at, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, true, NOW(), NOW())
+            INSERT INTO form_templates (id, school_id, form_name, fillout_form_id, status, is_active, created_at, updated_at)
+            VALUES (gen_random_uuid(), $1, $2, $3, 'school_default', true, NOW(), NOW())
             RETURNING id, school_id, form_name, form_type, fillout_form_id, status, is_required, display_order, is_active, created_at, updated_at
         "#;
 

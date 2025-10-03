@@ -62,14 +62,17 @@ use controllers::{
         get_classroom_details, get_classroom_forms, assign_classroom_form, remove_classroom_form,
         get_parent_profile, get_child_demographics
     },
+    admin_controller::{
+        get_admin_dashboard_metrics
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only};
 use std::sync::Arc;
@@ -113,6 +116,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     let form_submission_dao = FormSubmissionDao::new(pool.clone());
     let student_form_assignment_dao = StudentFormAssignmentDao::new(pool.clone());
     let portal_dao = PortalDao::new(pool.clone());
+    let admin_dao = AdminDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()
@@ -148,7 +152,8 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
     );
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
-    
+    let admin_service = Arc::new(AdminService::new(admin_dao));
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -210,6 +215,10 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/class-form-overrides", post(create_class_form_override).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/class-form-overrides", delete(delete_class_form_override).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(class_form_override_service)
+
+        // Admin Dashboard APIs (JWT protected - Admin/SuperAdmin)
+        .route("/admin/dashboard-metrics", get(get_admin_dashboard_metrics).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .with_state(admin_service)
 
         // Enrollment Management APIs (Admin JWT or API Key)
         .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
@@ -274,6 +283,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     let form_submission_dao = FormSubmissionDao::new(pool.clone());
     let student_form_assignment_dao = StudentFormAssignmentDao::new(pool.clone());
     let portal_dao = PortalDao::new(pool.clone());
+    let admin_dao = AdminDao::new(pool.clone());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
@@ -308,6 +318,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
     );
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
+    let admin_service = Arc::new(AdminService::new(admin_dao));
 
     tracing_subscriber::fmt()
         .with_env_filter(

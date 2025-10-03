@@ -9,6 +9,7 @@ pub mod student_form_assignment;
 pub mod student_form_assignment_review;
 pub mod parent_details;
 pub mod fillout;
+pub mod admin;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

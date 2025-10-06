@@ -5,8 +5,11 @@ import { RustLambdaStack } from '../lib/rust-lambda-stack';
 
 const app = new cdk.App();
 
-new RustLambdaStack(app, 'RustLambdaStack', {
-  description: 'Rust Lambda API deployed with CDK',
+new RustLambdaStack(app, 'GoddardProdStack', {
+  description: 'Goddard Production - Rust Lambda API deployed with CDK',
+  env: {
+    region: 'us-west-1',
+  },
 });
 
 app.synth();

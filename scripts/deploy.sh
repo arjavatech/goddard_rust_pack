@@ -28,7 +28,8 @@ echo "🎉 Your Rust Lambda is now live on AWS!"
 echo ""
 echo "📊 Stack Outputs:"
 aws cloudformation describe-stacks \
-    --stack-name RustLambdaStack \
+    --stack-name GoddardProdStack \
     --profile ${AWS_PROFILE:-default} \
+    --region us-west-1 \
     --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
-    --output table 2>/dev/null || echo "Run 'aws cloudformation describe-stacks --stack-name RustLambdaStack --profile ${AWS_PROFILE:-default}' to see outputs"
+    --output table 2>/dev/null || echo "Run 'aws cloudformation describe-stacks --stack-name GoddardProdStack --profile ${AWS_PROFILE:-default} --region us-west-1' to see outputs"

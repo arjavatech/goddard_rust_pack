@@ -339,30 +339,6 @@ pub struct ClassWiseCount {
     pub forms: serde_json::Value,
 }
 
-// ==========================================
-// NEW STRUCTURES FOR TABLE UPDATES
-// ==========================================
-
-// Enhanced enrollment structure with approval fields
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnrollmentWithApproval {
-    pub id: Uuid,
-    pub child_id: Uuid,
-    pub school_id: Uuid,
-    pub classroom_id: Uuid,
-    pub status: String,
-    pub application_status: Option<serde_json::Value>,
-    pub progress: Option<serde_json::Value>,
-    pub admin_approval_status: Option<String>, // pending, approved, rejected, needs_revision
-    pub approved_at: Option<NaiveDateTime>,
-    pub approved_by: Option<Uuid>,
-    pub approval_notes: Option<String>,
-    pub forms_locked_at: Option<NaiveDateTime>,
-    pub submitted_at: Option<NaiveDateTime>,
-    pub created_at: Option<NaiveDateTime>,
-    pub updated_at: Option<NaiveDateTime>,
-}
-
 // Deactivate Parent Response
 #[derive(Debug, Serialize)]
 pub struct DeactivateParentResponse {

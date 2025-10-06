@@ -128,8 +128,6 @@ pub struct Enrollment {
     pub school_id: Uuid,
     pub classroom_id: Option<Uuid>,
     pub status: EnrollmentWorkflowStatus,
-    pub admin_approval_status: AdminApprovalStatus,
-    pub progress: Option<EnrollmentProgress>,
     pub start_date: Option<NaiveDate>,
     pub child: Option<Child>,
     pub parent: Option<User>,

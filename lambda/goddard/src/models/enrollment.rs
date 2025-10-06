@@ -234,6 +234,7 @@ pub struct ChildWithForms {
     pub child_id: Uuid,
     pub child_full_name: String,
     pub child_dob: NaiveDate,
+    pub child_status: String,
     pub enrollment_id: Uuid,
     pub classroom_id: Uuid,
     pub classroom_name: String,
@@ -313,6 +314,7 @@ pub struct SchoolFormDetails {
     pub child_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
+    pub child_status: String,
     pub class_name: String,
     pub primary_email: String,
     pub form_status: String,
@@ -345,5 +347,19 @@ pub struct DeactivateParentResponse {
     pub parent_id: Uuid,
     pub deactivated_children_count: usize,
     pub deactivated_enrollments_count: usize,
+    pub message: String,
+}
+
+// Update Child Status Request/Response
+#[derive(Debug, Deserialize)]
+pub struct UpdateChildStatusRequest {
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateChildStatusResponse {
+    pub child_id: Uuid,
+    pub status: String,
+    pub updated_at: NaiveDateTime,
     pub message: String,
 }

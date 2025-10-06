@@ -413,6 +413,7 @@ impl EnrollmentDao {
                     c.id as child_id,
                     CONCAT(c.first_name, ' ', c.last_name) as child_full_name,
                     c.birth_date as child_dob,
+                    c.status as child_status,
                     e.id as enrollment_id,
                     cl.id as classroom_id,
                     cl.name as classroom_name,
@@ -447,6 +448,7 @@ impl EnrollmentDao {
                 child_id,
                 child_full_name,
                 child_dob,
+                child_status,
                 enrollment_id,
                 classroom_id,
                 classroom_name,
@@ -476,7 +478,7 @@ impl EnrollmentDao {
                 ) as forms
             FROM parent_children_forms
             GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, signed_status,
-                     child_id, child_full_name, child_dob, enrollment_id,
+                     child_id, child_full_name, child_dob, child_status, enrollment_id,
                      classroom_id, classroom_name
             ORDER BY parent_email, child_full_name
         ";
@@ -502,6 +504,7 @@ impl EnrollmentDao {
                 child_id: row.get("child_id"),
                 child_full_name: row.get("child_full_name"),
                 child_dob: row.get("child_dob"),
+                child_status: row.get("child_status"),
                 enrollment_id: row.get("enrollment_id"),
                 classroom_id: row.get("classroom_id"),
                 classroom_name: row.get("classroom_name"),
@@ -575,6 +578,7 @@ impl EnrollmentDao {
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
+                c.status as child_status,
                 cl.name as class_name,
                 u.email as primary_email,
                 COALESCE(e.status, 'pending') as form_status,
@@ -600,6 +604,7 @@ impl EnrollmentDao {
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
+            child_status: row.get("child_status"),
             class_name: row.get("class_name"),
             primary_email: row.get("primary_email"),
             form_status: row.get("form_status"),
@@ -658,6 +663,7 @@ impl EnrollmentDao {
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
                 c.birth_date as child_dob,
+                c.status as child_status,
                 e.id as enrollment_id,
                 cl.id as classroom_id,
                 cl.name as classroom_name,
@@ -703,6 +709,7 @@ impl EnrollmentDao {
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
             child_dob: row.get("child_dob"),
+            child_status: row.get("child_status"),
             enrollment_id: row.get("enrollment_id"),
             classroom_id: row.get("classroom_id"),
             classroom_name: row.get("classroom_name"),
@@ -780,5 +787,27 @@ impl EnrollmentDao {
             deactivated_enrollments_count,
             message: "Parent and related records deactivated successfully".to_string(),
         })
+    }
+
+    // Update child status (admin only - no validation, accepts any status value)
+    pub async fn update_child_status(&self, child_id: Uuid, status: &str) -> ApiResult<crate::models::enrollment::UpdateChildStatusResponse> {
+        self.execute_with_connection(|client| async move {
+            let query = "
+                UPDATE children
+                SET status = $1, updated_at = NOW()
+                WHERE id = $2
+                RETURNING id, status, updated_at
+            ";
+
+            let row = client.query_one(query, &[&status, &child_id]).await
+                .map_err(|e| AppError::Database(format!("Failed to update child status: {}", e)))?;
+
+            Ok(crate::models::enrollment::UpdateChildStatusResponse {
+                child_id: row.get("id"),
+                status: row.get("status"),
+                updated_at: row.get("updated_at"),
+                message: "Child status updated successfully".to_string(),
+            })
+        }).await
     }
 }

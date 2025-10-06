@@ -430,6 +430,7 @@ impl EnrollmentService {
                         child_id: *child_id,
                         child_full_name: format!("{} {}", child_first_name, child_last_name),
                         child_dob: row.child_dob,
+                        child_status: row.child_status.clone(),
                         enrollment_id: row.enrollment_id.unwrap_or_default(),
                         classroom_id: row.classroom_id.unwrap_or_default(),
                         classroom_name: row.classroom_name.clone().unwrap_or_default(),
@@ -505,5 +506,11 @@ impl EnrollmentService {
     pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
         println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
         self.enrollment_dao.deactivate_parent(parent_id).await
+    }
+
+    // Update child status (admin only - no validation, accepts any status value)
+    pub async fn update_child_status(&self, child_id: Uuid, request: crate::models::enrollment::UpdateChildStatusRequest) -> ApiResult<crate::models::enrollment::UpdateChildStatusResponse> {
+        println!("[DEBUG] EnrollmentService: Updating child {} status to: {}", child_id, request.status);
+        self.enrollment_dao.update_child_status(child_id, &request.status).await
     }
 }

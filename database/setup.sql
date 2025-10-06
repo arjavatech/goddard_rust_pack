@@ -680,3 +680,43 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION sync_enrollment_form_status() IS 'Automatically syncs form statuses from student_form_assignments to enrollments.application_status JSONB field';
 COMMENT ON FUNCTION check_enrollment_completion(UUID) IS 'Checks if all forms are approved and updates enrollment status to completed';
 COMMENT ON FUNCTION sync_all_enrollment_statuses() IS 'One-time sync function to update all existing enrollments with current form statuses';
+
+
+-- ==========================================
+-- MIGRATION: Remove unused approval fields from enrollments
+-- Date: 2025-10-06
+-- Description: Removing approval workflow fields that are no longer needed
+-- ==========================================
+
+-- Remove approval workflow columns from enrollments table
+ALTER TABLE enrollments DROP COLUMN IF EXISTS progress;
+ALTER TABLE enrollments DROP COLUMN IF EXISTS submitted_at;
+ALTER TABLE enrollments DROP COLUMN IF EXISTS approved_at;
+ALTER TABLE enrollments DROP COLUMN IF EXISTS approved_by;
+ALTER TABLE enrollments DROP COLUMN IF EXISTS approval_notes;
+ALTER TABLE enrollments DROP COLUMN IF EXISTS forms_locked_at;
+
+-- Remove admin_approval_status column and its constraint
+ALTER TABLE enrollments DROP CONSTRAINT IF EXISTS check_admin_approval_status;
+ALTER TABLE enrollments DROP COLUMN IF EXISTS admin_approval_status;
+
+-- Remove indexes for dropped columns
+DROP INDEX IF EXISTS idx_enrollments_admin_approval_status;
+DROP INDEX IF EXISTS idx_enrollments_approved_by;
+DROP INDEX IF EXISTS idx_enrollments_approved_at;
+
+-- Migration complete
+COMMENT ON TABLE enrollments IS 'Child enrollment records linking students to classrooms (simplified without approval workflow)';
+
+
+-- ==========================================
+-- MIGRATION: Remove children status constraint for flexible status values
+-- Date: 2025-10-06
+-- Description: Allowing admins to set any status value for children
+-- ==========================================
+
+-- Drop the existing check constraint on children.status
+ALTER TABLE children DROP CONSTRAINT IF EXISTS check_status;
+
+-- Migration complete - children.status now accepts any string value
+COMMENT ON COLUMN children.status IS 'Child status - can be any value set by admin (e.g., active, inactive, graduated, withdrawn, archive, etc.)';

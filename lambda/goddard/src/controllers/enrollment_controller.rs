@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     middleware::auth::AuthContext,
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest, UpdateChildStatusRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -111,4 +111,19 @@ pub async fn deactivate_parent(
 
     let response = enrollment_service.deactivate_parent(parent_id).await?;
     Ok((StatusCode::OK, ResponseUtils::success(response)))
+}
+
+/// PATCH /children/:child_id/status
+/// Update child status to any value (JWT protected - Admin/SuperAdmin only)
+pub async fn update_child_status(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(child_id): Path<Uuid>,
+    Json(payload): Json<UpdateChildStatusRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Updating child status - User: {}, Role: {:?}, Child ID: {}, Status: {}",
+        auth.email, auth.role, child_id, payload.status);
+
+    let response = enrollment_service.update_child_status(child_id, payload).await?;
+    Ok(ResponseUtils::success(response))
 }

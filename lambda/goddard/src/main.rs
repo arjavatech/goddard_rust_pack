@@ -1,7 +1,7 @@
 use axum::{
     http::Method,
     middleware as axum_middleware,
-    routing::{get, post, put, delete},
+    routing::{get, post, put, delete, patch},
     Router,
 };
 use lambda_http::run;
@@ -42,7 +42,7 @@ use controllers::{
         create_class_form_override, delete_class_form_override
     },
     enrollment_controller::{
-        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, deactivate_parent
+        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, deactivate_parent, update_child_status
     },
     parent_details_controller::{
         get_parent_details_by_id
@@ -231,6 +231,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/parent/:parent_id", delete(deactivate_parent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/children/:child_id/status", patch(update_child_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(enrollment_service)
 
         // Form Submissions Management APIs (Admin JWT or API Key)

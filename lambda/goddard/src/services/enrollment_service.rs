@@ -442,9 +442,9 @@ impl EnrollmentService {
                 if let (Some(assignment_id), Some(form_template_id), Some(form_name)) =
                     (&row.student_form_assignment_id, &row.form_template_id, &row.form_name) {
 
-                    // Build fillout_form_id if fillout_form_id exists
+                    // Build fillout_form_id by replacing the placeholder 'xxxxx' with actual assignment_id
                     let fillout_form_id = if let Some(fillout_id) = &row.fillout_form_id {
-                        Some(format!("{}?student_form_assignment_id={}", fillout_id, assignment_id))
+                        Some(fillout_id.replace("xxxxx", &assignment_id.to_string()))
                     } else {
                         None
                     };

@@ -614,11 +614,18 @@ impl EnrollmentDao {
             SELECT
                 cl.id as class_id,
                 cl.name as class_name,
-                COUNT(e.id) as count,
-                '{}' as forms,
-                'default forms' as default_forms
+                COUNT(DISTINCT e.id) as count,
+                COALESCE(
+                    json_object_agg(
+                        cfo.form_template_id,
+                        ft.form_name
+                    ) FILTER (WHERE cfo.form_template_id IS NOT NULL),
+                    '{}'::json
+                ) as forms
             FROM classrooms cl
             LEFT JOIN enrollments e ON cl.id = e.classroom_id AND e.school_id = cl.school_id
+            LEFT JOIN class_form_overrides cfo ON cfo.classroom_id = cl.id AND cfo.school_id = cl.school_id AND cfo.is_active = true
+            LEFT JOIN form_templates ft ON ft.id = cfo.form_template_id AND ft.is_active = true
             WHERE cl.school_id = $1 AND cl.is_active = true
             GROUP BY cl.id, cl.name
             ORDER BY cl.name
@@ -634,8 +641,7 @@ impl EnrollmentDao {
             class_id: row.get("class_id"),
             class_name: row.get("class_name"),
             count: row.get("count"),
-            forms: serde_json::from_str(&row.get::<_, String>("forms")).unwrap_or_default(),
-            default_forms: row.get("default_forms"),
+            forms: row.get("forms"),
         }).collect())
     }
 

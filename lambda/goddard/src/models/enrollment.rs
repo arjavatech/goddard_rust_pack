@@ -337,7 +337,6 @@ pub struct ClassWiseCount {
     pub class_name: String,
     pub count: i64,
     pub forms: serde_json::Value,
-    pub default_forms: String,
 }
 
 // ==========================================

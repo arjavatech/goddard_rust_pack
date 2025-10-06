@@ -211,13 +211,9 @@ erDiagram
         uuid classroom_id FK
         string status
         jsonb application_status "-- Optional, initially null"
-        jsonb progress
-        string admin_approval_status "-- Default: pending (pending, approved, rejected, needs_revision)"
-        timestamp approved_at
-        uuid approved_by FK
-        text approval_notes
-        timestamp forms_locked_at
-        timestamp submitted_at
+        boolean is_active "-- Default: true"
+        timestamp created_at
+        timestamp updated_at
     }
     
     FORM_TEMPLATES ||--|| SCHOOLS : belongs_to
@@ -355,16 +351,13 @@ erDiagram
    - Added `recent_pdf_link` TEXT - Latest PDF link from submissions
 
 4. **ENROLLMENTS Table**:
-   - Added `admin_approval_status` VARCHAR(20) - Approval workflow status
-   - Added `approved_at` TIMESTAMP - When enrollment was approved
-   - Added `approved_by` UUID - Admin who approved
-   - Added `approval_notes` TEXT - Admin notes on decision
-   - Added `forms_locked_at` TIMESTAMP - When forms were locked
+   - Simplified schema by removing approval workflow fields: `admin_approval_status`, `approved_at`, `approved_by`, `approval_notes`, `forms_locked_at`, `progress`, `submitted_at`
+   - Enrollment workflow now managed through `status` and `application_status` fields only
 
 5. **FORM_TEMPLATES Table**:
    - Removed redundant `fillout_form_url` field (keeping only `fillout_form_id` as both stored the same value)
 
-These updates support enhanced form management and approval workflows while maintaining backward compatibility with existing data.
+These updates simplify form management while maintaining core enrollment functionality.
 
 ---
 
@@ -1241,6 +1234,8 @@ PARENT_ADDITIONAL_EMAILS {
 - **Enhanced Reliability**: Multiple contact paths for critical enrollment communications
 
 ## 16. Admin Approval & Form Locking Architecture
+
+> **⚠️ DEPRECATED (2025-10-06)**: This section describes an approval workflow that has been removed from the system. The enrollments table no longer includes approval-specific fields (`admin_approval_status`, `approved_at`, `approved_by`, `approval_notes`, `forms_locked_at`, `progress`, `submitted_at`). Enrollment workflow is now managed through the `status` and `application_status` fields only. This section is kept for historical reference.
 
 ### 16.1 Feature Overview
 

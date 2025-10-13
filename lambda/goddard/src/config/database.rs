@@ -1,6 +1,7 @@
-use deadpool_postgres::{Config, Pool, Runtime};
+use deadpool_postgres::{Config, Pool, Runtime, PoolConfig};
 use tokio_postgres::NoTls;
 use std::env;
+use std::time::Duration;
 use percent_encoding;
 use crate::error::AppError;
 
@@ -39,12 +40,38 @@ impl DatabaseConfig {
                     .to_string()
             });
             config.dbname = Some(parsed.path().trim_start_matches('/').to_string());
+
+            // Extract connect_timeout from query parameters if present
+            for (key, value) in parsed.query_pairs() {
+                if key == "connect_timeout" {
+                    if let Ok(timeout_secs) = value.parse::<u64>() {
+                        config.connect_timeout = Some(Duration::from_secs(timeout_secs));
+                    }
+                }
+            }
         } else {
             return Err(AppError::Database("Invalid DATABASE_URL format".to_string()));
         }
 
-        // Connection pool settings
-        config.pool = Some(deadpool_postgres::PoolConfig::new(16));
+        // AWS Lambda optimized connection pool settings
+        // Use small pool size (3-4) as Lambda's concurrency handles load distribution
+        // Pool size of 3-4 allows for nested transactions without deadlocks
+        // (e.g., create_child opens transaction, create_enrollment needs separate connection)
+        let mut pool_config = PoolConfig::new(4);
+
+        // Short timeouts optimized for Lambda + Supabase Transaction Pooler
+        pool_config.timeouts.wait = Some(Duration::from_secs(5)); // Max wait time for connection from pool
+        pool_config.timeouts.create = Some(Duration::from_secs(10)); // Max time to create new connection
+        pool_config.timeouts.recycle = Some(Duration::from_secs(5)); // Max time to recycle connection
+
+        config.pool = Some(pool_config);
+
+        // CRITICAL FIX FOR SUPABASE TRANSACTION POOLER (Port 6543):
+        // Disable prepared statements as Supavisor transaction mode doesn't support them
+        // This fixes timeout issues in parent-invite and add-child endpoints
+        config.manager = Some(deadpool_postgres::ManagerConfig {
+            recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+        });
 
         config.create_pool(Some(Runtime::Tokio1), NoTls)
             .map_err(|e| AppError::Database(format!("Failed to create connection pool: {}", e)))

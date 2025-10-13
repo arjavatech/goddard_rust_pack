@@ -42,7 +42,7 @@ use controllers::{
         create_class_form_override, delete_class_form_override
     },
     enrollment_controller::{
-        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, deactivate_parent, update_child_status
+        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, update_child_status
     },
     parent_details_controller::{
         get_parent_details_by_id
@@ -229,6 +229,7 @@ async fn run_lambda() -> Result<(), lambda_http::Error> {
         .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments", get(get_school_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-based-enrollments", get(get_class_based_enrollments).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/parent/:parent_id", delete(deactivate_parent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/children/:child_id/status", patch(update_child_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
@@ -389,6 +390,7 @@ async fn run_local_server() -> Result<(), Box<dyn std::error::Error>> {
         .route("/enrollments/children-forms", get(get_enrollment_children_with_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments", get(get_school_forms).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments/class-wise-count", get(get_class_wise_count).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-based-enrollments", get(get_class_based_enrollments).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/parent/:parent_id", get(get_parent_details_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/parent/:parent_id", delete(deactivate_parent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(enrollment_service)

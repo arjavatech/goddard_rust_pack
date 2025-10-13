@@ -575,6 +575,8 @@ impl EnrollmentDao {
         let query = "
             SELECT
                 c.parent_id as parent_id,
+                u.first_name as parent_first_name,
+                u.last_name as parent_last_name,
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
@@ -601,6 +603,56 @@ impl EnrollmentDao {
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
             parent_id: row.get("parent_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
+            child_id: row.get("child_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+            child_status: row.get("child_status"),
+            class_name: row.get("class_name"),
+            primary_email: row.get("primary_email"),
+            form_status: row.get("form_status"),
+            forms: row.get("forms"),
+            additional_parent_email: row.get("additional_parent_email"),
+        }).collect())
+    }
+
+    // Method for getting class-based enrollments (filtered by both school_id and class_id)
+    pub async fn get_class_based_enrollments(&self, school_id: Uuid, class_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
+        let query = "
+            SELECT
+                c.parent_id as parent_id,
+                u.first_name as parent_first_name,
+                u.last_name as parent_last_name,
+                c.id as child_id,
+                c.first_name as child_first_name,
+                c.last_name as child_last_name,
+                c.status as child_status,
+                cl.name as class_name,
+                u.email as primary_email,
+                COALESCE(e.status, 'pending') as form_status,
+                COALESCE(e.application_status, '{}') as forms,
+                NULL as additional_parent_email
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            JOIN users u ON c.parent_id = u.id
+            JOIN classrooms cl ON e.classroom_id = cl.id
+            WHERE e.school_id = $1
+                AND e.classroom_id = $2
+                AND u.is_active = true
+            ORDER BY e.created_at DESC
+        ";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client.query(query, &[&school_id, &class_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get class-based enrollments: {}", e)))?;
+
+        Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            parent_id: row.get("parent_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),

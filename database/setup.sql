@@ -720,3 +720,52 @@ ALTER TABLE children DROP CONSTRAINT IF EXISTS check_status;
 
 -- Migration complete - children.status now accepts any string value
 COMMENT ON COLUMN children.status IS 'Child status - can be any value set by admin (e.g., active, inactive, graduated, withdrawn, archive, etc.)';
+
+
+
+-- ==========================================
+-- MIGRATION: Fix Soft Delete Unique Constraints
+-- Date: 2025-10-13
+-- Description: Replace unique constraints with partial indexes for classrooms and form_templates
+--              to allow reusing names after soft delete (is_active = false)
+-- ==========================================
+
+-- ==========================================
+-- 1. FIX CLASSROOMS TABLE
+-- ==========================================
+
+-- Drop the existing unique constraint
+ALTER TABLE classrooms DROP CONSTRAINT IF EXISTS unique_classroom_name_per_school;
+
+-- Create partial unique index (only enforces uniqueness for active records)
+CREATE UNIQUE INDEX unique_active_classroom_name_per_school
+ON classrooms(school_id, name)
+WHERE is_active = true;
+
+COMMENT ON INDEX unique_active_classroom_name_per_school IS 'Ensures classroom names are unique per school only for active records, allowing name reuse after soft delete';
+
+
+-- ==========================================
+-- 2. FIX FORM_TEMPLATES TABLE
+-- ==========================================
+
+-- Drop the existing unique constraint
+ALTER TABLE form_templates DROP CONSTRAINT IF EXISTS unique_form_name_per_school;
+
+-- Create partial unique index (only enforces uniqueness for active records)
+CREATE UNIQUE INDEX unique_active_form_name_per_school
+ON form_templates(school_id, form_name)
+WHERE is_active = true;
+
+COMMENT ON INDEX unique_active_form_name_per_school IS 'Ensures form names are unique per school only for active records, allowing name reuse after soft delete';
+
+
+-- ==========================================
+-- MIGRATION COMPLETE
+-- ==========================================
+
+-- After running this migration:
+-- 1. You can create a classroom "Pre-K A" with is_active = true
+-- 2. Soft delete it by setting is_active = false
+-- 3. Create another classroom "Pre-K A" with is_active = true (this will now work!)
+-- Same applies to form_templates table

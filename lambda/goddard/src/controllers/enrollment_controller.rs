@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     middleware::auth::AuthContext,
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest, UpdateChildStatusRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest, GetClassBasedEnrollmentsRequest, UpdateChildStatusRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -96,6 +96,16 @@ pub async fn get_class_wise_count(
     axum::extract::Query(query): axum::extract::Query<GetClassWiseCountRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let response = enrollment_service.get_class_wise_count(query).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// GET /class-based-enrollments?school_id={uuid}&class_id={uuid}
+/// Get class-based enrollment form details (API Key protected)
+pub async fn get_class_based_enrollments(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    axum::extract::Query(query): axum::extract::Query<GetClassBasedEnrollmentsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = enrollment_service.get_class_based_enrollments(query).await?;
     Ok(ResponseUtils::success(response))
 }
 

@@ -311,6 +311,8 @@ pub struct GetSchoolFormsResponse {
 #[derive(Debug, Serialize)]
 pub struct SchoolFormDetails {
     pub parent_id: Uuid,
+    pub parent_first_name: String,
+    pub parent_last_name: String,
     pub child_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
@@ -320,6 +322,18 @@ pub struct SchoolFormDetails {
     pub form_status: String,
     pub forms: serde_json::Value, // JSON object with form_template_id as key and form_name as value
     pub additional_parent_email: Option<String>,
+}
+
+// 8.4.1 Get Class-Based Enrollment Form Details
+#[derive(Debug, Deserialize)]
+pub struct GetClassBasedEnrollmentsRequest {
+    pub school_id: Uuid,
+    pub class_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetClassBasedEnrollmentsResponse {
+    pub enrollments: Vec<SchoolFormDetails>,
 }
 
 // 8.5 Get Class-wise Child Count Details

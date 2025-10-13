@@ -398,6 +398,18 @@ impl EnrollmentService {
         Ok(response)
     }
 
+    // Get Class-Based Enrollment Form Details
+    pub async fn get_class_based_enrollments(&self, request: crate::models::enrollment::GetClassBasedEnrollmentsRequest) -> ApiResult<crate::models::enrollment::GetClassBasedEnrollmentsResponse> {
+        // Get class-based enrollment form details
+        let enrollments = self.enrollment_dao.get_class_based_enrollments(request.school_id, request.class_id).await?;
+
+        let response = crate::models::enrollment::GetClassBasedEnrollmentsResponse {
+            enrollments,
+        };
+
+        Ok(response)
+    }
+
     // Get parent details by parent ID
     pub async fn get_parent_details_by_id(&self, parent_id: Uuid) -> ApiResult<ParentDetailsResponse> {
         println!("[DEBUG] EnrollmentService: Getting parent details for ID: {}", parent_id);

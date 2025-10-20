@@ -17,7 +17,7 @@ use crate::models::enrollment::{
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
     GetClassWiseCountRequest, GetClassWiseCountResponse,
     GetSchoolFormsRequest, GetSchoolFormsResponse,
-    DeactivateParentResponse
+    DeactivateParentResponse, ActivateParentResponse
 };
 use crate::error::AppError;
 
@@ -519,6 +519,12 @@ impl EnrollmentService {
     pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
         println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
         self.enrollment_dao.deactivate_parent(parent_id).await
+    }
+
+    // Activate parent and all related children and enrollments
+    pub async fn activate_parent(&self, parent_id: Uuid) -> ApiResult<ActivateParentResponse> {
+        println!("[DEBUG] EnrollmentService: Activating parent {}", parent_id);
+        self.enrollment_dao.activate_parent(parent_id).await
     }
 
     // Update child status (admin only - no validation, accepts any status value)

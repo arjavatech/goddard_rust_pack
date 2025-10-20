@@ -364,6 +364,15 @@ pub struct DeactivateParentResponse {
     pub message: String,
 }
 
+// Activate Parent Response
+#[derive(Debug, Serialize)]
+pub struct ActivateParentResponse {
+    pub parent_id: Uuid,
+    pub activated_children_count: usize,
+    pub activated_enrollments_count: usize,
+    pub message: String,
+}
+
 // Update Child Status Request/Response
 #[derive(Debug, Deserialize)]
 pub struct UpdateChildStatusRequest {

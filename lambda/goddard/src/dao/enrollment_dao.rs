@@ -10,7 +10,7 @@ use crate::models::enrollment::{
     ClassFormOverride, CreatedFormAssignment, ParentWithAuthDetails,
     ParentWithChildren, ChildWithForms, FormStatus,
     EnrollmentChildWithForms, SchoolFormDetails, ClassWiseCount,
-    DeactivateParentResponse
+    DeactivateParentResponse, ActivateParentResponse
 };
 use crate::error::AppError;
 
@@ -852,6 +852,69 @@ impl EnrollmentDao {
             deactivated_children_count,
             deactivated_enrollments_count,
             message: "Parent and related records deactivated successfully".to_string(),
+        })
+    }
+
+    // Activate parent and all related children and enrollments
+    pub async fn activate_parent(&self, parent_id: Uuid) -> ApiResult<ActivateParentResponse> {
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        // Start transaction
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // Step 1: Activate enrollments for all children of this parent
+        let enrollment_query = "
+            UPDATE enrollments e
+            SET is_active = true, updated_at = NOW()
+            FROM children c
+            WHERE e.child_id = c.id AND c.parent_id = $1
+            RETURNING e.id
+        ";
+
+        let enrollment_rows = transaction.query(enrollment_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to activate enrollments: {}", e)))?;
+
+        let activated_enrollments_count = enrollment_rows.len();
+
+        // Step 2: Activate all children of this parent
+        let children_query = "
+            UPDATE children
+            SET is_active = true, updated_at = NOW()
+            WHERE parent_id = $1
+            RETURNING id
+        ";
+
+        let children_rows = transaction.query(children_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to activate children: {}", e)))?;
+
+        let activated_children_count = children_rows.len();
+
+        // Step 3: Activate the parent user
+        let parent_query = "
+            UPDATE users
+            SET is_active = true, updated_at = NOW()
+            WHERE id = $1 AND role = 'Parent'
+            RETURNING id
+        ";
+
+        let parent_rows = transaction.query(parent_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to activate parent: {}", e)))?;
+
+        if parent_rows.is_empty() {
+            return Err(AppError::NotFound(format!("Parent with ID {} not found", parent_id)));
+        }
+
+        // Commit transaction
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        Ok(ActivateParentResponse {
+            parent_id,
+            activated_children_count,
+            activated_enrollments_count,
+            message: "Parent and related records activated successfully".to_string(),
         })
     }
 

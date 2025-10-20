@@ -1,1714 +1,3851 @@
 openapi: 3.0.0
 info:
-  title: goddard_spec
+  title: Goddard School Enrollment Management API
   version: 1.0.0
+  description: |
+    Complete API specification for the Goddard School enrollment management system.
+    This API provides comprehensive enrollment tracking, form management, and parent portal functionality.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: http://localhost:9000
+    description: Local test server
+  - url: https://hjny5xriqd.execute-api.us-west-2.amazonaws.com
+    description: Production AWS Lambda endpoint
+  - url: https://api.fillout.com
+    description: Fillout API integration endpoint
+
 paths:
+  # ======================
+  # Health & Test Endpoints
+  # ======================
+  /:
+    get:
+      summary: API Root
+      operationId: base
+      description: API root endpoint returning basic service information
+      tags: [Health]
+      responses:
+        '200':
+          description: Successfully retrieved API root information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Goddard API v1.0.0"
+                  status:
+                    type: string
+                    example: "operational"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /health:
+    get:
+      summary: Health Check
+      operationId: health
+      description: Check API health and operational status
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is healthy and operational
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                service: "goddard-api"
+                version: "1.0.0"
+                uptime: "72h"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /hello/{name}:
+    get:
+      summary: Hello with Name
+      operationId: helloWithName
+      description: Test endpoint that returns a personalized greeting
+      tags: [Health]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "World"
+      responses:
+        '200':
+          description: Successfully returned greeting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelloResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Admin Dashboard
+  # ======================
   /admin/dashboard-metrics:
     get:
       summary: Dashboard Metrics
-      operationId: Dashboard Metrics
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Admin
-          Dashboard/Dashboard Metrics.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /class-based-enrollments:
-    get:
-      summary: Get Class-based Enrollments
-      operationId: Get Class-based Enrollments
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
-          Class-based Enrollments.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /v1/api/forms/tdKTQWnb3Wus/submissions/30f6ce21-ba41-4888-b0d1-e44aab4fc10b:
-    get:
-      summary: Fillout Edit link
-      operationId: Fillout Edit link
-      description: ''
-      tags:
-        - ''
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: includeEditLink
-          in: query
-          description: ''
-          required: true
-          example: 'true'
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: >-
-            Bearer
-            sk_prod_TL6xA84BolWveGPtaidzLHdeFYEymmaIwkG9dkouCrWowZJuvw2TgbfCOTf6McTs67nKCsHVCVOJig7usGb6jJclwFABQ6sgFFX_30940
-  /student-form-assignments/review:
-    put:
-      summary: Review Assignment
-      operationId: Review Assignment
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
-          Assignments/Review Assignment.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-      requestBody:
-        $ref: '#/components/requestBodies/review_assignment'
-  /enrollments:
-    get:
-      summary: Get School Forms
-      operationId: Get School Forms
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
-          School Forms.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /enrollments/class-wise-count:
-    get:
-      summary: Get Class-wise Count
-      operationId: Get Class-wise Count
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
-          Class-wise Count.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /users/me:
-    get:
-      summary: Enhanced user context
-      operationId: Enhanced user context
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Enhanced
-          user context.bru
-      responses:
-        '200':
-          description: ''
-  /class-form-overrides:
-    post:
-      summary: Create Class Forms
-      operationId: Create Class Forms
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Class Form
-          Overrides/Create Class Forms.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/create_class_forms'
-    delete:
-      summary: Delete Class Forms
-      operationId: Delete Class Forms
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Class Form
-          Overrides/Delete Class Forms.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: id
-          in: query
-          description: ''
-          required: true
-          example: a3960437-d05d-4553-be26-30423141328c
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /classrooms:
-    post:
-      summary: Create New Class
-      operationId: Create New Class
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Create
-          New Class.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{token}}
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: false
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/create_new_class'
-    delete:
-      summary: Delete Class
-      operationId: Delete Class
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Delete
-          Class.bru
-      responses:
-        '200':
-          description: ''
+      operationId: getDashboardMetrics
+      description: Retrieve comprehensive metrics for admin dashboard including classrooms, parents, children, and forms
+      tags: [Admin]
+      security:
+        - BearerAuth: []
       parameters:
         - name: school_id
           in: query
-          description: ''
           required: true
-          example: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
-        - name: classroom_id
-          in: query
-          description: ''
-          required: true
-          example: d69671a4-6a5a-493a-bae6-dbd9758e3754
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-    get:
-      summary: Get All Class
-      operationId: Get All Class
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Get All
-          Class.bru
+          schema:
+            type: string
+            format: uuid
+          example: "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc"
       responses:
         '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: '{{school_id}}'
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{token}}
-    put:
-      summary: Update Class
-      operationId: Update Class
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Update
-          Class.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/update_class'
-  /auth/verification-status:
-    get:
-      summary: Auth Verification Status
-      operationId: Auth Verification Status
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Auth
-          Verification Status.bru
-      responses:
-        '200':
-          description: ''
-  /auth/clear-table:
-    delete:
-      summary: Clear Auth Table
-      operationId: Clear Auth Table
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Clear
-          Auth Table.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /auth/invite-create-enhanced:
-    post:
-      summary: Custom Data Auth
-      operationId: Custom Data Auth
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Custom
-          Data Auth.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/custom_data_auth'
-  /auth/debug-users:
-    get:
-      summary: Debug Users
-      operationId: Debug Users
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Debug
-          Users.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /auth/users/filter:
-    get:
-      summary: Get users by role
-      operationId: Get users by role
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Get
-          users by role.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: 123e4567-e89b-12d3-a456-426614174000
-        - name: role
-          in: query
-          description: ''
-          required: true
-          example: parent
-  /auth/invitation-summary:
-    get:
-      summary: Invitation Summary
-      operationId: Invitation Summary
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth
-          Table/Invitation Summary.bru
-      responses:
-        '200':
-          description: ''
-  /auth/invite-create:
-    post:
-      summary: Invite Create Basic
-      operationId: Invite Create Basic
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Invite
-          Create Basic.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-      requestBody:
-        $ref: '#/components/requestBodies/invite_create_basic'
-  /enrollments/add-child:
-    post:
-      summary: Add Child to Parent
-      operationId: Add Child to Parent
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Add
-          Child to Parent.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-      requestBody:
-        $ref: '#/components/requestBodies/add_child_to_parent'
-  /enrollments/children-forms:
-    get:
-      summary: Get Children with Forms
-      operationId: Get Children with Forms
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
-          Children with Forms.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /parent/details:
-    get:
-      summary: Parent Details Page
-      operationId: Parent Details Page
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Details/Parent Details Page.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: '{{school_id}}'
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-        - name: Authorization
-          in: header
-          description: ''
-          required: false
-          example: Bearer {{token}}
-  /enrollments/parent-details-by-school:
-    get:
-      summary: Get Parent Details by School
-      operationId: Get Parent Details by School
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
-          Parent Details by School.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /enrollments/parent-invite:
-    post:
-      summary: Enrollment Parent Invite
-      operationId: Enrollment Parent Invite
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Invite/Enrollment Parent Invite.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/enrollment_parent_invite'
-  /enrollments/resend-confirmation:
-    post:
-      summary: Resend Mail
-      operationId: Resend Mail
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Details/Resend Mail.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/resend_mail'
-  /form-submissions/webhook:
-    post:
-      summary: Create Form Submission (Webhook from Fillout)
-      operationId: Create Form Submission (Webhook from Fillout)
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
-          Management/Create Form Submission (Webhook from Fillout).bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: >-
-          #/components/requestBodies/create_form_submission_(webhook_from_fillout)
-  /form-submissions/versions:
-    get:
-      summary: Get all versions (history) of a   form submission
-      operationId: Get all versions (history) of a   form submission
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
-          Management/Get all versions (history) of a   form submission.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: '{{school_id}}'
-        - name: enrollment_id
-          in: query
-          description: ''
-          required: true
-          example: '{{enrollment_id}}'
-        - name: form_template_id
-          in: query
-          description: ''
-          required: true
-          example: '{{form_template_id}}'
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /form-submissions/latest:
-    get:
-      summary: Get most recent version of a form   submission
-      operationId: Get most recent version of a form   submission
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
-          Management/Get most recent version of a form   submission.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: '{{school_id}}'
-        - name: enrollment_id
-          in: query
-          description: ''
-          required: true
-          example: '{{enrollment_id}}'
-        - name: form_template_id
-          in: query
-          description: ''
-          required: true
-          example: '{{form_template_id}}'
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /form-submissions/0f429795-791f-49cb-91a5-33e66e697e15:
-    get:
-      summary: Get specific form submission   by ID
-      operationId: Get specific form submission   by ID
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
-          Management/Get specific form submission   by ID.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /form-submissions/0f429795-791f-49cb-91a5-33e66e697e15/status:
-    put:
-      summary: Update Form Submission Status
-      operationId: Update Form Submission Status
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
-          Management/Update Form Submission Status.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/update_form_submission_status'
-  /form-templates:
-    post:
-      summary: Create Form
-      operationId: Create Form
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form
-          Templates/Create Form.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/create_form'
-    delete:
-      summary: Delete Form
-      operationId: Delete Form
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form
-          Templates/Delete Form.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: form_id
-          in: query
-          description: ''
-          required: true
-          example: 7d2d518e-a72a-4b77-9f62-dd78f59f8404
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-    get:
-      summary: Get Form
-      operationId: Get Form
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Templates/Get
-          Form.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: 5ea2e4e9-03b6-4145-813d-da4b1b8f0a46
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-    put:
-      summary: Update Form
-      operationId: Update Form
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form
-          Templates/Update Form.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/update_form'
-  /prod/enrollments/add-child:
-    post:
-      summary: Add Additional Child
-      operationId: Add Additional Child
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent Details/Add
-          Additional Child.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/add_additional_child'
-  /parent/01eddf08-8025-4ab4-9498-e8e1598ba2c0/activate:
-    patch:
-      summary: Activate Parent
-      operationId: Activate Parent
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Management/Activate Parent.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-  /parent/01eddf08-8025-4ab4-9498-e8e1598ba2c0:
-    delete:
-      summary: Deactivate Parent
-      operationId: Deactivate Parent
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Management/Deactivate Parent.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-    get:
-      summary: Get Parent by ID
-      operationId: Get Parent by ID
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Management/Get Parent by ID.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{token}}
-  /children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b/status:
-    patch:
-      summary: Update Child Status
-      operationId: Update Child Status
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
-          Management/Update Child Status.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-      requestBody:
-        $ref: '#/components/requestBodies/update_child_status'
-  /classrooms/7824a873-7ad9-4c78-af24-a8fe7b5632af/forms:
-    post:
-      summary: Assign form to classroom
-      operationId: Assign form to classroom
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Assign form
-          to classroom.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-      requestBody:
-        $ref: '#/components/requestBodies/assign_form_to_classroom'
-    get:
-      summary: Get classroom forms
-      operationId: Get classroom forms
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get
-          classroom forms.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b:
-    get:
-      summary: Get child demographics
-      operationId: Get child demographics
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get child
-          demographics.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0/children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b/profile:
-    get:
-      summary: Get child profile
-      operationId: Get child profile
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get child
-          profile.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0/children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b/forms:
-    get:
-      summary: Get child's assigned forms
-      operationId: Get child's assigned forms
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get child's
-          assigned forms.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /classrooms/7824a873-7ad9-4c78-af24-a8fe7b5632af:
-    get:
-      summary: Get classroom details
-      operationId: Get classroom details
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get
-          classroom details.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: Authorization
-          in: header
-          description: ''
-          required: true
-          example: Bearer {{admin_token}}
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: false
-          example: '{{api_key}}'
-  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0:
-    get:
-      summary: Get parent profile
-      operationId: Get parent profile
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get parent
-          profile.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0/children:
-    get:
-      summary: Get parent's children
-      operationId: Get parent's children
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get parent's
-          children.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /classrooms/7824a873-7ad9-4c78-af24-a8fe7b5632af/forms/52225ff9-4806-4f90-a9c8-a79288edb64f:
-    delete:
-      summary: Remove form from classroom
-      operationId: Remove form from classroom
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Remove form
-          from classroom.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-  /schools/8863a33c-ab95-4ab9-8b47-24e33bc52849:
-    delete:
-      summary: Delete School
-      operationId: Delete School
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Delete
-          School.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
+          description: Successfully retrieved dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboardMetricsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Schools
+  # ======================
   /schools:
     get:
       summary: Get All Schools
-      operationId: Get All Schools
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Get All
-          Schools.bru
+      operationId: getAllSchools
+      description: Retrieve a list of all schools in the system (public endpoint)
+      tags: [Schools]
       responses:
         '200':
-          description: ''
+          description: Successfully retrieved schools list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SchoolListItem'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
     post:
-      summary: Post School
-      operationId: Post School
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Post
-          School.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
+      summary: Create School
+      operationId: createSchool
+      description: Create a new school (SuperAdmin only)
+      tags: [Schools]
+      security:
+        - ApiKeyAuth: []
       requestBody:
         $ref: '#/components/requestBodies/post_school'
+      responses:
+        '201':
+          description: School successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
     put:
       summary: Update School
-      operationId: Update School
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Update
-          School.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
+      operationId: updateSchool
+      description: Update an existing school (SuperAdmin only)
+      tags: [Schools]
+      security:
+        - ApiKeyAuth: []
       requestBody:
         $ref: '#/components/requestBodies/update_school'
-  /student-form-assignments:
-    post:
-      summary: Create
-      operationId: Create
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
-          Assignments/Create.bru
       responses:
         '200':
-          description: ''
+          description: School successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchoolResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /schools/{school_id}:
+    delete:
+      summary: Delete School
+      operationId: deleteSchool
+      description: Delete a school by ID (SuperAdmin only)
+      tags: [Schools]
+      security:
+        - ApiKeyAuth: []
       parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
+        - name: school_id
+          in: path
           required: true
-          example: '{{api_key}}'
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: School successfully deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteSchoolResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Classrooms
+  # ======================
+  /classrooms:
+    get:
+      summary: Get All Classrooms
+      operationId: getAllClassrooms
+      description: Retrieve all classrooms for a specific school
+      tags: [Classrooms]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved classrooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClassroomListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create Classroom
+      operationId: createClassroom
+      description: Create a new classroom
+      tags: [Classrooms]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/create_new_class'
+      responses:
+        '201':
+          description: Classroom successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassroomResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: Update Classroom
+      operationId: updateClassroom
+      description: Update an existing classroom
+      tags: [Classrooms]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/update_class'
+      responses:
+        '200':
+          description: Classroom successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassroomResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete Classroom
+      operationId: deleteClassroom
+      description: Delete a classroom
+      tags: [Classrooms]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: classroom_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Classroom successfully deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /classrooms/{classroom_id}:
+    get:
+      summary: Get Classroom Details
+      operationId: getClassroomDetails
+      description: Get detailed classroom information including enrollment and capacity
+      tags: [Classrooms]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: classroom_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved classroom details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassroomDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /classrooms/{classroom_id}/forms:
+    get:
+      summary: Get Classroom Forms
+      operationId: getClassroomForms
+      description: List all forms assigned to a classroom
+      tags: [Classrooms]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: classroom_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved classroom forms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClassroomFormResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Assign Form to Classroom
+      operationId: assignFormToClassroom
+      description: Assign a form template to a classroom
+      tags: [Classrooms]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: classroom_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/assign_form_to_classroom'
+      responses:
+        '201':
+          description: Form successfully assigned to classroom
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignClassroomFormResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /classrooms/{classroom_id}/forms/{form_id}:
+    delete:
+      summary: Remove Form from Classroom
+      operationId: removeFormFromClassroom
+      description: Remove a form assignment from a classroom
+      tags: [Classrooms]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: classroom_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: form_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Form successfully removed from classroom
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Form Templates
+  # ======================
+  /form-templates:
+    get:
+      summary: Get Form Templates
+      operationId: getFormTemplates
+      description: Retrieve all form templates for a school
+      tags: [Form Templates]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved form templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FormTemplateListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create Form Template
+      operationId: createFormTemplate
+      description: Create a new form template
+      tags: [Form Templates]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/create_form'
+      responses:
+        '201':
+          description: Form template successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormTemplateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: Update Form Template
+      operationId: updateFormTemplate
+      description: Update an existing form template
+      tags: [Form Templates]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/update_form'
+      responses:
+        '200':
+          description: Form template successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormTemplateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete Form Template
+      operationId: deleteFormTemplate
+      description: Delete a form template
+      tags: [Form Templates]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: form_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Form template successfully deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteFormTemplateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Form Submissions
+  # ======================
+  /form-submissions/webhook:
+    post:
+      summary: Create Form Submission (Webhook)
+      operationId: createFormSubmissionWebhook
+      description: Create a new form submission from Fillout webhook
+      tags: [Form Submissions]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Fillout webhook payload
+      responses:
+        '201':
+          description: Form submission successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /form-submissions/{submission_id}:
+    get:
+      summary: Get Form Submission by ID
+      operationId: getFormSubmissionById
+      description: Retrieve a specific form submission by its ID
+      tags: [Form Submissions]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: submission_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved form submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /form-submissions/{submission_id}/status:
+    put:
+      summary: Update Form Submission Status
+      operationId: updateFormSubmissionStatus
+      description: Update the status of a form submission
+      tags: [Form Submissions]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: submission_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/update_form_submission_status'
+      responses:
+        '200':
+          description: Form submission status successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /form-submissions/latest:
+    get:
+      summary: Get Latest Form Submission
+      operationId: getLatestFormSubmission
+      description: Get the most recent version of a form submission
+      tags: [Form Submissions]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: enrollment_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: form_template_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved latest form submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSubmissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /form-submissions/versions:
+    get:
+      summary: Get Form Submission Versions
+      operationId: getFormSubmissionVersions
+      description: Get all versions (history) of a form submission
+      tags: [Form Submissions]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: enrollment_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: form_template_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved form submission versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FormSubmissionVersionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Student Form Assignments
+  # ======================
+  /student-form-assignments:
+    get:
+      summary: Get Student Form Assignments by School
+      operationId: getStudentFormAssignmentsBySchool
+      description: Retrieve all student form assignments for a school
+      tags: [Student Form Assignments]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved student form assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudentFormAssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create Student Form Assignment
+      operationId: createStudentFormAssignment
+      description: Create a new student form assignment
+      tags: [Student Form Assignments]
+      security:
+        - ApiKeyAuth: []
       requestBody:
         $ref: '#/components/requestBodies/create'
-    delete:
-      summary: Delete
-      operationId: Delete
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
-          Assignments/Delete.bru
+      responses:
+        '201':
+          description: Student form assignment successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentFormAssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: Update Student Form Assignment
+      operationId: updateStudentFormAssignment
+      description: Update an existing student form assignment
+      tags: [Student Form Assignments]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/update'
       responses:
         '200':
-          description: ''
+          description: Student form assignment successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentFormAssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete Student Form Assignment
+      operationId: deleteStudentFormAssignment
+      description: Delete a student form assignment
+      tags: [Student Form Assignments]
+      security:
+        - ApiKeyAuth: []
       parameters:
         - name: assignment_id
           in: query
-          description: ''
           required: true
-          example: 600a498a-c2a9-437f-b740-ed61d0d7d56e
+          schema:
+            type: string
+            format: uuid
         - name: school_id
           in: query
-          description: ''
           required: true
-          example: a78b43f0-4404-4d5d-8e4a-cc162bcee693
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
-    get:
-      summary: Get by School
-      operationId: Get by School
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
-          Assignments/Get by School.bru
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
-          description: ''
-      parameters:
-        - name: school_id
-          in: query
-          description: ''
-          required: true
-          example: 545997c6-0c38-4ece-939b-295d87d7c6e7
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
+          description: Student form assignment successfully deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteStudentFormAssignmentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /student-form-assignments/review:
     put:
-      summary: Update
-      operationId: Update
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
-          Assignments/Update.bru
-      responses:
-        '200':
-          description: ''
-      parameters:
-        - name: X-API-Key
-          in: header
-          description: ''
-          required: true
-          example: '{{api_key}}'
+      summary: Review Student Form Assignment
+      operationId: reviewStudentFormAssignment
+      description: Review and approve/reject a student form assignment
+      tags: [Student Form Assignments]
+      security:
+        - BearerAuth: []
       requestBody:
-        $ref: '#/components/requestBodies/update'
-  /:
-    get:
-      summary: Base
-      operationId: Base
-      description: ''
-      tags:
-        - /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Base.bru
+        $ref: '#/components/requestBodies/review_assignment'
       responses:
         '200':
-          description: ''
-  /hello/Surya:
-    get:
-      summary: Get hello
-      operationId: Get hello
-      description: ''
-      tags:
-        - /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Get hello.bru
+          description: Student form assignment successfully reviewed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewStudentFormAssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Class Form Overrides
+  # ======================
+  /class-form-overrides:
+    post:
+      summary: Create Class Form Override
+      operationId: createClassFormOverride
+      description: Create a form override for a specific classroom
+      tags: [Class Form Overrides]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/create_class_forms'
+      responses:
+        '201':
+          description: Class form override successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassFormOverrideResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete Class Form Override
+      operationId: deleteClassFormOverride
+      description: Delete a class form override
+      tags: [Class Form Overrides]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
-          description: ''
-  /health:
+          description: Class form override successfully deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteClassFormOverrideResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Enrollments
+  # ======================
+  /enrollments:
     get:
-      summary: Health
-      operationId: Health
-      description: ''
-      tags:
-        - /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Health.bru
+      summary: Get School Enrollment Forms
+      operationId: getSchoolEnrollmentForms
+      description: Get all enrollment form details by school
+      tags: [Enrollments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
-          description: ''
-  /hello/World:
-    get:
-      summary: Hello with Name
-      operationId: Hello with Name
-      description: ''
-      tags:
-        - >-
-          /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Hello with
-          Name.bru
+          description: Successfully retrieved school enrollment forms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetSchoolFormsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /enrollments/parent-invite:
+    post:
+      summary: Create Parent Invite
+      operationId: createParentInvite
+      description: Create a parent invite for child enrollment
+      tags: [Enrollments]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/enrollment_parent_invite'
+      responses:
+        '201':
+          description: Parent invite successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentInviteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /enrollments/resend-confirmation:
+    post:
+      summary: Resend Parent Confirmation
+      operationId: resendParentConfirmation
+      description: Resend confirmation email to parent
+      tags: [Enrollments]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/resend_mail'
       responses:
         '200':
-          description: ''
-servers:
-  - url: http://localhost:8000
-  - url: https://api.fillout.com
-  - url: http://localhost:9000
-  - url: https://hjny5xriqd.execute-api.us-west-2.amazonaws.com
+          description: Confirmation email successfully resent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResendConfirmationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /enrollments/add-child:
+    post:
+      summary: Add Child to Parent
+      operationId: addChildToParent
+      description: Add an additional child to an existing parent
+      tags: [Enrollments]
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/add_child_to_parent'
+      responses:
+        '201':
+          description: Child successfully added to parent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddChildResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /enrollments/parent-details-by-school:
+    get:
+      summary: Get Parent Details by School
+      operationId: getParentDetailsBySchool
+      description: Get parent details by school including auth information
+      tags: [Enrollments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved parent details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetParentDetailsBySchoolResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /enrollments/children-forms:
+    get:
+      summary: Get Enrollment Children with Forms
+      operationId: getEnrollmentChildrenWithForms
+      description: Get enrollment children with form assignments
+      tags: [Enrollments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved children with forms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetEnrollmentChildrenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /enrollments/class-wise-count:
+    get:
+      summary: Get Class-wise Count
+      operationId: getClassWiseCount
+      description: Get class-wise child count details
+      tags: [Enrollments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved class-wise count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetClassWiseCountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /class-based-enrollments:
+    get:
+      summary: Get Class-based Enrollments
+      operationId: getClassBasedEnrollments
+      description: Get class-based enrollment form details
+      tags: [Enrollments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: class_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved class-based enrollments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetClassBasedEnrollmentsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Parent Management
+  # ======================
+  /parent/{parent_id}:
+    get:
+      summary: Get Parent by ID
+      operationId: getParentById
+      description: Get parent profile by ID
+      tags: [Parent Management]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved parent profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Deactivate Parent
+      operationId: deactivateParent
+      description: Deactivate parent and all related children and enrollments
+      tags: [Parent Management]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Parent successfully deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeactivateParentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /parent/{parent_id}/activate:
+    patch:
+      summary: Activate Parent
+      operationId: activateParent
+      description: Activate parent and all related children and enrollments
+      tags: [Parent Management]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Parent successfully activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivateParentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /parent/details:
+    get:
+      summary: Get Parent Details Page
+      operationId: getParentDetailsPage
+      description: Get comprehensive parent details including children and forms
+      tags: [Parent Management]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved parent details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentDetailsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Portal Endpoints
+  # ======================
+  /users/me:
+    get:
+      summary: Get Current User Context
+      operationId: getUserContext
+      description: Get current user context with enhanced information
+      tags: [Portal]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved user context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserContextResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /parents/{parent_id}:
+    get:
+      summary: Get Parent Profile
+      operationId: getParentProfile
+      description: Get parent profile with contact information
+      tags: [Portal]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved parent profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /parents/{parent_id}/children:
+    get:
+      summary: Get Parent's Children
+      operationId: getParentChildren
+      description: Get list of children linked to the parent
+      tags: [Portal]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved parent's children
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChildResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /parents/{parent_id}/children/{child_id}/profile:
+    get:
+      summary: Get Child Profile
+      operationId: getChildProfile
+      description: Get detailed child profile with enrollment progress
+      tags: [Portal]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: child_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved child profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /parents/{parent_id}/children/{child_id}/forms:
+    get:
+      summary: Get Child's Assigned Forms
+      operationId: getChildAssignedForms
+      description: Get assigned forms with rich metadata for a specific child
+      tags: [Portal]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: parent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: child_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved child's assigned forms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChildFormResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /children/{child_id}:
+    get:
+      summary: Get Child Demographics
+      operationId: getChildDemographics
+      description: Get child demographics and guardian references
+      tags: [Portal]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: child_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successfully retrieved child demographics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildDemographicsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /children/{child_id}/status:
+    patch:
+      summary: Update Child Status
+      operationId: updateChildStatus
+      description: Update child status (Admin/SuperAdmin only)
+      tags: [Parent Management]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: child_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/update_child_status'
+      responses:
+        '200':
+          description: Child status successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateChildStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ======================
+  # Auth Endpoints
+  # ======================
+  /auth/verification-status:
+    get:
+      summary: Auth Verification Status
+      operationId: authVerificationStatus
+      description: Get authorization verification status for all users
+      tags: [Auth]
+      responses:
+        '200':
+          description: Successfully retrieved verification status
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Verification status details
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/invitation-summary:
+    get:
+      summary: Invitation Summary
+      operationId: invitationSummary
+      description: Get summary of invitation statuses grouped by status type
+      tags: [Auth]
+      responses:
+        '200':
+          description: Successfully retrieved invitation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Invitation summary by status
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/invite-create:
+    post:
+      summary: Create Invitation
+      operationId: createInvitation
+      description: Create a new user invitation
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/invite_create_basic'
+      responses:
+        '201':
+          description: Invitation successfully created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  invitation_id:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/invite-create-enhanced:
+    post:
+      summary: Create Enhanced Invitation
+      operationId: createEnhancedInvitation
+      description: Create a new user invitation with custom fields
+      tags: [Auth]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/custom_data_auth'
+      responses:
+        '201':
+          description: Enhanced invitation successfully created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  invitation_id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/clear-table:
+    delete:
+      summary: Clear Auth Table
+      operationId: clearAuthTable
+      description: Clear Supabase authentication table (SuperAdmin only)
+      tags: [Auth]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Authentication table successfully cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/debug-users:
+    get:
+      summary: Debug Auth Users
+      operationId: debugAuthUsers
+      description: List all Supabase auth users with metadata (SuperAdmin only)
+      tags: [Auth]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved auth users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/users/filter:
+    get:
+      summary: Get Users by Role
+      operationId: getUsersByRole
+      description: Get users filtered by school and role
+      tags: [Auth]
+      parameters:
+        - name: school_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [parent, admin, superadmin]
+      responses:
+        '200':
+          description: Successfully retrieved filtered users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+# ======================
+# Components
+# ======================
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from Supabase authentication
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for server-to-server authentication
+
+  # ======================
+  # Response Schemas
+  # ======================
   schemas:
-    form_review:
+    # Common/Utility Schemas
+    SuccessMessage:
       type: object
       properties:
-        assignment_id:
+        message:
           type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+          example: "ValidationError"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid request parameters"
+        details:
+          type: array
+          items:
+            type: string
+          description: Detailed error information
+      required:
+        - error
+        - message
+
+    HealthResponse:
+      type: object
+      properties:
         status:
           type: string
-        notes:
+          example: "healthy"
+        service:
           type: string
-        approved_by:
+          example: "goddard-api"
+        version:
           type: string
-    create_class_forms:
+          example: "1.0.0"
+        uptime:
+          type: string
+          example: "72h"
+      required:
+        - status
+        - service
+        - version
+
+    HelloResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Hello, World!"
+        name:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          format: uuid
+      required:
+        - message
+        - request_id
+
+    # Admin Schemas
+    AdminDashboardMetricsResponse:
       type: object
       properties:
         school_id:
           type: string
+          format: uuid
+        total_classrooms:
+          type: integer
+          format: int64
+        total_active_parents:
+          type: integer
+          format: int64
+        total_active_children:
+          type: integer
+          format: int64
+        total_forms:
+          type: integer
+          format: int64
+        classwise_metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClasswiseMetric'
+      required:
+        - school_id
+        - total_classrooms
+        - total_active_parents
+        - total_active_children
+        - total_forms
+        - classwise_metrics
+
+    ClasswiseMetric:
+      type: object
+      properties:
         classroom_id:
           type: string
+          format: uuid
+        classroom_name:
+          type: string
+        total_enrollments:
+          type: integer
+          format: int64
+        completed_enrollments:
+          type: integer
+          format: int64
+
+    # School Schemas
+    SchoolResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        subdomain:
+          type: string
+        settings:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - name
+        - subdomain
+
+    SchoolListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        subdomain:
+          type: string
+      required:
+        - id
+        - name
+        - subdomain
+
+    DeleteSchoolResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        school_id:
+          type: string
+          format: uuid
+      required:
+        - message
+        - school_id
+
+    # Classroom Schemas
+    ClassroomResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        age_group:
+          type: string
+          nullable: true
+        capacity:
+          type: integer
+          nullable: true
+        enrolled_count:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - name
+
+    ClassroomListResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        class_name:
+          type: string
+      required:
+        - id
+        - class_name
+
+    ClassroomDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        capacity:
+          type: integer
+          nullable: true
+        age_group:
+          type: string
+          nullable: true
+        teachers:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+          nullable: true
+        enrolled_count:
+          type: integer
+          format: int64
+        available_spots:
+          type: integer
+      required:
+        - id
+        - name
+        - teachers
+        - enrolled_count
+        - available_spots
+
+    ClassroomFormResponse:
+      type: object
+      properties:
         form_template_id:
           type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        assigned_by:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+      required:
+        - form_template_id
+        - title
+        - status
+        - assigned_by
+        - assigned_at
+
+    AssignClassroomFormResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        assigned_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - classroom_id
+        - form_template_id
+        - status
+        - assigned_by
+        - created_at
+
+    # Form Template Schemas
+    FormTemplateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        form_name:
+          type: string
+        form_type:
+          type: string
+          nullable: true
+        fillout_form_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        is_required:
+          type: boolean
+          nullable: true
+        display_order:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - form_name
+
+    FormTemplateListResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        form_name:
+          type: string
+        form_type:
+          type: string
+          nullable: true
+        fillout_form_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        is_required:
+          type: boolean
+          nullable: true
+        display_order:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - form_name
+
+    DeleteFormTemplateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        form_id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+      required:
+        - message
+        - form_id
+        - school_id
+
+    # Form Submission Schemas
+    FormSubmissionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        student_form_assignment_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        fillout_submission_id:
+          type: string
+        form_data:
+          type: object
+        metadata:
+          type: object
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, requires_review, approved, rejected]
+        revision_number:
+          type: integer
+        revision_reason:
+          type: string
+          nullable: true
+        edit_link:
+          type: string
+          nullable: true
+        pdf_link:
+          type: string
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - enrollment_id
+        - student_form_assignment_id
+        - form_template_id
+        - fillout_submission_id
+        - form_data
+        - metadata
+        - status
+        - revision_number
+        - submitted_at
+
+    FormSubmissionVersionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+        revision_reason:
+          type: string
+          nullable: true
+        form_data:
+          type: object
+        metadata:
+          type: object
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, requires_review, approved, rejected]
+        submitted_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - revision_number
+        - form_data
+        - metadata
+        - status
+        - submitted_at
+
+    # Student Form Assignment Schemas
+    StudentFormAssignmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        assignment_source:
+          type: string
+        status:
+          type: string
+          enum: [incomplete, in_progress, completed, approved, rejected]
+        is_required:
+          type: boolean
+        assigned_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - enrollment_id
+        - child_id
+        - form_template_id
+        - assignment_source
+        - status
+        - is_required
+        - assigned_at
+
+    DeleteStudentFormAssignmentResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        assignment_id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+      required:
+        - message
+        - assignment_id
+        - school_id
+
+    ReviewStudentFormAssignmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        assignment_source:
+          type: string
+        status:
+          type: string
+          enum: [incomplete, in_progress, completed, approved, rejected]
+        is_required:
+          type: boolean
+        assigned_at:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+        approved_by:
+          type: string
+          format: uuid
+          nullable: true
+        approved_on:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - enrollment_id
+        - child_id
+        - form_template_id
+        - assignment_source
+        - status
+        - is_required
+        - assigned_at
+
+    # Class Form Override Schemas
+    ClassFormOverrideResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          nullable: true
+        is_required:
+          type: boolean
+          nullable: true
+        is_active:
+          type: boolean
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - school_id
+        - classroom_id
+        - form_template_id
+
+    DeleteClassFormOverrideResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+      required:
+        - message
+        - id
+        - school_id
+        - classroom_id
+        - form_template_id
+
+    # Enrollment Schemas
+    ParentInviteResponse:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        assigned_forms_count:
+          type: integer
+        invite_id:
+          type: string
+          format: uuid
+        signup_email_sent:
+          type: boolean
+        message:
+          type: string
+        details:
+          $ref: '#/components/schemas/ParentInviteDetails'
+      required:
+        - parent_id
+        - child_id
+        - enrollment_id
+        - assigned_forms_count
+        - invite_id
+        - signup_email_sent
+        - message
+        - details
+
+    ParentInviteDetails:
+      type: object
+      properties:
+        parent:
+          $ref: '#/components/schemas/ParentDetails'
+        child:
+          $ref: '#/components/schemas/ChildDetails'
+        enrollment:
+          $ref: '#/components/schemas/EnrollmentDetails'
+        assigned_forms:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedFormDetails'
+
+    ParentDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        is_verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ChildDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        birth_date:
+          type: string
+          format: date
+        gender:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    EnrollmentDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        application_status:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AssignedFormDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        form_name:
+          type: string
+        assignment_source:
+          type: string
+        status:
+          type: string
+        is_required:
+          type: boolean
+
+    ResendConfirmationResponse:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        email_sent:
+          type: boolean
+        message:
+          type: string
+        parent_details:
+          type: object
+          properties:
+            email:
+              type: string
+      required:
+        - parent_id
+        - email_sent
+        - message
+        - parent_details
+
+    AddChildResponse:
+      type: object
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        assigned_forms_count:
+          type: integer
+        message:
+          type: string
+        details:
+          $ref: '#/components/schemas/AddChildDetails'
+      required:
+        - child_id
+        - enrollment_id
+        - assigned_forms_count
+        - message
+        - details
+
+    AddChildDetails:
+      type: object
+      properties:
+        parent:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            first_name:
+              type: string
+            last_name:
+              type: string
+            email:
+              type: string
+            is_verified:
+              type: boolean
+        child:
+          $ref: '#/components/schemas/ChildDetails'
+        enrollment:
+          $ref: '#/components/schemas/EnrollmentDetails'
+        assigned_forms:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedFormDetails'
+
+    GetParentDetailsBySchoolResponse:
+      type: object
+      properties:
+        active_parents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParentWithChildren'
+        inactive_parents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParentWithChildren'
+      required:
+        - active_parents
+        - inactive_parents
+
+    ParentWithChildren:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        parent_email:
+          type: string
+        parent_first_name:
+          type: string
+        parent_last_name:
+          type: string
+        signed_status:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChildWithForms'
+
+    ChildWithForms:
+      type: object
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        child_full_name:
+          type: string
+        child_dob:
+          type: string
+          format: date
+        child_status:
+          type: string
+        enrollment_id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        classroom_name:
+          type: string
+        forms:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormStatus'
+
+    FormStatus:
+      type: object
+      properties:
+        form_id:
+          type: string
+        student_form_assignment_id:
+          type: string
+          format: uuid
+          nullable: true
+        fillout_form_id:
+          type: string
+          nullable: true
+        form_name:
+          type: string
+        status:
+          type: string
+        is_required:
+          type: boolean
+        recent_edit_link:
+          type: string
+          nullable: true
+        recent_pdf_link:
+          type: string
+          nullable: true
+        approved_by:
+          type: string
+          format: uuid
+          nullable: true
+        approved_on:
+          type: string
+          format: date-time
+          nullable: true
+
+    GetEnrollmentChildrenResponse:
+      type: object
+      properties:
+        children:
+          type: array
+          items:
+            type: object
+            properties:
+              child_id:
+                type: string
+                format: uuid
+              child_first_name:
+                type: string
+              child_last_name:
+                type: string
+              class_name:
+                type: string
+              primary_email:
+                type: string
+              form_status:
+                type: string
+              forms:
+                type: object
+              additional_parent_email:
+                type: string
+                nullable: true
+      required:
+        - children
+
+    GetSchoolFormsResponse:
+      type: object
+      properties:
+        enrollments:
+          type: array
+          items:
+            type: object
+            properties:
+              parent_id:
+                type: string
+                format: uuid
+              parent_first_name:
+                type: string
+              parent_last_name:
+                type: string
+              child_id:
+                type: string
+                format: uuid
+              child_first_name:
+                type: string
+              child_last_name:
+                type: string
+              child_status:
+                type: string
+              class_name:
+                type: string
+              primary_email:
+                type: string
+              form_status:
+                type: string
+              forms:
+                type: object
+              additional_parent_email:
+                type: string
+                nullable: true
+      required:
+        - enrollments
+
+    GetClassBasedEnrollmentsResponse:
+      type: object
+      properties:
+        enrollments:
+          type: array
+          items:
+            type: object
+            properties:
+              parent_id:
+                type: string
+                format: uuid
+              parent_first_name:
+                type: string
+              parent_last_name:
+                type: string
+              child_id:
+                type: string
+                format: uuid
+              child_first_name:
+                type: string
+              child_last_name:
+                type: string
+              child_status:
+                type: string
+              class_name:
+                type: string
+              primary_email:
+                type: string
+              form_status:
+                type: string
+              forms:
+                type: object
+              additional_parent_email:
+                type: string
+                nullable: true
+      required:
+        - enrollments
+
+    GetClassWiseCountResponse:
+      type: object
+      properties:
+        classes:
+          type: array
+          items:
+            type: object
+            properties:
+              class_id:
+                type: string
+                format: uuid
+              class_name:
+                type: string
+              count:
+                type: integer
+                format: int64
+              forms:
+                type: object
+      required:
+        - classes
+
+    DeactivateParentResponse:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        deactivated_children_count:
+          type: integer
+        deactivated_enrollments_count:
+          type: integer
+        message:
+          type: string
+      required:
+        - parent_id
+        - deactivated_children_count
+        - deactivated_enrollments_count
+        - message
+
+    ActivateParentResponse:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        activated_children_count:
+          type: integer
+        activated_enrollments_count:
+          type: integer
+        message:
+          type: string
+      required:
+        - parent_id
+        - activated_children_count
+        - activated_enrollments_count
+        - message
+
+    UpdateChildStatusResponse:
+      type: object
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+      required:
+        - child_id
+        - status
+        - updated_at
+        - message
+
+    # Portal Schemas
+    UserContextResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        role:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        school_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+          nullable: true
+        last_name:
+          type: string
+          nullable: true
+      required:
+        - user_id
+        - email
+        - role
+        - school_id
+
+    ChildResponse:
+      type: object
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        dob:
+          type: string
+          format: date
+        age:
+          type: integer
+        class_name:
+          type: string
+        enrollment_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - child_id
+        - first_name
+        - last_name
+        - dob
+        - age
+        - class_name
+
+    ChildProfileResponse:
+      type: object
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        dob:
+          type: string
+          format: date
+        age:
+          type: integer
+        class_name:
+          type: string
+        enrollment_id:
+          type: string
+          format: uuid
+          nullable: true
+        enrollment_progress:
+          type: object
+          properties:
+            total_forms:
+              type: integer
+              format: int64
+            completed_forms:
+              type: integer
+              format: int64
+            completion_percentage:
+              type: integer
+      required:
+        - child_id
+        - first_name
+        - last_name
+        - dob
+        - age
+        - class_name
+        - enrollment_progress
+
+    ChildFormResponse:
+      type: object
+      properties:
+        assignment_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        last_updated:
+          type: string
+          format: date-time
+        launch_url:
+          type: string
+          nullable: true
+      required:
+        - assignment_id
+        - form_template_id
+        - title
+        - status
+        - last_updated
+
+    ParentProfileResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+          nullable: true
+        last_name:
+          type: string
+          nullable: true
+        email:
+          type: string
+        phone_numbers:
+          type: object
+          properties:
+            primary:
+              type: string
+              nullable: true
+            secondary:
+              type: string
+              nullable: true
+        mailing_address:
+          type: object
+          properties:
+            street:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+            zip:
+              type: string
+              nullable: true
+        linked_children:
+          type: array
+          items:
+            type: object
+            properties:
+              child_id:
+                type: string
+                format: uuid
+              first_name:
+                type: string
+              last_name:
+                type: string
+              classroom:
+                type: string
+                nullable: true
+      required:
+        - id
+        - email
+        - phone_numbers
+        - mailing_address
+        - linked_children
+
+    ChildDemographicsResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        dob:
+          type: string
+          format: date
+        age:
+          type: integer
+        classroom_id:
+          type: string
+          format: uuid
+          nullable: true
+        classroom_name:
+          type: string
+          nullable: true
+        guardian_references:
+          type: array
+          items:
+            type: object
+            properties:
+              parent_id:
+                type: string
+                format: uuid
+              relationship:
+                type: string
+                nullable: true
+              name:
+                type: string
+      required:
+        - id
+        - first_name
+        - last_name
+        - dob
+        - age
+        - guardian_references
+
+    ParentDetailsResponse:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        parent_email:
+          type: string
+        parent_first_name:
+          type: string
+        parent_last_name:
+          type: string
+        signed_status:
+          type: string
+        children:
+          type: array
+          items:
+            type: object
+            properties:
+              child_id:
+                type: string
+                format: uuid
+              child_full_name:
+                type: string
+              child_dob:
+                type: string
+                format: date
+                nullable: true
+              child_status:
+                type: string
+                nullable: true
+              enrollment_id:
+                type: string
+                format: uuid
+              classroom_id:
+                type: string
+                format: uuid
+              classroom_name:
+                type: string
+              forms:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    form_id:
+                      type: string
+                    student_form_assignment_id:
+                      type: string
+                      format: uuid
+                    fillout_form_id:
+                      type: string
+                      nullable: true
+                    form_name:
+                      type: string
+                    status:
+                      type: string
+                    is_required:
+                      type: boolean
+                    recent_edit_link:
+                      type: string
+                      nullable: true
+                    recent_pdf_link:
+                      type: string
+                      nullable: true
+                    approved_by:
+                      type: string
+                      format: uuid
+                      nullable: true
+                    approved_on:
+                      type: string
+                      format: date-time
+                      nullable: true
+      required:
+        - parent_id
+        - parent_email
+        - parent_first_name
+        - parent_last_name
+        - signed_status
+        - children
+
+  # ======================
+  # Request Schemas
+  # ======================
+    # School Request Schemas
+    create_school:
+      type: object
+      properties:
+        name:
+          type: string
+        subdomain:
+          type: string
+        settings:
+          type: object
+          nullable: true
+          properties:
+            timezone:
+              type: string
+            enrollment_capacity:
+              type: integer
+            age_groups:
+              type: array
+              items:
+                type: string
+      required:
+        - name
+        - subdomain
+
+    update_school:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        subdomain:
+          type: string
+        settings:
+          type: object
+          nullable: true
+      required:
+        - id
+        - name
+        - subdomain
+
+    # Classroom Request Schemas
     create_new_class:
       type: object
       properties:
         school_id:
           type: string
+          format: uuid
         class_name:
           type: string
+      required:
+        - school_id
+        - class_name
+
     update_class:
       type: object
       properties:
         school_id:
           type: string
+          format: uuid
+        class_id:
+          type: string
+          format: uuid
         class_name:
+          type: string
+      required:
+        - school_id
+        - class_id
+        - class_name
+
+    # Form Template Request Schemas
+    create_form:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        form_name:
+          type: string
+        fillout_form_id:
+          type: string
+          nullable: true
+      required:
+        - school_id
+        - form_name
+
+    update_form:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        form_name:
+          type: string
+        form_type:
+          type: string
+          nullable: true
+        fillout_form_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        is_required:
+          type: boolean
+          nullable: true
+        display_order:
+          type: integer
+          nullable: true
+      required:
+        - id
+        - school_id
+        - form_name
+
+    # Form Submission Request Schemas
+    update_form_submission_status:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, requires_review, approved, rejected]
+      required:
+        - status
+
+    # Student Form Assignment Request Schemas
+    create:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+        assignment_source:
+          type: string
+        status:
+          type: string
+          enum: [incomplete, in_progress, completed, approved, rejected]
+          nullable: true
+      required:
+        - school_id
+        - enrollment_id
+        - child_id
+        - form_template_id
+        - assignment_source
+
+    update:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        school_id:
+          type: string
+          format: uuid
+        enrollment_id:
+          type: string
+          format: uuid
+          nullable: true
+        child_id:
+          type: string
+          format: uuid
+          nullable: true
+        form_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        assignment_source:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [incomplete, in_progress, completed, approved, rejected]
+          nullable: true
+        is_required:
+          type: boolean
+          nullable: true
+      required:
+        - id
+        - school_id
+
+    review_assignment:
+      type: object
+      properties:
+        assignment_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [approved, rejected]
+        notes:
+          type: string
+          nullable: true
+      required:
+        - assignment_id
+        - status
+
+    # Class Form Override Request Schemas
+    create_class_forms:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+      required:
+        - school_id
+        - classroom_id
+        - form_template_id
+
+    # Enrollment Request Schemas
+    parent_invite:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        child_birth_date:
+          type: string
+          format: date
+        gender:
           type: string
         class_id:
           type: string
+          format: uuid
+        parent_email:
+          type: string
+          format: email
+        parent_first_name:
+          type: string
+        parent_last_name:
+          type: string
+      required:
+        - school_id
+        - child_first_name
+        - child_last_name
+        - child_birth_date
+        - gender
+        - class_id
+        - parent_email
+        - parent_first_name
+        - parent_last_name
+
+    resend_confirmation:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+      required:
+        - parent_id
+
+    add_child_to_parent:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        child_birth_date:
+          type: string
+          format: date
+        gender:
+          type: string
+        class_id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+      required:
+        - school_id
+        - child_first_name
+        - child_last_name
+        - child_birth_date
+        - gender
+        - class_id
+        - parent_id
+
+    add_additional_child:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        child_birth_date:
+          type: string
+          format: date
+        gender:
+          type: string
+        class_id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+        parent_first_name:
+          type: string
+        parent_last_name:
+          type: string
+      required:
+        - school_id
+        - child_first_name
+        - child_last_name
+        - child_birth_date
+        - gender
+        - class_id
+        - parent_id
+
+    # Portal Request Schemas
+    assign_form_to_classroom:
+      type: object
+      properties:
+        school_id:
+          type: string
+          format: uuid
+        classroom_id:
+          type: string
+          format: uuid
+        form_template_id:
+          type: string
+          format: uuid
+      required:
+        - school_id
+        - classroom_id
+        - form_template_id
+
+    update_child_status:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    # Auth Request Schemas
     custom_data_auth:
       type: object
       properties:
         email:
           type: string
+          format: email
         password:
           type: string
         school_id:
           type: string
+          format: uuid
         first_name:
           type: string
         last_name:
           type: string
         role:
           type: string
+          enum: [parent, admin, superadmin]
+      required:
+        - email
+        - password
+        - school_id
+        - first_name
+        - last_name
+        - role
+
     invite_create_basic:
       type: object
       properties:
         email:
           type: string
+          format: email
         school_id:
           type: string
-    add_child_to_parent:
-      type: object
-      properties:
-        school_id:
-          type: string
-        child_first_name:
-          type: string
-        child_last_name:
-          type: string
-        child_birth_date:
-          type: string
-        gender:
-          type: string
-        class_id:
-          type: string
-        parent_id:
-          type: string
-    parent_invite:
-      type: object
-      properties:
-        school_id:
-          type: string
-        child_first_name:
-          type: string
-        child_last_name:
-          type: string
-        child_birth_date:
-          type: string
-        gender:
-          type: string
-        class_id:
-          type: string
-        parent_email:
-          type: string
-        parent_first_name:
-          type: string
-        parent_last_name:
-          type: string
-    resend_confirmation:
-      type: object
-      properties:
-        parent_id:
-          type: string
-    create_form_submission_(webhook_from_fillout):
-      type: object
-      properties:
-        student_form_assignment_id:
-          type: string
-        fillout_submission_id:
-          type: string
-        student_name:
-          type: string
-        parent_name:
-          type: string
-        parent_email:
-          type: string
-        parent_phone:
-          type: string
-        emergency_contact_name:
-          type: string
-        emergency_contact_phone:
-          type: string
-        allergies:
-          type: string
-        medications:
-          type: string
-        medical_conditions:
-          type: string
-        physician_name:
-          type: string
-        physician_phone:
-          type: string
-        insurance_provider:
-          type: string
-        insurance_policy_number:
-          type: string
-        authorized_pickup_1:
-          type: string
-        authorized_pickup_2:
-          type: string
-        photo_permission:
-          type: boolean
-        field_trip_permission:
-          type: boolean
-        medication_administration_permission:
-          type: boolean
-        submission_timestamp:
-          type: string
-        form_version:
-          type: string
-        ip_address:
-          type: string
-        user_agent:
-          type: string
-    update_form_submission_status:
-      type: object
-      properties:
-        status:
-          type: string
-    create_form:
-      type: object
-      properties:
-        school_id:
-          type: string
-        form_name:
-          type: string
-        fillout_form_id:
-          type: string
-    update_form:
-      type: object
-      properties:
-        id:
-          type: string
-        school_id:
-          type: string
-        form_name:
-          type: string
-        form_type:
-          type: string
-        fillout_form_id:
-          type: string
-        fillout_form_url:
-          type: object
-        status:
-          type: string
-        is_required:
-          type: boolean
-        display_order:
-          type: object
-        created_at:
-          type: string
-    add_additional_child:
-      type: object
-      properties:
-        child_birth_date:
-          type: string
-        child_first_name:
-          type: string
-        child_last_name:
-          type: string
-        class_id:
-          type: string
-        gender:
-          type: string
-        parent_first_name:
-          type: string
-        parent_id:
-          type: string
-        parent_last_name:
-          type: string
-        school_id:
-          type: string
-    resend_mail:
-      type: object
-      properties:
-        parent_id:
-          type: string
-    enrollment_parent_invite:
-      type: object
-      properties:
-        school_id:
-          type: string
-        child_first_name:
-          type: string
-        child_last_name:
-          type: string
-        child_birth_date:
-          type: string
-        gender:
-          type: string
-        class_id:
-          type: string
-        parent_email:
-          type: string
-        parent_first_name:
-          type: string
-        parent_last_name:
-          type: string
-    update_child_status:
-      type: object
-      properties:
-        status:
-          type: string
-    assign_form_to_classroom:
-      type: object
-      properties:
-        school_id:
-          type: string
-        classroom_id:
-          type: string
-        form_template_id:
-          type: string
-    post_school:
-      type: object
-      properties:
-        name:
-          type: string
-        subdomain:
-          type: string
-        settings:
-          type: object
-          properties:
-            timezone:
-              type: string
-            enrollment_capacity:
-              type: number
-            age_groups:
-              type: array
-              items:
-                type: string
-              properties:
-                '0':
-                  type: string
-                '1':
-                  type: string
-                '2':
-                  type: string
-                '3':
-                  type: string
-    update_school:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        subdomain:
-          type: string
-        settings:
-          type: object
-          properties:
-            age_groups:
-              type: array
-              items:
-                type: string
-              properties:
-                '0':
-                  type: string
-                '1':
-                  type: string
-                '2':
-                  type: string
-                '3':
-                  type: string
-            enrollment_capacity:
-              type: number
-            timezone:
-              type: string
-    create:
-      type: object
-      properties:
-        school_id:
-          type: string
-        child_id:
-          type: string
-        enrollment_id:
-          type: string
-        form_template_id:
-          type: string
-        assignment_source:
-          type: string
-        status:
-          type: string
-    review_assignment:
+          format: uuid
+      required:
+        - email
+        - school_id
+
+    form_review:
       type: object
       properties:
         assignment_id:
           type: string
+          format: uuid
         status:
           type: string
+          enum: [approved, rejected]
         notes:
           type: string
-    update:
-      type: object
-      properties:
-        id:
+          nullable: true
+        approved_by:
           type: string
-        school_id:
-          type: string
-        enrollment_id:
-          type: string
-        child_id:
-          type: string
-        form_template_id:
-          type: string
-        assignment_source:
-          type: string
-        status:
-          type: string
-        is_required:
-          type: boolean
-        assigned_at:
-          type: string
-        updated_at:
-          type: object
+          format: uuid
+      required:
+        - assignment_id
+        - status
+
+  # ======================
+  # Request Bodies
+  # ======================
   requestBodies:
-    form_review:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/form_review'
-      description: ''
-      required: true
-    create_class_forms:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/create_class_forms'
-      description: ''
-      required: true
-    create_new_class:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/create_new_class'
-      description: ''
-      required: true
-    update_class:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/update_class'
-      description: ''
-      required: true
-    custom_data_auth:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/custom_data_auth'
-      description: ''
-      required: true
-    invite_create_basic:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/invite_create_basic'
-      description: ''
-      required: true
-    add_child_to_parent:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/add_child_to_parent'
-      description: ''
-      required: true
-    parent_invite:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/parent_invite'
-      description: ''
-      required: true
-    resend_confirmation:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/resend_confirmation'
-      description: ''
-      required: true
-    create_form_submission_(webhook_from_fillout):
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/create_form_submission_(webhook_from_fillout)'
-      description: ''
-      required: true
-    update_form_submission_status:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/update_form_submission_status'
-      description: ''
-      required: true
-    create_form:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/create_form'
-      description: ''
-      required: true
-    update_form:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/update_form'
-      description: ''
-      required: true
-    add_additional_child:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/add_additional_child'
-      description: ''
-      required: true
-    resend_mail:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/resend_mail'
-      description: ''
-      required: true
-    enrollment_parent_invite:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/enrollment_parent_invite'
-      description: ''
-      required: true
-    update_child_status:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/update_child_status'
-      description: ''
-      required: true
-    assign_form_to_classroom:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/assign_form_to_classroom'
-      description: ''
-      required: true
     post_school:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/post_school'
-      description: ''
+            $ref: '#/components/schemas/create_school'
       required: true
+
     update_school:
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/update_school'
-      description: ''
       required: true
+
+    create_new_class:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_new_class'
+      required: true
+
+    update_class:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_class'
+      required: true
+
+    create_form:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_form'
+      required: true
+
+    update_form:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_form'
+      required: true
+
+    update_form_submission_status:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_form_submission_status'
+      required: true
+
     create:
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/create'
-      description: ''
       required: true
-    review_assignment:
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/review_assignment'
-      description: ''
-      required: true
+
     update:
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/update'
-      description: ''
       required: true
-  securitySchemes: {}
+
+    review_assignment:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/review_assignment'
+      required: true
+
+    create_class_forms:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_class_forms'
+      required: true
+
+    enrollment_parent_invite:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/parent_invite'
+      required: true
+
+    resend_mail:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/resend_confirmation'
+      required: true
+
+    add_child_to_parent:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/add_child_to_parent'
+      required: true
+
+    assign_form_to_classroom:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/assign_form_to_classroom'
+      required: true
+
+    update_child_status:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_child_status'
+      required: true
+
+    custom_data_auth:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/custom_data_auth'
+      required: true
+
+    invite_create_basic:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/invite_create_basic'
+      required: true
+
+  # ======================
+  # Common Responses
+  # ======================
+  responses:
+    BadRequest:
+      description: Bad Request - Invalid request parameters or body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "ValidationError"
+            message: "Invalid request parameters"
+            details: ["school_id is required", "Invalid UUID format"]
+
+    Unauthorized:
+      description: Unauthorized - Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "AuthenticationError"
+            message: "Missing or invalid authentication token"
+
+    Forbidden:
+      description: Forbidden - Insufficient permissions to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "AuthorizationError"
+            message: "Insufficient permissions to perform this action"
+
+    NotFound:
+      description: Not Found - The requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "NotFoundError"
+            message: "The requested resource was not found"
+
+    InternalServerError:
+      description: Internal Server Error - An unexpected error occurred
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "InternalServerError"
+            message: "An unexpected error occurred"

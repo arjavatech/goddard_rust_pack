@@ -1,0 +1,19 @@
+meta {
+  name: Get Class-based Enrollments
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/class-based-enrollments?school_id={{school_id}}&class_id={{class_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+settings {
+  encodeUrl: true
+}

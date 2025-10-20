@@ -1,0 +1,33 @@
+meta {
+  name: Add Additional Child
+  type: http
+  seq: 1
+}
+
+post {
+  url: https://hjny5xriqd.execute-api.us-west-2.amazonaws.com/prod/enrollments/add-child
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    "child_birth_date": "2025-10-09",
+    "child_first_name": "Mani",
+    "child_last_name": "RR",
+    "class_id": "61fd5d05-f62e-45a8-ba36-f8a29471a669",
+    "gender": "male",
+    "parent_first_name": "Mani",
+    "parent_id": "c4bca91e-d0d5-41e1-abfc-a858474a4d33",
+    "parent_last_name": "RRP",
+    "school_id": "8863a33c-ab95-4ab9-8b47-24e33bc52849"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

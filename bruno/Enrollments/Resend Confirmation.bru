@@ -1,0 +1,25 @@
+meta {
+  name: Resend Confirmation
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/enrollments/resend-confirmation
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    "parent_id": "{{parent_id}}"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

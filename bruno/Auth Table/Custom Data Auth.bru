@@ -1,0 +1,30 @@
+meta {
+  name: Custom Data Auth
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/auth/invite-create-enhanced
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+        "email": "goddard01arjava@gmail.com",
+    "password": "Admin0001",
+        "school_id": "545997c6-0c38-4ece-939b-295d87d7c6e7",
+        "first_name": "Mnai",
+        "last_name": "Mani",
+        "role": "Admin"
+      }
+}
+
+settings {
+  encodeUrl: true
+}

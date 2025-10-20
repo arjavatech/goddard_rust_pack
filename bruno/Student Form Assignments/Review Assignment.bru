@@ -1,0 +1,27 @@
+meta {
+  name: Review Assignment
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{base_url}}/student-form-assignments/review
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+body:json {
+  {
+    "assignment_id": "{{assignment_id}}",
+    "status": "approved",
+    "notes": "Form reviewed and approved"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

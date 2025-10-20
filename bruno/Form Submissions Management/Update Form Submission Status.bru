@@ -1,0 +1,25 @@
+meta {
+  name: Update Form Submission Status
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/form-submissions/{{submission_id}}/status
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    "status": "approved"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

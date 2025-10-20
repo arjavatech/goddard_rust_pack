@@ -1,0 +1,31 @@
+meta {
+  name: Add Child to Parent
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/enrollments/add-child
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+body:json {
+  {
+    "school_id": "{{school_id}}",
+    "child_first_name": "Sarah",
+    "child_last_name": "Doe",
+    "child_birth_date": "2019-03-20",
+    "gender": "female",
+    "class_id": "{{class_id}}",
+    "parent_id": "{{parent_id}}"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

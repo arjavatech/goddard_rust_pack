@@ -1,0 +1,29 @@
+meta {
+  name: Create New Class
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/classrooms
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  ~X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    
+    "school_id": "8863a33c-ab95-4ab9-8b47-24e33bc52849",
+    "class_name": "Class- D"
+  
+  }
+}
+
+settings {
+  encodeUrl: true
+}

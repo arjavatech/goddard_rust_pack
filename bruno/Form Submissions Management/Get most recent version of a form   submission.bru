@@ -1,0 +1,25 @@
+meta {
+  name: Get most recent version of a form   submission
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/form-submissions/latest?school_id={{school_id}}&enrollment_id={{enrollment_id}}&form_template_id={{form_template_id}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  school_id: {{school_id}}
+  enrollment_id: {{enrollment_id}}
+  form_template_id: {{form_template_id}}
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

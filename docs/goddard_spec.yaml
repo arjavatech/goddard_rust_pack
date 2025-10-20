@@ -1,0 +1,1714 @@
+openapi: 3.0.0
+info:
+  title: goddard_spec
+  version: 1.0.0
+paths:
+  /admin/dashboard-metrics:
+    get:
+      summary: Dashboard Metrics
+      operationId: Dashboard Metrics
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Admin
+          Dashboard/Dashboard Metrics.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /class-based-enrollments:
+    get:
+      summary: Get Class-based Enrollments
+      operationId: Get Class-based Enrollments
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
+          Class-based Enrollments.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /v1/api/forms/tdKTQWnb3Wus/submissions/30f6ce21-ba41-4888-b0d1-e44aab4fc10b:
+    get:
+      summary: Fillout Edit link
+      operationId: Fillout Edit link
+      description: ''
+      tags:
+        - ''
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: includeEditLink
+          in: query
+          description: ''
+          required: true
+          example: 'true'
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: >-
+            Bearer
+            sk_prod_TL6xA84BolWveGPtaidzLHdeFYEymmaIwkG9dkouCrWowZJuvw2TgbfCOTf6McTs67nKCsHVCVOJig7usGb6jJclwFABQ6sgFFX_30940
+  /student-form-assignments/review:
+    put:
+      summary: Review Assignment
+      operationId: Review Assignment
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
+          Assignments/Review Assignment.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+      requestBody:
+        $ref: '#/components/requestBodies/review_assignment'
+  /enrollments:
+    get:
+      summary: Get School Forms
+      operationId: Get School Forms
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
+          School Forms.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /enrollments/class-wise-count:
+    get:
+      summary: Get Class-wise Count
+      operationId: Get Class-wise Count
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
+          Class-wise Count.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /users/me:
+    get:
+      summary: Enhanced user context
+      operationId: Enhanced user context
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Enhanced
+          user context.bru
+      responses:
+        '200':
+          description: ''
+  /class-form-overrides:
+    post:
+      summary: Create Class Forms
+      operationId: Create Class Forms
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Class Form
+          Overrides/Create Class Forms.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/create_class_forms'
+    delete:
+      summary: Delete Class Forms
+      operationId: Delete Class Forms
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Class Form
+          Overrides/Delete Class Forms.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: id
+          in: query
+          description: ''
+          required: true
+          example: a3960437-d05d-4553-be26-30423141328c
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /classrooms:
+    post:
+      summary: Create New Class
+      operationId: Create New Class
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Create
+          New Class.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{token}}
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: false
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/create_new_class'
+    delete:
+      summary: Delete Class
+      operationId: Delete Class
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Delete
+          Class.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
+        - name: classroom_id
+          in: query
+          description: ''
+          required: true
+          example: d69671a4-6a5a-493a-bae6-dbd9758e3754
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+    get:
+      summary: Get All Class
+      operationId: Get All Class
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Get All
+          Class.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: '{{school_id}}'
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{token}}
+    put:
+      summary: Update Class
+      operationId: Update Class
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Classrooms/Update
+          Class.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/update_class'
+  /auth/verification-status:
+    get:
+      summary: Auth Verification Status
+      operationId: Auth Verification Status
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Auth
+          Verification Status.bru
+      responses:
+        '200':
+          description: ''
+  /auth/clear-table:
+    delete:
+      summary: Clear Auth Table
+      operationId: Clear Auth Table
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Clear
+          Auth Table.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /auth/invite-create-enhanced:
+    post:
+      summary: Custom Data Auth
+      operationId: Custom Data Auth
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Custom
+          Data Auth.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/custom_data_auth'
+  /auth/debug-users:
+    get:
+      summary: Debug Users
+      operationId: Debug Users
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Debug
+          Users.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /auth/users/filter:
+    get:
+      summary: Get users by role
+      operationId: Get users by role
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Get
+          users by role.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: 123e4567-e89b-12d3-a456-426614174000
+        - name: role
+          in: query
+          description: ''
+          required: true
+          example: parent
+  /auth/invitation-summary:
+    get:
+      summary: Invitation Summary
+      operationId: Invitation Summary
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth
+          Table/Invitation Summary.bru
+      responses:
+        '200':
+          description: ''
+  /auth/invite-create:
+    post:
+      summary: Invite Create Basic
+      operationId: Invite Create Basic
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Auth Table/Invite
+          Create Basic.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+      requestBody:
+        $ref: '#/components/requestBodies/invite_create_basic'
+  /enrollments/add-child:
+    post:
+      summary: Add Child to Parent
+      operationId: Add Child to Parent
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Add
+          Child to Parent.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+      requestBody:
+        $ref: '#/components/requestBodies/add_child_to_parent'
+  /enrollments/children-forms:
+    get:
+      summary: Get Children with Forms
+      operationId: Get Children with Forms
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
+          Children with Forms.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /parent/details:
+    get:
+      summary: Parent Details Page
+      operationId: Parent Details Page
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Details/Parent Details Page.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: '{{school_id}}'
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+        - name: Authorization
+          in: header
+          description: ''
+          required: false
+          example: Bearer {{token}}
+  /enrollments/parent-details-by-school:
+    get:
+      summary: Get Parent Details by School
+      operationId: Get Parent Details by School
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Enrollments/Get
+          Parent Details by School.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /enrollments/parent-invite:
+    post:
+      summary: Enrollment Parent Invite
+      operationId: Enrollment Parent Invite
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Invite/Enrollment Parent Invite.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/enrollment_parent_invite'
+  /enrollments/resend-confirmation:
+    post:
+      summary: Resend Mail
+      operationId: Resend Mail
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Details/Resend Mail.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/resend_mail'
+  /form-submissions/webhook:
+    post:
+      summary: Create Form Submission (Webhook from Fillout)
+      operationId: Create Form Submission (Webhook from Fillout)
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
+          Management/Create Form Submission (Webhook from Fillout).bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: >-
+          #/components/requestBodies/create_form_submission_(webhook_from_fillout)
+  /form-submissions/versions:
+    get:
+      summary: Get all versions (history) of a   form submission
+      operationId: Get all versions (history) of a   form submission
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
+          Management/Get all versions (history) of a   form submission.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: '{{school_id}}'
+        - name: enrollment_id
+          in: query
+          description: ''
+          required: true
+          example: '{{enrollment_id}}'
+        - name: form_template_id
+          in: query
+          description: ''
+          required: true
+          example: '{{form_template_id}}'
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /form-submissions/latest:
+    get:
+      summary: Get most recent version of a form   submission
+      operationId: Get most recent version of a form   submission
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
+          Management/Get most recent version of a form   submission.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: '{{school_id}}'
+        - name: enrollment_id
+          in: query
+          description: ''
+          required: true
+          example: '{{enrollment_id}}'
+        - name: form_template_id
+          in: query
+          description: ''
+          required: true
+          example: '{{form_template_id}}'
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /form-submissions/0f429795-791f-49cb-91a5-33e66e697e15:
+    get:
+      summary: Get specific form submission   by ID
+      operationId: Get specific form submission   by ID
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
+          Management/Get specific form submission   by ID.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /form-submissions/0f429795-791f-49cb-91a5-33e66e697e15/status:
+    put:
+      summary: Update Form Submission Status
+      operationId: Update Form Submission Status
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Submissions
+          Management/Update Form Submission Status.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/update_form_submission_status'
+  /form-templates:
+    post:
+      summary: Create Form
+      operationId: Create Form
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form
+          Templates/Create Form.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/create_form'
+    delete:
+      summary: Delete Form
+      operationId: Delete Form
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form
+          Templates/Delete Form.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: form_id
+          in: query
+          description: ''
+          required: true
+          example: 7d2d518e-a72a-4b77-9f62-dd78f59f8404
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+    get:
+      summary: Get Form
+      operationId: Get Form
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form Templates/Get
+          Form.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: 5ea2e4e9-03b6-4145-813d-da4b1b8f0a46
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+    put:
+      summary: Update Form
+      operationId: Update Form
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Form
+          Templates/Update Form.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/update_form'
+  /prod/enrollments/add-child:
+    post:
+      summary: Add Additional Child
+      operationId: Add Additional Child
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent Details/Add
+          Additional Child.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/add_additional_child'
+  /parent/01eddf08-8025-4ab4-9498-e8e1598ba2c0/activate:
+    patch:
+      summary: Activate Parent
+      operationId: Activate Parent
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Management/Activate Parent.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+  /parent/01eddf08-8025-4ab4-9498-e8e1598ba2c0:
+    delete:
+      summary: Deactivate Parent
+      operationId: Deactivate Parent
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Management/Deactivate Parent.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+    get:
+      summary: Get Parent by ID
+      operationId: Get Parent by ID
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Management/Get Parent by ID.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{token}}
+  /children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b/status:
+    patch:
+      summary: Update Child Status
+      operationId: Update Child Status
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Parent
+          Management/Update Child Status.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+      requestBody:
+        $ref: '#/components/requestBodies/update_child_status'
+  /classrooms/7824a873-7ad9-4c78-af24-a8fe7b5632af/forms:
+    post:
+      summary: Assign form to classroom
+      operationId: Assign form to classroom
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Assign form
+          to classroom.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/assign_form_to_classroom'
+    get:
+      summary: Get classroom forms
+      operationId: Get classroom forms
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get
+          classroom forms.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b:
+    get:
+      summary: Get child demographics
+      operationId: Get child demographics
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get child
+          demographics.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0/children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b/profile:
+    get:
+      summary: Get child profile
+      operationId: Get child profile
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get child
+          profile.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0/children/5a9b72d4-6f84-40c5-9787-8eb8c0d28f6b/forms:
+    get:
+      summary: Get child's assigned forms
+      operationId: Get child's assigned forms
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get child's
+          assigned forms.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /classrooms/7824a873-7ad9-4c78-af24-a8fe7b5632af:
+    get:
+      summary: Get classroom details
+      operationId: Get classroom details
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get
+          classroom details.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: Authorization
+          in: header
+          description: ''
+          required: true
+          example: Bearer {{admin_token}}
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: false
+          example: '{{api_key}}'
+  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0:
+    get:
+      summary: Get parent profile
+      operationId: Get parent profile
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get parent
+          profile.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /parents/01eddf08-8025-4ab4-9498-e8e1598ba2c0/children:
+    get:
+      summary: Get parent's children
+      operationId: Get parent's children
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Get parent's
+          children.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /classrooms/7824a873-7ad9-4c78-af24-a8fe7b5632af/forms/52225ff9-4806-4f90-a9c8-a79288edb64f:
+    delete:
+      summary: Remove form from classroom
+      operationId: Remove form from classroom
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Portal/Remove form
+          from classroom.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /schools/8863a33c-ab95-4ab9-8b47-24e33bc52849:
+    delete:
+      summary: Delete School
+      operationId: Delete School
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Delete
+          School.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+  /schools:
+    get:
+      summary: Get All Schools
+      operationId: Get All Schools
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Get All
+          Schools.bru
+      responses:
+        '200':
+          description: ''
+    post:
+      summary: Post School
+      operationId: Post School
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Post
+          School.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/post_school'
+    put:
+      summary: Update School
+      operationId: Update School
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/School/Update
+          School.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/update_school'
+  /student-form-assignments:
+    post:
+      summary: Create
+      operationId: Create
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
+          Assignments/Create.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/create'
+    delete:
+      summary: Delete
+      operationId: Delete
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
+          Assignments/Delete.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: assignment_id
+          in: query
+          description: ''
+          required: true
+          example: 600a498a-c2a9-437f-b740-ed61d0d7d56e
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: a78b43f0-4404-4d5d-8e4a-cc162bcee693
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+    get:
+      summary: Get by School
+      operationId: Get by School
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
+          Assignments/Get by School.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: school_id
+          in: query
+          description: ''
+          required: true
+          example: 545997c6-0c38-4ece-939b-295d87d7c6e7
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+    put:
+      summary: Update
+      operationId: Update
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Student Form
+          Assignments/Update.bru
+      responses:
+        '200':
+          description: ''
+      parameters:
+        - name: X-API-Key
+          in: header
+          description: ''
+          required: true
+          example: '{{api_key}}'
+      requestBody:
+        $ref: '#/components/requestBodies/update'
+  /:
+    get:
+      summary: Base
+      operationId: Base
+      description: ''
+      tags:
+        - /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Base.bru
+      responses:
+        '200':
+          description: ''
+  /hello/Surya:
+    get:
+      summary: Get hello
+      operationId: Get hello
+      description: ''
+      tags:
+        - /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Get hello.bru
+      responses:
+        '200':
+          description: ''
+  /health:
+    get:
+      summary: Health
+      operationId: Health
+      description: ''
+      tags:
+        - /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Health.bru
+      responses:
+        '200':
+          description: ''
+  /hello/World:
+    get:
+      summary: Hello with Name
+      operationId: Hello with Name
+      description: ''
+      tags:
+        - >-
+          /Users/mani/Projects/Goddard/goddard-backend/bruno/Test/Hello with
+          Name.bru
+      responses:
+        '200':
+          description: ''
+servers:
+  - url: http://localhost:8000
+  - url: https://api.fillout.com
+  - url: http://localhost:9000
+  - url: https://hjny5xriqd.execute-api.us-west-2.amazonaws.com
+components:
+  schemas:
+    form_review:
+      type: object
+      properties:
+        assignment_id:
+          type: string
+        status:
+          type: string
+        notes:
+          type: string
+        approved_by:
+          type: string
+    create_class_forms:
+      type: object
+      properties:
+        school_id:
+          type: string
+        classroom_id:
+          type: string
+        form_template_id:
+          type: string
+    create_new_class:
+      type: object
+      properties:
+        school_id:
+          type: string
+        class_name:
+          type: string
+    update_class:
+      type: object
+      properties:
+        school_id:
+          type: string
+        class_name:
+          type: string
+        class_id:
+          type: string
+    custom_data_auth:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        school_id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+    invite_create_basic:
+      type: object
+      properties:
+        email:
+          type: string
+        school_id:
+          type: string
+    add_child_to_parent:
+      type: object
+      properties:
+        school_id:
+          type: string
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        child_birth_date:
+          type: string
+        gender:
+          type: string
+        class_id:
+          type: string
+        parent_id:
+          type: string
+    parent_invite:
+      type: object
+      properties:
+        school_id:
+          type: string
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        child_birth_date:
+          type: string
+        gender:
+          type: string
+        class_id:
+          type: string
+        parent_email:
+          type: string
+        parent_first_name:
+          type: string
+        parent_last_name:
+          type: string
+    resend_confirmation:
+      type: object
+      properties:
+        parent_id:
+          type: string
+    create_form_submission_(webhook_from_fillout):
+      type: object
+      properties:
+        student_form_assignment_id:
+          type: string
+        fillout_submission_id:
+          type: string
+        student_name:
+          type: string
+        parent_name:
+          type: string
+        parent_email:
+          type: string
+        parent_phone:
+          type: string
+        emergency_contact_name:
+          type: string
+        emergency_contact_phone:
+          type: string
+        allergies:
+          type: string
+        medications:
+          type: string
+        medical_conditions:
+          type: string
+        physician_name:
+          type: string
+        physician_phone:
+          type: string
+        insurance_provider:
+          type: string
+        insurance_policy_number:
+          type: string
+        authorized_pickup_1:
+          type: string
+        authorized_pickup_2:
+          type: string
+        photo_permission:
+          type: boolean
+        field_trip_permission:
+          type: boolean
+        medication_administration_permission:
+          type: boolean
+        submission_timestamp:
+          type: string
+        form_version:
+          type: string
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+    update_form_submission_status:
+      type: object
+      properties:
+        status:
+          type: string
+    create_form:
+      type: object
+      properties:
+        school_id:
+          type: string
+        form_name:
+          type: string
+        fillout_form_id:
+          type: string
+    update_form:
+      type: object
+      properties:
+        id:
+          type: string
+        school_id:
+          type: string
+        form_name:
+          type: string
+        form_type:
+          type: string
+        fillout_form_id:
+          type: string
+        fillout_form_url:
+          type: object
+        status:
+          type: string
+        is_required:
+          type: boolean
+        display_order:
+          type: object
+        created_at:
+          type: string
+    add_additional_child:
+      type: object
+      properties:
+        child_birth_date:
+          type: string
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        class_id:
+          type: string
+        gender:
+          type: string
+        parent_first_name:
+          type: string
+        parent_id:
+          type: string
+        parent_last_name:
+          type: string
+        school_id:
+          type: string
+    resend_mail:
+      type: object
+      properties:
+        parent_id:
+          type: string
+    enrollment_parent_invite:
+      type: object
+      properties:
+        school_id:
+          type: string
+        child_first_name:
+          type: string
+        child_last_name:
+          type: string
+        child_birth_date:
+          type: string
+        gender:
+          type: string
+        class_id:
+          type: string
+        parent_email:
+          type: string
+        parent_first_name:
+          type: string
+        parent_last_name:
+          type: string
+    update_child_status:
+      type: object
+      properties:
+        status:
+          type: string
+    assign_form_to_classroom:
+      type: object
+      properties:
+        school_id:
+          type: string
+        classroom_id:
+          type: string
+        form_template_id:
+          type: string
+    post_school:
+      type: object
+      properties:
+        name:
+          type: string
+        subdomain:
+          type: string
+        settings:
+          type: object
+          properties:
+            timezone:
+              type: string
+            enrollment_capacity:
+              type: number
+            age_groups:
+              type: array
+              items:
+                type: string
+              properties:
+                '0':
+                  type: string
+                '1':
+                  type: string
+                '2':
+                  type: string
+                '3':
+                  type: string
+    update_school:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        subdomain:
+          type: string
+        settings:
+          type: object
+          properties:
+            age_groups:
+              type: array
+              items:
+                type: string
+              properties:
+                '0':
+                  type: string
+                '1':
+                  type: string
+                '2':
+                  type: string
+                '3':
+                  type: string
+            enrollment_capacity:
+              type: number
+            timezone:
+              type: string
+    create:
+      type: object
+      properties:
+        school_id:
+          type: string
+        child_id:
+          type: string
+        enrollment_id:
+          type: string
+        form_template_id:
+          type: string
+        assignment_source:
+          type: string
+        status:
+          type: string
+    review_assignment:
+      type: object
+      properties:
+        assignment_id:
+          type: string
+        status:
+          type: string
+        notes:
+          type: string
+    update:
+      type: object
+      properties:
+        id:
+          type: string
+        school_id:
+          type: string
+        enrollment_id:
+          type: string
+        child_id:
+          type: string
+        form_template_id:
+          type: string
+        assignment_source:
+          type: string
+        status:
+          type: string
+        is_required:
+          type: boolean
+        assigned_at:
+          type: string
+        updated_at:
+          type: object
+  requestBodies:
+    form_review:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/form_review'
+      description: ''
+      required: true
+    create_class_forms:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_class_forms'
+      description: ''
+      required: true
+    create_new_class:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_new_class'
+      description: ''
+      required: true
+    update_class:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_class'
+      description: ''
+      required: true
+    custom_data_auth:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/custom_data_auth'
+      description: ''
+      required: true
+    invite_create_basic:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/invite_create_basic'
+      description: ''
+      required: true
+    add_child_to_parent:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/add_child_to_parent'
+      description: ''
+      required: true
+    parent_invite:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/parent_invite'
+      description: ''
+      required: true
+    resend_confirmation:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/resend_confirmation'
+      description: ''
+      required: true
+    create_form_submission_(webhook_from_fillout):
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_form_submission_(webhook_from_fillout)'
+      description: ''
+      required: true
+    update_form_submission_status:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_form_submission_status'
+      description: ''
+      required: true
+    create_form:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create_form'
+      description: ''
+      required: true
+    update_form:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_form'
+      description: ''
+      required: true
+    add_additional_child:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/add_additional_child'
+      description: ''
+      required: true
+    resend_mail:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/resend_mail'
+      description: ''
+      required: true
+    enrollment_parent_invite:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/enrollment_parent_invite'
+      description: ''
+      required: true
+    update_child_status:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_child_status'
+      description: ''
+      required: true
+    assign_form_to_classroom:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/assign_form_to_classroom'
+      description: ''
+      required: true
+    post_school:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/post_school'
+      description: ''
+      required: true
+    update_school:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update_school'
+      description: ''
+      required: true
+    create:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/create'
+      description: ''
+      required: true
+    review_assignment:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/review_assignment'
+      description: ''
+      required: true
+    update:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/update'
+      description: ''
+      required: true
+  securitySchemes: {}

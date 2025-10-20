@@ -1,0 +1,33 @@
+meta {
+  name: Parent Invite
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/enrollments/parent-invite
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+body:json {
+  {
+    "school_id": "{{school_id}}",
+    "child_first_name": "John",
+    "child_last_name": "Doe",
+    "child_birth_date": "2018-01-15",
+    "gender": "male",
+    "class_id": "{{class_id}}",
+    "parent_email": "parent@example.com",
+    "parent_first_name": "Jane",
+    "parent_last_name": "Doe"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

@@ -1,0 +1,24 @@
+meta {
+  name: Delete Class
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{base_url}}/classrooms?school_id=ca72c4cf-a513-4bc9-9a2f-17b15257e0cc&classroom_id=d69671a4-6a5a-493a-bae6-dbd9758e3754
+  body: none
+  auth: inherit
+}
+
+params:query {
+  school_id: ca72c4cf-a513-4bc9-9a2f-17b15257e0cc
+  classroom_id: d69671a4-6a5a-493a-bae6-dbd9758e3754
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

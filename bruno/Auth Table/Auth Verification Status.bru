@@ -1,0 +1,15 @@
+meta {
+  name: Auth Verification Status
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/auth/verification-status?school_id={{school_id}}&include_details=true
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

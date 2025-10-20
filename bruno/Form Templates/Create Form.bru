@@ -1,0 +1,27 @@
+meta {
+  name: Create Form
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/form-templates
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+       "school_id": "8863a33c-ab95-4ab9-8b47-24e33bc52849",
+      "form_name": "Student Auth Form",
+    "fillout_form_id": "www.google.com"
+    }
+}
+
+settings {
+  encodeUrl: true
+}

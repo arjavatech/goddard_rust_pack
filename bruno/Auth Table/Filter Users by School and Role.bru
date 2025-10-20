@@ -1,0 +1,15 @@
+meta {
+  name: Filter Users by School and Role
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/auth/users/filter?school_id={{school_id}}&role=Admin
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

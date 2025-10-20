@@ -1,0 +1,19 @@
+meta {
+  name: Clear Auth Table
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{base_url}}/auth/clear-table
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

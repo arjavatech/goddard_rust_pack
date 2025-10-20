@@ -91,6 +91,28 @@ paths:
   # Admin Dashboard
   # ======================
   /admin/dashboard-metrics:
+    options:
+      summary: CORS Preflight - Dashboard Metrics
+      operationId: corsPreflightDashboardMetrics
+      description: Handle CORS preflight request for dashboard metrics endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Dashboard Metrics
       operationId: getDashboardMetrics
@@ -126,6 +148,28 @@ paths:
   # Schools
   # ======================
   /schools:
+    options:
+      summary: CORS Preflight - Schools
+      operationId: corsPreflightSchools
+      description: Handle CORS preflight request for schools endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get All Schools
       operationId: getAllSchools
@@ -134,6 +178,9 @@ paths:
       responses:
         '200':
           description: Successfully retrieved schools list
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
           content:
             application/json:
               schema:
@@ -196,6 +243,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /schools/{school_id}:
+    options:
+      summary: CORS Preflight - School by ID
+      operationId: corsPreflightSchoolById
+      description: Handle CORS preflight request for school by ID endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     delete:
       summary: Delete School
       operationId: deleteSchool
@@ -230,6 +299,28 @@ paths:
   # Classrooms
   # ======================
   /classrooms:
+    options:
+      summary: CORS Preflight - Classrooms
+      operationId: corsPreflightClassrooms
+      description: Handle CORS preflight request for classrooms endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get All Classrooms
       operationId: getAllClassrooms
@@ -247,6 +338,9 @@ paths:
       responses:
         '200':
           description: Successfully retrieved classrooms
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
           content:
             application/json:
               schema:
@@ -350,6 +444,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /classrooms/{classroom_id}:
+    options:
+      summary: CORS Preflight - Classroom by ID
+      operationId: corsPreflightClassroomById
+      description: Handle CORS preflight request for classroom by ID endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Classroom Details
       operationId: getClassroomDetails
@@ -380,6 +496,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /classrooms/{classroom_id}/forms:
+    options:
+      summary: CORS Preflight - Classroom Forms
+      operationId: corsPreflightClassroomForms
+      description: Handle CORS preflight request for classroom forms endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Classroom Forms
       operationId: getClassroomForms
@@ -485,6 +623,28 @@ paths:
   # Form Templates
   # ======================
   /form-templates:
+    options:
+      summary: CORS Preflight - Form Templates
+      operationId: corsPreflightFormTemplates
+      description: Handle CORS preflight request for form templates endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Form Templates
       operationId: getFormTemplates
@@ -789,6 +949,28 @@ paths:
   # Student Form Assignments
   # ======================
   /student-form-assignments:
+    options:
+      summary: CORS Preflight - Student Form Assignments
+      operationId: corsPreflightStudentFormAssignments
+      description: Handle CORS preflight request for student form assignments endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Student Form Assignments by School
       operationId: getStudentFormAssignmentsBySchool
@@ -908,6 +1090,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /student-form-assignments/review:
+    options:
+      summary: CORS Preflight - Student Form Assignment Review
+      operationId: corsPreflightStudentFormAssignmentReview
+      description: Handle CORS preflight request for student form assignment review endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     put:
       summary: Review Student Form Assignment
       operationId: reviewStudentFormAssignment
@@ -939,6 +1143,28 @@ paths:
   # Class Form Overrides
   # ======================
   /class-form-overrides:
+    options:
+      summary: CORS Preflight - Class Form Overrides
+      operationId: corsPreflightClassFormOverrides
+      description: Handle CORS preflight request for class form overrides endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     post:
       summary: Create Class Form Override
       operationId: createClassFormOverride
@@ -1004,6 +1230,28 @@ paths:
   # Enrollments
   # ======================
   /enrollments:
+    options:
+      summary: CORS Preflight - Enrollments
+      operationId: corsPreflightEnrollments
+      description: Handle CORS preflight request for enrollments endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get School Enrollment Forms
       operationId: getSchoolEnrollmentForms
@@ -1021,6 +1269,9 @@ paths:
       responses:
         '200':
           description: Successfully retrieved school enrollment forms
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
           content:
             application/json:
               schema:
@@ -1033,6 +1284,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /enrollments/parent-invite:
+    options:
+      summary: CORS Preflight - Parent Invite
+      operationId: corsPreflightParentInvite
+      description: Handle CORS preflight request for parent invite endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     post:
       summary: Create Parent Invite
       operationId: createParentInvite
@@ -1045,6 +1318,9 @@ paths:
       responses:
         '201':
           description: Parent invite successfully created
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
           content:
             application/json:
               schema:
@@ -1059,6 +1335,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /enrollments/resend-confirmation:
+    options:
+      summary: CORS Preflight - Resend Confirmation
+      operationId: corsPreflightResendConfirmation
+      description: Handle CORS preflight request for resend confirmation endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     post:
       summary: Resend Parent Confirmation
       operationId: resendParentConfirmation
@@ -1085,6 +1383,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /enrollments/add-child:
+    options:
+      summary: CORS Preflight - Add Child
+      operationId: corsPreflightAddChild
+      description: Handle CORS preflight request for add child endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     post:
       summary: Add Child to Parent
       operationId: addChildToParent
@@ -1171,6 +1491,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /enrollments/class-wise-count:
+    options:
+      summary: CORS Preflight - Class-wise Count
+      operationId: corsPreflightClassWiseCount
+      description: Handle CORS preflight request for class-wise count endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Class-wise Count
       operationId: getClassWiseCount
@@ -1188,6 +1530,9 @@ paths:
       responses:
         '200':
           description: Successfully retrieved class-wise count
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
           content:
             application/json:
               schema:
@@ -1238,6 +1583,28 @@ paths:
   # Parent Management
   # ======================
   /parent/{parent_id}:
+    options:
+      summary: CORS Preflight - Parent by ID
+      operationId: corsPreflightParentById
+      description: Handle CORS preflight request for parent by ID endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Parent by ID
       operationId: getParentById
@@ -1363,6 +1730,28 @@ paths:
   # Portal Endpoints
   # ======================
   /users/me:
+    options:
+      summary: CORS Preflight - Current User
+      operationId: corsPreflightCurrentUser
+      description: Handle CORS preflight request for current user context endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Current User Context
       operationId: getUserContext
@@ -1373,6 +1762,9 @@ paths:
       responses:
         '200':
           description: Successfully retrieved user context
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
           content:
             application/json:
               schema:
@@ -1383,6 +1775,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /parents/{parent_id}:
+    options:
+      summary: CORS Preflight - Parent Profile
+      operationId: corsPreflightParentProfile
+      description: Handle CORS preflight request for parent profile endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Parent Profile
       operationId: getParentProfile
@@ -1412,6 +1826,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /parents/{parent_id}/children:
+    options:
+      summary: CORS Preflight - Parent's Children
+      operationId: corsPreflightParentChildren
+      description: Handle CORS preflight request for parent's children endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     get:
       summary: Get Parent's Children
       operationId: getParentChildren
@@ -1652,6 +2088,28 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /auth/invite-create-enhanced:
+    options:
+      summary: CORS Preflight - Enhanced Invitation
+      operationId: corsPreflightEnhancedInvitation
+      description: Handle CORS preflight request for enhanced invitation endpoint
+      tags: [CORS]
+      responses:
+        '200':
+          description: CORS preflight response
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            Access-Control-Allow-Methods:
+              $ref: '#/components/headers/Access-Control-Allow-Methods'
+            Access-Control-Allow-Headers:
+              $ref: '#/components/headers/Access-Control-Allow-Headers'
+            Access-Control-Max-Age:
+              $ref: '#/components/headers/Access-Control-Max-Age'
+          content:
+            application/json:
+              schema:
+                type: object
+
     post:
       summary: Create Enhanced Invitation
       operationId: createEnhancedInvitation
@@ -1781,6 +2239,34 @@ components:
       in: header
       name: X-API-Key
       description: API key for server-to-server authentication
+
+  # ======================
+  # CORS Headers
+  # ======================
+  headers:
+    Access-Control-Allow-Origin:
+      schema:
+        type: string
+      description: CORS header allowing all origins for development
+      example: "*"
+
+    Access-Control-Allow-Methods:
+      schema:
+        type: string
+      description: CORS header specifying allowed HTTP methods
+      example: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+
+    Access-Control-Allow-Headers:
+      schema:
+        type: string
+      description: CORS header specifying allowed request headers
+      example: "Content-Type, Authorization, X-Requested-With, X-API-Key"
+
+    Access-Control-Max-Age:
+      schema:
+        type: integer
+      description: CORS preflight cache duration in seconds (24 hours)
+      example: 86400
 
   # ======================
   # Response Schemas

@@ -123,6 +123,20 @@ pub async fn deactivate_parent(
     Ok((StatusCode::OK, ResponseUtils::success(response)))
 }
 
+/// PATCH /parent/:parent_id/activate
+/// Activate parent and all related children and enrollments (JWT protected - Admin/SuperAdmin)
+pub async fn activate_parent(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(parent_id): Path<Uuid>,
+) -> Result<(StatusCode, impl IntoResponse), AppError> {
+    println!("[DEBUG] Activating parent - User: {}, Role: {:?}, Parent ID: {}",
+        auth.email, auth.role, parent_id);
+
+    let response = enrollment_service.activate_parent(parent_id).await?;
+    Ok((StatusCode::OK, ResponseUtils::success(response)))
+}
+
 /// PATCH /children/:child_id/status
 /// Update child status to any value (JWT protected - Admin/SuperAdmin only)
 pub async fn update_child_status(

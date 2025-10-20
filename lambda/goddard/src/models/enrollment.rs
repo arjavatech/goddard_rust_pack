@@ -214,9 +214,9 @@ pub struct GetParentDetailsBySchoolRequest {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(transparent)]
 pub struct GetParentDetailsBySchoolResponse {
-    pub parents: Vec<ParentWithChildren>,
+    pub active_parents: Vec<ParentWithChildren>,
+    pub inactive_parents: Vec<ParentWithChildren>,
 }
 
 #[derive(Debug, Serialize)]

@@ -351,12 +351,13 @@ impl EnrollmentService {
     }
 
     pub async fn get_parent_details_by_school(&self, request: GetParentDetailsBySchoolRequest) -> ApiResult<GetParentDetailsBySchoolResponse> {
-        // Get parent details with children and forms
-        let parents_with_children = self.enrollment_dao.get_parent_details_with_children_and_forms(request.school_id).await?;
+        // Get parent details with children and forms - separated by active/inactive status
+        let (active_parents, inactive_parents) = self.enrollment_dao.get_parent_details_with_children_and_forms(request.school_id).await?;
 
-        // Generate response - using flatten to return just the array
+        // Generate response with both active and inactive parent lists
         let response = GetParentDetailsBySchoolResponse {
-            parents: parents_with_children,
+            active_parents,
+            inactive_parents,
         };
 
         Ok(response)

@@ -401,7 +401,7 @@ impl EnrollmentDao {
     }
 
     // New method to get parent details with children and forms
-    pub async fn get_parent_details_with_children_and_forms(&self, school_id: Uuid) -> ApiResult<Vec<ParentWithChildren>> {
+    pub async fn get_parent_details_with_children_and_forms(&self, school_id: Uuid) -> ApiResult<(Vec<ParentWithChildren>, Vec<ParentWithChildren>)> {
         let query = "
             WITH parent_children_forms AS (
                 SELECT
@@ -409,6 +409,7 @@ impl EnrollmentDao {
                     u.email as parent_email,
                     u.first_name as parent_first_name,
                     u.last_name as parent_last_name,
+                    u.is_active as parent_is_active,
                     CASE WHEN au.last_sign_in_at IS NOT NULL THEN 'signed' ELSE 'not signed' END as signed_status,
                     c.id as child_id,
                     CONCAT(c.first_name, ' ', c.last_name) as child_full_name,
@@ -436,7 +437,6 @@ impl EnrollmentDao {
                 LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
                 WHERE u.school_id = $1
                     AND u.role = 'Parent'
-                    AND u.is_active = true
                 ORDER BY u.email, c.id, sfa.form_template_id
             )
             SELECT
@@ -444,6 +444,7 @@ impl EnrollmentDao {
                 parent_email,
                 parent_first_name,
                 parent_last_name,
+                parent_is_active,
                 signed_status,
                 child_id,
                 child_full_name,
@@ -477,7 +478,7 @@ impl EnrollmentDao {
                     '[]'::json
                 ) as forms
             FROM parent_children_forms
-            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, signed_status,
+            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_is_active, signed_status,
                      child_id, child_full_name, child_dob, child_status, enrollment_id,
                      classroom_id, classroom_name
             ORDER BY parent_email, child_full_name
@@ -490,10 +491,11 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get parent details with children: {}", e)))?;
 
         // Group results by parent
-        let mut parents_map: std::collections::HashMap<Uuid, ParentWithChildren> = std::collections::HashMap::new();
+        let mut parents_map: std::collections::HashMap<Uuid, (ParentWithChildren, bool)> = std::collections::HashMap::new();
 
         for row in rows {
             let parent_id: Uuid = row.get("parent_id");
+            let parent_is_active: bool = row.get("parent_is_active");
             let forms_json: serde_json::Value = row.get("forms");
 
             // Parse forms from JSON
@@ -513,22 +515,34 @@ impl EnrollmentDao {
 
             // Add to parent or create new parent entry
             parents_map.entry(parent_id)
-                .and_modify(|parent| parent.children.push(child.clone()))
-                .or_insert_with(|| ParentWithChildren {
+                .and_modify(|(parent, _)| parent.children.push(child.clone()))
+                .or_insert_with(|| (ParentWithChildren {
                     parent_id,
                     parent_email: row.get("parent_email"),
                     parent_first_name: row.get("parent_first_name"),
                     parent_last_name: row.get("parent_last_name"),
                     signed_status: row.get("signed_status"),
                     children: vec![child],
-                });
+                }, parent_is_active));
         }
 
-        // Convert to vec and return
-        let mut parents: Vec<ParentWithChildren> = parents_map.into_values().collect();
-        parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+        // Separate into active and inactive parents
+        let mut active_parents: Vec<ParentWithChildren> = Vec::new();
+        let mut inactive_parents: Vec<ParentWithChildren> = Vec::new();
 
-        Ok(parents)
+        for (parent, is_active) in parents_map.into_values() {
+            if is_active {
+                active_parents.push(parent);
+            } else {
+                inactive_parents.push(parent);
+            }
+        }
+
+        // Sort both lists
+        active_parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+        inactive_parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+
+        Ok((active_parents, inactive_parents))
     }
 
     // Method for getting enrollment children with form assignments

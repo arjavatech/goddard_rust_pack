@@ -598,7 +598,23 @@ impl EnrollmentDao {
                 cl.name as class_name,
                 u.email as primary_email,
                 COALESCE(e.status, 'pending') as form_status,
-                COALESCE(e.application_status, '{}') as forms,
+                COALESCE(
+                    (
+                        SELECT jsonb_object_agg(
+                            ft.form_name,
+                            jsonb_build_object(
+                                'status', COALESCE(sfa.status, 'incomplete'),
+                                'assigned_at', TO_CHAR(sfa.assigned_at, 'DD-MM-YYYY')
+                            )
+                        )
+                        FROM student_form_assignments sfa
+                        INNER JOIN form_templates ft ON sfa.form_template_id = ft.id
+                        WHERE sfa.enrollment_id = e.id
+                        AND sfa.child_id = c.id
+                        AND (sfa.is_active = true OR sfa.is_active IS NULL)
+                    ),
+                    '{}'::jsonb
+                ) as forms,
                 NULL as additional_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id

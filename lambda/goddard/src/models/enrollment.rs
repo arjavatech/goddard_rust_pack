@@ -320,7 +320,10 @@ pub struct SchoolFormDetails {
     pub class_name: String,
     pub primary_email: String,
     pub form_status: String,
-    pub forms: serde_json::Value, // JSON object with form_template_id as key and form_name as value
+    /// Forms assigned to this enrollment
+    /// Format: { "form_name": { "status": "incomplete|in_progress|completed|approved|rejected", "assigned_at": "DD-MM-YYYY" } }
+    /// Example: { "Admission Form": { "status": "incomplete", "assigned_at": "26-09-2025" } }
+    pub forms: serde_json::Value,
     pub additional_parent_email: Option<String>,
 }
 

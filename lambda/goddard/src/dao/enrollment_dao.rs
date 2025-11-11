@@ -758,7 +758,8 @@ impl EnrollmentDao {
                 sfa.recent_edit_link,
                 sfa.recent_pdf_link,
                 sfa.approved_by,
-                sfa.approved_on
+                sfa.approved_on,
+                sfa.assigned_at
             FROM users u
             LEFT JOIN auth.users au ON au.email = u.email
             LEFT JOIN children c ON c.parent_id = u.id OR c.secondary_parent_id = u.id
@@ -805,6 +806,7 @@ impl EnrollmentDao {
             recent_pdf_link: row.get("recent_pdf_link"),
             approved_by: row.get("approved_by"),
             approved_on: row.get("approved_on"),
+            assigned_at: row.get("assigned_at"),
         }).collect())
     }
 

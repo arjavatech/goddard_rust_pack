@@ -1,0 +1,19 @@
+meta {
+  name: Get Class-wise Count
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/enrollments/class-wise-count?school_id={{school_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+settings {
+  encodeUrl: true
+}

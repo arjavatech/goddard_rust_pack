@@ -1,0 +1,19 @@
+meta {
+  name: Activate Parent
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/parent/{{parent_id}}/activate
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+settings {
+  encodeUrl: true
+}

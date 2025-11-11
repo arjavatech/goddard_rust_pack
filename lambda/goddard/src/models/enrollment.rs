@@ -214,9 +214,9 @@ pub struct GetParentDetailsBySchoolRequest {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(transparent)]
 pub struct GetParentDetailsBySchoolResponse {
-    pub parents: Vec<ParentWithChildren>,
+    pub active_parents: Vec<ParentWithChildren>,
+    pub inactive_parents: Vec<ParentWithChildren>,
 }
 
 #[derive(Debug, Serialize)]
@@ -311,6 +311,8 @@ pub struct GetSchoolFormsResponse {
 #[derive(Debug, Serialize)]
 pub struct SchoolFormDetails {
     pub parent_id: Uuid,
+    pub parent_first_name: String,
+    pub parent_last_name: String,
     pub child_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
@@ -318,8 +320,23 @@ pub struct SchoolFormDetails {
     pub class_name: String,
     pub primary_email: String,
     pub form_status: String,
-    pub forms: serde_json::Value, // JSON object with form_template_id as key and form_name as value
+    /// Forms assigned to this enrollment
+    /// Format: { "form_name": { "status": "incomplete|in_progress|completed|approved|rejected", "assigned_at": "DD-MM-YYYY" } }
+    /// Example: { "Admission Form": { "status": "incomplete", "assigned_at": "26-09-2025" } }
+    pub forms: serde_json::Value,
     pub additional_parent_email: Option<String>,
+}
+
+// 8.4.1 Get Class-Based Enrollment Form Details
+#[derive(Debug, Deserialize)]
+pub struct GetClassBasedEnrollmentsRequest {
+    pub school_id: Uuid,
+    pub class_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetClassBasedEnrollmentsResponse {
+    pub enrollments: Vec<SchoolFormDetails>,
 }
 
 // 8.5 Get Class-wise Child Count Details
@@ -347,6 +364,15 @@ pub struct DeactivateParentResponse {
     pub parent_id: Uuid,
     pub deactivated_children_count: usize,
     pub deactivated_enrollments_count: usize,
+    pub message: String,
+}
+
+// Activate Parent Response
+#[derive(Debug, Serialize)]
+pub struct ActivateParentResponse {
+    pub parent_id: Uuid,
+    pub activated_children_count: usize,
+    pub activated_enrollments_count: usize,
     pub message: String,
 }
 

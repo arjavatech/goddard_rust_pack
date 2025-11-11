@@ -1,6 +1,7 @@
-use deadpool_postgres::{Config, Pool, Runtime};
+use deadpool_postgres::{Config, Pool, Runtime, PoolConfig};
 use tokio_postgres::NoTls;
 use std::env;
+use std::time::Duration;
 use percent_encoding;
 use crate::error::AppError;
 
@@ -14,10 +15,15 @@ impl DatabaseConfig {
         Self { url }
     }
 
-    pub fn from_env() -> Self {
+    pub fn from_env() -> Result<Self, AppError> {
         let url = env::var("DATABASE_URL")
-            .expect("DATABASE_URL must be set");
-        Self::new(url)
+            .map_err(|_| AppError::Database(
+                "DATABASE_URL environment variable must be set. \
+                 For local: add to .env file. \
+                 For Fly.io: run 'fly secrets set DATABASE_URL=<your-db-url>'. \
+                 For AWS Lambda: set in environment variables.".to_string()
+            ))?;
+        Ok(Self::new(url))
     }
 
     pub fn create_pool(&self) -> Result<Pool, AppError> {
@@ -39,12 +45,38 @@ impl DatabaseConfig {
                     .to_string()
             });
             config.dbname = Some(parsed.path().trim_start_matches('/').to_string());
+
+            // Extract connect_timeout from query parameters if present
+            for (key, value) in parsed.query_pairs() {
+                if key == "connect_timeout" {
+                    if let Ok(timeout_secs) = value.parse::<u64>() {
+                        config.connect_timeout = Some(Duration::from_secs(timeout_secs));
+                    }
+                }
+            }
         } else {
             return Err(AppError::Database("Invalid DATABASE_URL format".to_string()));
         }
 
-        // Connection pool settings
-        config.pool = Some(deadpool_postgres::PoolConfig::new(16));
+        // Serverless optimized connection pool settings
+        // Use small pool size (3-4) as Docker/Lambda concurrency handles load distribution
+        // Pool size of 3-4 allows for nested transactions without deadlocks
+        // (e.g., create_child opens transaction, create_enrollment needs separate connection)
+        let mut pool_config = PoolConfig::new(4);
+
+        // Timeouts optimized for Supabase Session Pooler
+        // Session pooler efficiently manages connections across multiple clients
+        pool_config.timeouts.wait = Some(Duration::from_secs(5)); // Max wait time for connection from pool
+        pool_config.timeouts.create = Some(Duration::from_secs(10)); // Max time to create new connection
+        pool_config.timeouts.recycle = Some(Duration::from_secs(5)); // Max time to recycle connection
+
+        config.pool = Some(pool_config);
+
+        // Supabase Session Pooler Configuration
+        // Uses Fast recycling method for efficient connection reuse
+        config.manager = Some(deadpool_postgres::ManagerConfig {
+            recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+        });
 
         config.create_pool(Some(Runtime::Tokio1), NoTls)
             .map_err(|e| AppError::Database(format!("Failed to create connection pool: {}", e)))
@@ -57,7 +89,7 @@ use std::sync::OnceLock;
 pub static DB_POOL: OnceLock<Pool> = OnceLock::new();
 
 pub async fn initialize_database() -> Result<(), AppError> {
-    let config = DatabaseConfig::from_env();
+    let config = DatabaseConfig::from_env()?;
     let pool = config.create_pool()?;
 
     // Test the connection

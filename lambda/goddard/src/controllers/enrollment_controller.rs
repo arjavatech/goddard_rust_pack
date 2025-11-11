@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     middleware::auth::AuthContext,
     services::enrollment_service::EnrollmentService,
-    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest, UpdateChildStatusRequest},
+    models::enrollment::{ParentInviteRequest, ResendConfirmationRequest, AddChildRequest, GetParentDetailsBySchoolRequest, GetEnrollmentChildrenRequest, GetClassWiseCountRequest, GetSchoolFormsRequest, GetClassBasedEnrollmentsRequest, UpdateChildStatusRequest},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -99,6 +99,16 @@ pub async fn get_class_wise_count(
     Ok(ResponseUtils::success(response))
 }
 
+/// GET /class-based-enrollments?school_id={uuid}&class_id={uuid}
+/// Get class-based enrollment form details (API Key protected)
+pub async fn get_class_based_enrollments(
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    axum::extract::Query(query): axum::extract::Query<GetClassBasedEnrollmentsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = enrollment_service.get_class_based_enrollments(query).await?;
+    Ok(ResponseUtils::success(response))
+}
+
 /// DELETE /parent/:parent_id
 /// Deactivate parent and all related children and enrollments (JWT protected - Admin/SuperAdmin)
 pub async fn deactivate_parent(
@@ -110,6 +120,20 @@ pub async fn deactivate_parent(
         auth.email, auth.role, parent_id);
 
     let response = enrollment_service.deactivate_parent(parent_id).await?;
+    Ok((StatusCode::OK, ResponseUtils::success(response)))
+}
+
+/// PATCH /parent/:parent_id/activate
+/// Activate parent and all related children and enrollments (JWT protected - Admin/SuperAdmin)
+pub async fn activate_parent(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(parent_id): Path<Uuid>,
+) -> Result<(StatusCode, impl IntoResponse), AppError> {
+    println!("[DEBUG] Activating parent - User: {}, Role: {:?}, Parent ID: {}",
+        auth.email, auth.role, parent_id);
+
+    let response = enrollment_service.activate_parent(parent_id).await?;
     Ok((StatusCode::OK, ResponseUtils::success(response)))
 }
 

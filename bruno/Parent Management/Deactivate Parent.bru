@@ -1,0 +1,19 @@
+meta {
+  name: Deactivate Parent
+  type: http
+  seq: 2
+}
+
+delete {
+  url: {{base_url}}/parent/{{parent_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+settings {
+  encodeUrl: true
+}

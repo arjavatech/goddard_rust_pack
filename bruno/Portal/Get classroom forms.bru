@@ -1,0 +1,19 @@
+meta {
+  name: Get classroom forms
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/classrooms/{{class_id}}/forms
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Invite Create Basic
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/auth/invite-create
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+body:json {
+  {
+    "email": "user@example.com",
+    "school_id": "{{school_id}}"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

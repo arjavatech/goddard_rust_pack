@@ -1,0 +1,19 @@
+meta {
+  name: Debug Users
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/auth/debug-users
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

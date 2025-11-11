@@ -1,0 +1,15 @@
+meta {
+  name: Invitation Summary
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/auth/invitation-summary
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

@@ -17,7 +17,7 @@ use crate::models::enrollment::{
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
     GetClassWiseCountRequest, GetClassWiseCountResponse,
     GetSchoolFormsRequest, GetSchoolFormsResponse,
-    DeactivateParentResponse
+    DeactivateParentResponse, ActivateParentResponse
 };
 use crate::error::AppError;
 
@@ -351,12 +351,13 @@ impl EnrollmentService {
     }
 
     pub async fn get_parent_details_by_school(&self, request: GetParentDetailsBySchoolRequest) -> ApiResult<GetParentDetailsBySchoolResponse> {
-        // Get parent details with children and forms
-        let parents_with_children = self.enrollment_dao.get_parent_details_with_children_and_forms(request.school_id).await?;
+        // Get parent details with children and forms - separated by active/inactive status
+        let (active_parents, inactive_parents) = self.enrollment_dao.get_parent_details_with_children_and_forms(request.school_id).await?;
 
-        // Generate response - using flatten to return just the array
+        // Generate response with both active and inactive parent lists
         let response = GetParentDetailsBySchoolResponse {
-            parents: parents_with_children,
+            active_parents,
+            inactive_parents,
         };
 
         Ok(response)
@@ -393,6 +394,18 @@ impl EnrollmentService {
 
         let response = GetClassWiseCountResponse {
             classes,
+        };
+
+        Ok(response)
+    }
+
+    // Get Class-Based Enrollment Form Details
+    pub async fn get_class_based_enrollments(&self, request: crate::models::enrollment::GetClassBasedEnrollmentsRequest) -> ApiResult<crate::models::enrollment::GetClassBasedEnrollmentsResponse> {
+        // Get class-based enrollment form details
+        let enrollments = self.enrollment_dao.get_class_based_enrollments(request.school_id, request.class_id).await?;
+
+        let response = crate::models::enrollment::GetClassBasedEnrollmentsResponse {
+            enrollments,
         };
 
         Ok(response)
@@ -460,6 +473,7 @@ impl EnrollmentService {
                         recent_pdf_link: row.recent_pdf_link.clone(),
                         approved_by: row.approved_by,
                         approved_on: row.approved_on,
+                        assigned_at: row.assigned_at.map(|dt| dt.format("%d-%m-%Y").to_string()),
                     });
                 }
             }
@@ -506,6 +520,12 @@ impl EnrollmentService {
     pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
         println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
         self.enrollment_dao.deactivate_parent(parent_id).await
+    }
+
+    // Activate parent and all related children and enrollments
+    pub async fn activate_parent(&self, parent_id: Uuid) -> ApiResult<ActivateParentResponse> {
+        println!("[DEBUG] EnrollmentService: Activating parent {}", parent_id);
+        self.enrollment_dao.activate_parent(parent_id).await
     }
 
     // Update child status (admin only - no validation, accepts any status value)

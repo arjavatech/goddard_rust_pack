@@ -1,0 +1,25 @@
+meta {
+  name: Update Child Status
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/children/{{child_id}}/status
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+body:json {
+  {
+    "status": "active"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

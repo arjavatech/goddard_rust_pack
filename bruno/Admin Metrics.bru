@@ -1,0 +1,24 @@
+meta {
+  name: Admin Metrics
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{base_url}}/admin/dashboard-metrics?school_id={{school_id}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  school_id: {{school_id}}
+}
+
+headers {
+  Authorization: Bearer {{token}}
+  ~X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

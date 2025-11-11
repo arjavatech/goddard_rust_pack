@@ -10,7 +10,7 @@ use crate::models::enrollment::{
     ClassFormOverride, CreatedFormAssignment, ParentWithAuthDetails,
     ParentWithChildren, ChildWithForms, FormStatus,
     EnrollmentChildWithForms, SchoolFormDetails, ClassWiseCount,
-    DeactivateParentResponse
+    DeactivateParentResponse, ActivateParentResponse
 };
 use crate::error::AppError;
 
@@ -401,7 +401,7 @@ impl EnrollmentDao {
     }
 
     // New method to get parent details with children and forms
-    pub async fn get_parent_details_with_children_and_forms(&self, school_id: Uuid) -> ApiResult<Vec<ParentWithChildren>> {
+    pub async fn get_parent_details_with_children_and_forms(&self, school_id: Uuid) -> ApiResult<(Vec<ParentWithChildren>, Vec<ParentWithChildren>)> {
         let query = "
             WITH parent_children_forms AS (
                 SELECT
@@ -409,6 +409,7 @@ impl EnrollmentDao {
                     u.email as parent_email,
                     u.first_name as parent_first_name,
                     u.last_name as parent_last_name,
+                    u.is_active as parent_is_active,
                     CASE WHEN au.last_sign_in_at IS NOT NULL THEN 'signed' ELSE 'not signed' END as signed_status,
                     c.id as child_id,
                     CONCAT(c.first_name, ' ', c.last_name) as child_full_name,
@@ -436,7 +437,6 @@ impl EnrollmentDao {
                 LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
                 WHERE u.school_id = $1
                     AND u.role = 'Parent'
-                    AND u.is_active = true
                 ORDER BY u.email, c.id, sfa.form_template_id
             )
             SELECT
@@ -444,6 +444,7 @@ impl EnrollmentDao {
                 parent_email,
                 parent_first_name,
                 parent_last_name,
+                parent_is_active,
                 signed_status,
                 child_id,
                 child_full_name,
@@ -477,7 +478,7 @@ impl EnrollmentDao {
                     '[]'::json
                 ) as forms
             FROM parent_children_forms
-            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, signed_status,
+            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_is_active, signed_status,
                      child_id, child_full_name, child_dob, child_status, enrollment_id,
                      classroom_id, classroom_name
             ORDER BY parent_email, child_full_name
@@ -490,10 +491,11 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get parent details with children: {}", e)))?;
 
         // Group results by parent
-        let mut parents_map: std::collections::HashMap<Uuid, ParentWithChildren> = std::collections::HashMap::new();
+        let mut parents_map: std::collections::HashMap<Uuid, (ParentWithChildren, bool)> = std::collections::HashMap::new();
 
         for row in rows {
             let parent_id: Uuid = row.get("parent_id");
+            let parent_is_active: bool = row.get("parent_is_active");
             let forms_json: serde_json::Value = row.get("forms");
 
             // Parse forms from JSON
@@ -513,22 +515,34 @@ impl EnrollmentDao {
 
             // Add to parent or create new parent entry
             parents_map.entry(parent_id)
-                .and_modify(|parent| parent.children.push(child.clone()))
-                .or_insert_with(|| ParentWithChildren {
+                .and_modify(|(parent, _)| parent.children.push(child.clone()))
+                .or_insert_with(|| (ParentWithChildren {
                     parent_id,
                     parent_email: row.get("parent_email"),
                     parent_first_name: row.get("parent_first_name"),
                     parent_last_name: row.get("parent_last_name"),
                     signed_status: row.get("signed_status"),
                     children: vec![child],
-                });
+                }, parent_is_active));
         }
 
-        // Convert to vec and return
-        let mut parents: Vec<ParentWithChildren> = parents_map.into_values().collect();
-        parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+        // Separate into active and inactive parents
+        let mut active_parents: Vec<ParentWithChildren> = Vec::new();
+        let mut inactive_parents: Vec<ParentWithChildren> = Vec::new();
 
-        Ok(parents)
+        for (parent, is_active) in parents_map.into_values() {
+            if is_active {
+                active_parents.push(parent);
+            } else {
+                inactive_parents.push(parent);
+            }
+        }
+
+        // Sort both lists
+        active_parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+        inactive_parents.sort_by(|a, b| a.parent_email.cmp(&b.parent_email));
+
+        Ok((active_parents, inactive_parents))
     }
 
     // Method for getting enrollment children with form assignments
@@ -575,6 +589,8 @@ impl EnrollmentDao {
         let query = "
             SELECT
                 c.parent_id as parent_id,
+                u.first_name as parent_first_name,
+                u.last_name as parent_last_name,
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
@@ -582,7 +598,23 @@ impl EnrollmentDao {
                 cl.name as class_name,
                 u.email as primary_email,
                 COALESCE(e.status, 'pending') as form_status,
-                COALESCE(e.application_status, '{}') as forms,
+                COALESCE(
+                    (
+                        SELECT jsonb_object_agg(
+                            ft.form_name,
+                            jsonb_build_object(
+                                'status', COALESCE(sfa.status, 'incomplete'),
+                                'assigned_at', TO_CHAR(sfa.assigned_at, 'DD-MM-YYYY')
+                            )
+                        )
+                        FROM student_form_assignments sfa
+                        INNER JOIN form_templates ft ON sfa.form_template_id = ft.id
+                        WHERE sfa.enrollment_id = e.id
+                        AND sfa.child_id = c.id
+                        AND (sfa.is_active = true OR sfa.is_active IS NULL)
+                    ),
+                    '{}'::jsonb
+                ) as forms,
                 NULL as additional_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
@@ -601,6 +633,56 @@ impl EnrollmentDao {
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
             parent_id: row.get("parent_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
+            child_id: row.get("child_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+            child_status: row.get("child_status"),
+            class_name: row.get("class_name"),
+            primary_email: row.get("primary_email"),
+            form_status: row.get("form_status"),
+            forms: row.get("forms"),
+            additional_parent_email: row.get("additional_parent_email"),
+        }).collect())
+    }
+
+    // Method for getting class-based enrollments (filtered by both school_id and class_id)
+    pub async fn get_class_based_enrollments(&self, school_id: Uuid, class_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
+        let query = "
+            SELECT
+                c.parent_id as parent_id,
+                u.first_name as parent_first_name,
+                u.last_name as parent_last_name,
+                c.id as child_id,
+                c.first_name as child_first_name,
+                c.last_name as child_last_name,
+                c.status as child_status,
+                cl.name as class_name,
+                u.email as primary_email,
+                COALESCE(e.status, 'pending') as form_status,
+                COALESCE(e.application_status, '{}') as forms,
+                NULL as additional_parent_email
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            JOIN users u ON c.parent_id = u.id
+            JOIN classrooms cl ON e.classroom_id = cl.id
+            WHERE e.school_id = $1
+                AND e.classroom_id = $2
+                AND u.is_active = true
+            ORDER BY e.created_at DESC
+        ";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client.query(query, &[&school_id, &class_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get class-based enrollments: {}", e)))?;
+
+        Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            parent_id: row.get("parent_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
@@ -676,7 +758,8 @@ impl EnrollmentDao {
                 sfa.recent_edit_link,
                 sfa.recent_pdf_link,
                 sfa.approved_by,
-                sfa.approved_on
+                sfa.approved_on,
+                sfa.assigned_at
             FROM users u
             LEFT JOIN auth.users au ON au.email = u.email
             LEFT JOIN children c ON c.parent_id = u.id OR c.secondary_parent_id = u.id
@@ -723,6 +806,7 @@ impl EnrollmentDao {
             recent_pdf_link: row.get("recent_pdf_link"),
             approved_by: row.get("approved_by"),
             approved_on: row.get("approved_on"),
+            assigned_at: row.get("assigned_at"),
         }).collect())
     }
 
@@ -786,6 +870,69 @@ impl EnrollmentDao {
             deactivated_children_count,
             deactivated_enrollments_count,
             message: "Parent and related records deactivated successfully".to_string(),
+        })
+    }
+
+    // Activate parent and all related children and enrollments
+    pub async fn activate_parent(&self, parent_id: Uuid) -> ApiResult<ActivateParentResponse> {
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        // Start transaction
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // Step 1: Activate enrollments for all children of this parent
+        let enrollment_query = "
+            UPDATE enrollments e
+            SET is_active = true, updated_at = NOW()
+            FROM children c
+            WHERE e.child_id = c.id AND c.parent_id = $1
+            RETURNING e.id
+        ";
+
+        let enrollment_rows = transaction.query(enrollment_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to activate enrollments: {}", e)))?;
+
+        let activated_enrollments_count = enrollment_rows.len();
+
+        // Step 2: Activate all children of this parent
+        let children_query = "
+            UPDATE children
+            SET is_active = true, updated_at = NOW()
+            WHERE parent_id = $1
+            RETURNING id
+        ";
+
+        let children_rows = transaction.query(children_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to activate children: {}", e)))?;
+
+        let activated_children_count = children_rows.len();
+
+        // Step 3: Activate the parent user
+        let parent_query = "
+            UPDATE users
+            SET is_active = true, updated_at = NOW()
+            WHERE id = $1 AND role = 'Parent'
+            RETURNING id
+        ";
+
+        let parent_rows = transaction.query(parent_query, &[&parent_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to activate parent: {}", e)))?;
+
+        if parent_rows.is_empty() {
+            return Err(AppError::NotFound(format!("Parent with ID {} not found", parent_id)));
+        }
+
+        // Commit transaction
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        Ok(ActivateParentResponse {
+            parent_id,
+            activated_children_count,
+            activated_enrollments_count,
+            message: "Parent and related records activated successfully".to_string(),
         })
     }
 

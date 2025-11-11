@@ -1,0 +1,19 @@
+meta {
+  name: Delete School
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{base_url}}/schools/{{school_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

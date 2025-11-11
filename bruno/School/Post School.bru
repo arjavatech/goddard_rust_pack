@@ -1,0 +1,31 @@
+meta {
+  name: Post School
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/schools
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+        "name": "Surya's School, Chennai",
+        "subdomain": "suryaaa",
+        "settings": {
+          "timezone": "America/New_York",
+          "enrollment_capacity": 200,
+          "age_groups": ["infants", "toddlers", "preschool", "pre-k"]
+  }
+  }
+}
+
+settings {
+  encodeUrl: true
+}

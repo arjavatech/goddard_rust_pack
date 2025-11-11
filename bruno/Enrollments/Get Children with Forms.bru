@@ -1,0 +1,19 @@
+meta {
+  name: Get Children with Forms
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/enrollments/children-forms?school_id={{school_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+settings {
+  encodeUrl: true
+}

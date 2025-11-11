@@ -1,0 +1,25 @@
+meta {
+  name: Resend Mail
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/enrollments/resend-confirmation
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    "parent_id": "8b8f540e-c530-4560-9a2b-e55dcc96d7b3"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

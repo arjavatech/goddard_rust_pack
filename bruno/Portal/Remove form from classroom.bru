@@ -1,0 +1,19 @@
+meta {
+  name: Remove form from classroom
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/classrooms/{{class_id}}/forms/{{form_id}}
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

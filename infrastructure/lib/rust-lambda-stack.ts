@@ -12,7 +12,8 @@ export class RustLambdaStack extends cdk.Stack {
     // Lambda function for Rust code
     // Using ARM64 architecture for up to 34% better price performance and 19% better performance
     // See: https://aws.amazon.com/blogs/compute/migrating-aws-lambda-functions-to-arm-based-aws-graviton2-processors/
-    const rustLambda = new lambda.Function(this, 'GoddardLambda', {
+    const rustLambda = new lambda.Function(this, 'GoddardProdLambda', {
+      functionName: 'goddard-prod',
       runtime: lambda.Runtime.PROVIDED_AL2023, // Amazon Linux 2023 supports ARM64
       architecture: lambda.Architecture.ARM_64, // AWS Graviton2 processor (ARM64)
       handler: 'bootstrap',
@@ -24,17 +25,18 @@ export class RustLambdaStack extends cdk.Stack {
       environment: {
         RUST_LOG: 'info',
       },
-      logGroup: new logs.LogGroup(this, 'GoddardLambdaLogGroup', {
+      logGroup: new logs.LogGroup(this, 'GoddardProdLambdaLogGroup', {
+        logGroupName: '/aws/lambda/goddard-prod',
         retention: logs.RetentionDays.ONE_WEEK,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
-      description: 'Goddard Backend Lambda function with API endpoints',
+      description: 'Goddard Production - Backend Lambda function with API endpoints',
     });
 
     // API Gateway
-    const api = new apigateway.RestApi(this, 'GoddardApi', {
-      restApiName: 'Goddard Backend API',
-      description: 'API Gateway for Goddard Backend Lambda function',
+    const api = new apigateway.RestApi(this, 'GoddardProdApi', {
+      restApiName: 'Goddard Production API',
+      description: 'Production API Gateway for Goddard Backend Lambda function',
       deployOptions: {
         stageName: 'prod',
         tracingEnabled: true,
@@ -62,20 +64,20 @@ export class RustLambdaStack extends cdk.Stack {
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: api.url,
-      description: 'API Gateway URL',
-      exportName: 'GoddardApiUrl',
+      description: 'Production API Gateway URL',
+      exportName: 'GoddardProdApiUrl',
     });
 
     new cdk.CfnOutput(this, 'LambdaFunctionName', {
       value: rustLambda.functionName,
-      description: 'Lambda Function Name',
-      exportName: 'GoddardLambdaFunctionName',
+      description: 'Production Lambda Function Name',
+      exportName: 'GoddardProdLambdaFunctionName',
     });
 
     new cdk.CfnOutput(this, 'LambdaFunctionArn', {
       value: rustLambda.functionArn,
-      description: 'Lambda Function ARN',
-      exportName: 'GoddardLambdaFunctionArn',
+      description: 'Production Lambda Function ARN',
+      exportName: 'GoddardProdLambdaFunctionArn',
     });
   }
 }

@@ -473,6 +473,7 @@ impl EnrollmentService {
                         recent_pdf_link: row.recent_pdf_link.clone(),
                         approved_by: row.approved_by,
                         approved_on: row.approved_on,
+                        assigned_at: row.assigned_at.map(|dt| dt.format("%d-%m-%Y").to_string()),
                     });
                 }
             }

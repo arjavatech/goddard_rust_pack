@@ -13,10 +13,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-LAMBDA_FUNCTION_NAME="RustLambdaStack-GoddardLambdaC65E3A55-d4oUhnRvr8VQ"
+LAMBDA_FUNCTION_NAME="goddard-prod"
 ENV_FILE=".env"
 AWS_PROFILE="${AWS_PROFILE:-goddard}"
-AWS_REGION="us-west-2"
+AWS_REGION="us-west-1"
 
 echo -e "${BLUE}🚀 Auto-Deploying Environment Variables to Lambda${NC}"
 echo -e "${BLUE}============================================${NC}"

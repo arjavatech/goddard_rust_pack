@@ -13,9 +13,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-LAMBDA_FUNCTION_NAME="RustLambdaStack-GoddardLambdaC65E3A55-d4oUhnRvr8VQ"
+LAMBDA_FUNCTION_NAME="goddard-prod"
 ENV_FILE=".env"
 AWS_PROFILE="${AWS_PROFILE:-goddard}"
+AWS_REGION="us-west-1"
 
 echo -e "${BLUE}🚀 Deploying Environment Variables to Lambda${NC}"
 echo -e "${BLUE}======================================${NC}"
@@ -136,6 +137,7 @@ echo -e "${BLUE}🚀 Deploying to AWS Lambda...${NC}"
 
 # Deploy environment variables to Lambda using file input
 if AWS_PROFILE="$AWS_PROFILE" aws lambda update-function-configuration \
+    --region "$AWS_REGION" \
     --function-name "$LAMBDA_FUNCTION_NAME" \
     --environment file:///tmp/lambda_env.json \
     --output table > /dev/null 2>&1; then
@@ -153,6 +155,7 @@ if AWS_PROFILE="$AWS_PROFILE" aws lambda update-function-configuration \
     # Wait for Lambda to update
     echo -e "${BLUE}⏳ Waiting for Lambda function to update...${NC}"
     AWS_PROFILE="$AWS_PROFILE" aws lambda wait function-updated \
+        --region "$AWS_REGION" \
         --function-name "$LAMBDA_FUNCTION_NAME"
 
     echo -e "${GREEN}✅ Lambda function updated successfully!${NC}"
@@ -168,6 +171,7 @@ if AWS_PROFILE="$AWS_PROFILE" aws lambda update-function-configuration \
         echo ""
         echo -e "${BLUE}📋 Current Lambda Environment Variables:${NC}"
         AWS_PROFILE="$AWS_PROFILE" aws lambda get-function-configuration \
+            --region "$AWS_REGION" \
             --function-name "$LAMBDA_FUNCTION_NAME" \
             --query 'Environment.Variables' \
             --output table

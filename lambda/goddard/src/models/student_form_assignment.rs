@@ -126,3 +126,24 @@ pub struct BulkAssignFormResponse {
     pub successful: Vec<StudentFormAssignmentResponse>,
     pub failed: Vec<FailedAssignment>,
 }
+
+// Assign form to all active students in a school
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AssignFormToSchoolStudentsRequest {
+    pub school_id: Uuid,
+    pub form_template_id: Uuid,
+    #[serde(default)]
+    pub is_required: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AssignFormToSchoolStudentsResponse {
+    pub school_id: Uuid,
+    pub form_template_id: Uuid,
+    pub total_active_students: i64,
+    pub students_already_assigned: i64,
+    pub newly_assigned: i64,
+    pub failed_assignments: i64,
+    pub successful: Vec<StudentFormAssignmentResponse>,
+    pub failed: Vec<FailedAssignment>,
+}

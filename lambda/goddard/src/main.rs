@@ -52,7 +52,7 @@ use controllers::{
         get_form_submission_by_id, update_form_submission_status
     },
     student_form_assignment_controller::{
-        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students
+        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students
     },
     student_form_assignment_review_controller::{
         review_student_form_assignment
@@ -258,6 +258,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments/assign", post(bulk_assign_forms_to_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/student-form-assignments/assign-to-school", post(assign_form_to_school_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(student_form_assignment_service)
 
         // Section 10 Portal APIs (JWT or API Key with parent isolation for JWT)

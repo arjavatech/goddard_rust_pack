@@ -588,6 +588,7 @@ impl EnrollmentDao {
     pub async fn get_school_forms(&self, school_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
         let query = "
             SELECT
+                e.id as enrollment_id,
                 c.parent_id as parent_id,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
@@ -632,6 +633,7 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get school forms: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            enrollment_id: row.get("enrollment_id"),
             parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
@@ -651,6 +653,7 @@ impl EnrollmentDao {
     pub async fn get_class_based_enrollments(&self, school_id: Uuid, class_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
         let query = "
             SELECT
+                e.id as enrollment_id,
                 c.parent_id as parent_id,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
@@ -680,6 +683,7 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get class-based enrollments: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            enrollment_id: row.get("enrollment_id"),
             parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),

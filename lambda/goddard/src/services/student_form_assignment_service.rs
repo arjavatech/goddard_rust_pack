@@ -1,7 +1,8 @@
 use crate::dao::StudentFormAssignmentDao;
 use crate::models::student_form_assignment::{
     StudentFormAssignment, StudentFormAssignmentResponse, CreateStudentFormAssignmentRequest,
-    UpdateStudentFormAssignmentRequest, DeleteStudentFormAssignmentResponse
+    UpdateStudentFormAssignmentRequest, DeleteStudentFormAssignmentResponse,
+    BulkAssignFormRequest, BulkAssignFormResponse, FailedAssignment
 };
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
@@ -132,5 +133,69 @@ impl StudentFormAssignmentService {
 
         println!("[DEBUG] StudentFormAssignmentService: API key validation successful");
         Ok(())
+    }
+
+    pub async fn bulk_assign_forms(
+        &self,
+        request: BulkAssignFormRequest,
+    ) -> Result<BulkAssignFormResponse, AppError> {
+        println!("[DEBUG] StudentFormAssignmentService: Starting bulk form assignment");
+        println!("[DEBUG] StudentFormAssignmentService: School ID: {}, Number of assignments: {}",
+                 request.school_id, request.assignments.len());
+
+        // Validate request has at least one assignment
+        if request.assignments.is_empty() {
+            println!("[ERROR] StudentFormAssignmentService: No assignments provided");
+            return Err(AppError::Validation("At least one assignment is required".to_string()));
+        }
+
+        // Extract unique form template IDs for validation
+        let form_template_ids: Vec<Uuid> = request.assignments
+            .iter()
+            .map(|a| a.form_template_id)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        println!("[DEBUG] StudentFormAssignmentService: Validating {} unique form templates", form_template_ids.len());
+
+        // Step 1: Validate all form templates are active
+        match self.dao.validate_form_templates_active(&form_template_ids).await {
+            Ok(_) => println!("[DEBUG] StudentFormAssignmentService: All form templates validated as active"),
+            Err(e) => {
+                println!("[ERROR] StudentFormAssignmentService: Form template validation failed: {:?}", e);
+                return Err(e);
+            }
+        }
+
+        // Step 2: Check for duplicate assignments
+        match self.dao.check_duplicate_assignments(request.school_id, &request.assignments).await {
+            Ok(_) => println!("[DEBUG] StudentFormAssignmentService: No duplicate assignments found"),
+            Err(e) => {
+                println!("[ERROR] StudentFormAssignmentService: Duplicate assignment check failed: {:?}", e);
+                return Err(e);
+            }
+        }
+
+        // Step 3: Create assignments in bulk (within transaction)
+        match self.dao.bulk_create_assignments(request.school_id, request.assignments).await {
+            Ok(created_assignments) => {
+                println!("[DEBUG] StudentFormAssignmentService: Successfully created {} assignments", created_assignments.len());
+
+                let successful: Vec<StudentFormAssignmentResponse> = created_assignments
+                    .into_iter()
+                    .map(|a| a.into())
+                    .collect();
+
+                Ok(BulkAssignFormResponse {
+                    successful,
+                    failed: Vec::new(), // No failures in current implementation
+                })
+            }
+            Err(e) => {
+                println!("[ERROR] StudentFormAssignmentService: Bulk creation failed: {:?}", e);
+                Err(e)
+            }
+        }
     }
 }

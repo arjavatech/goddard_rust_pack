@@ -10,6 +10,7 @@ use crate::models::student_form_assignment::{
     CreateStudentFormAssignmentRequest, UpdateStudentFormAssignmentRequest,
     StudentFormAssignmentResponse, GetStudentFormAssignmentsQuery,
     DeleteStudentFormAssignmentQuery, DeleteStudentFormAssignmentResponse,
+    BulkAssignFormRequest, BulkAssignFormResponse,
 };
 use crate::services::StudentFormAssignmentService;
 
@@ -142,4 +143,41 @@ pub async fn delete_student_form_assignment(
 
     println!("[DEBUG] DELETE Assignment: Deletion completed successfully");
     Ok(Json(response))
+}
+
+// Bulk Assign Forms to Students (Protected - Admin/SuperAdmin)
+pub async fn bulk_assign_forms_to_students(
+    State(service): State<Arc<StudentFormAssignmentService>>,
+    headers: HeaderMap,
+    Json(request): Json<BulkAssignFormRequest>,
+) -> Result<(StatusCode, Json<BulkAssignFormResponse>), AppError> {
+    println!("[DEBUG] BULK ASSIGN: Starting bulk form assignment");
+    println!("[DEBUG] BULK ASSIGN: School ID: {}, Number of assignments: {}",
+             request.school_id, request.assignments.len());
+
+    // Extract API key from X-API-Key header
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| {
+            println!("[ERROR] BULK ASSIGN: Missing X-API-Key header");
+            AppError::Authentication("Missing X-API-Key header".to_string())
+        })?;
+
+    // Validate API key
+    service.validate_api_key(api_key).await?;
+    println!("[DEBUG] BULK ASSIGN: Authentication successful");
+
+    // Perform bulk assignment
+    match service.bulk_assign_forms(request).await {
+        Ok(response) => {
+            println!("[DEBUG] BULK ASSIGN: Successfully assigned {} forms, {} failed",
+                     response.successful.len(), response.failed.len());
+            Ok((StatusCode::CREATED, Json(response)))
+        }
+        Err(e) => {
+            println!("[ERROR] BULK ASSIGN: Failed with error: {:?}", e);
+            Err(e)
+        }
+    }
 }

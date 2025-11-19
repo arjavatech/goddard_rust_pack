@@ -97,3 +97,32 @@ impl From<StudentFormAssignment> for StudentFormAssignmentResponse {
         }
     }
 }
+
+// Bulk assignment DTOs
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FormAssignment {
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub form_template_id: Uuid,
+    #[serde(default)]
+    pub is_required: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BulkAssignFormRequest {
+    pub school_id: Uuid,
+    pub assignments: Vec<FormAssignment>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FailedAssignment {
+    pub child_id: Uuid,
+    pub form_template_id: Uuid,
+    pub error: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BulkAssignFormResponse {
+    pub successful: Vec<StudentFormAssignmentResponse>,
+    pub failed: Vec<FailedAssignment>,
+}

@@ -181,3 +181,41 @@ pub async fn bulk_assign_forms_to_students(
         }
     }
 }
+
+// Assign form to all active students in a school (Protected - Admin/SuperAdmin)
+pub async fn assign_form_to_school_students(
+    State(service): State<Arc<StudentFormAssignmentService>>,
+    headers: HeaderMap,
+    Json(request): Json<crate::models::student_form_assignment::AssignFormToSchoolStudentsRequest>,
+) -> Result<(StatusCode, Json<crate::models::student_form_assignment::AssignFormToSchoolStudentsResponse>), AppError> {
+    println!("[DEBUG] ASSIGN TO SCHOOL: Starting assignment");
+    println!("[DEBUG] ASSIGN TO SCHOOL: School ID: {}, Form Template ID: {}, Is Required: {:?}",
+             request.school_id, request.form_template_id, request.is_required);
+
+    // Extract API key from X-API-Key header
+    let api_key = headers
+        .get("x-api-key")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| {
+            println!("[ERROR] ASSIGN TO SCHOOL: Missing X-API-Key header");
+            AppError::Authentication("Missing X-API-Key header".to_string())
+        })?;
+
+    // Validate API key
+    service.validate_api_key(api_key).await?;
+    println!("[DEBUG] ASSIGN TO SCHOOL: Authentication successful");
+
+    // Perform assignment to all active students
+    match service.assign_form_to_school_students(request).await {
+        Ok(response) => {
+            println!("[DEBUG] ASSIGN TO SCHOOL: Successfully assigned to {} students. Total: {}, Already assigned: {}, Newly assigned: {}",
+                     response.newly_assigned, response.total_active_students,
+                     response.students_already_assigned, response.newly_assigned);
+            Ok((StatusCode::CREATED, Json(response)))
+        }
+        Err(e) => {
+            println!("[ERROR] ASSIGN TO SCHOOL: Failed with error: {:?}", e);
+            Err(e)
+        }
+    }
+}

@@ -103,6 +103,7 @@ pub struct AdminUserResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateAdminRequest {
+    pub user_id: Option<String>,  // Optional - SuperAdmin can pass to update other admins
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
@@ -376,15 +377,31 @@ impl AuthService {
         Ok(response_users)
     }
 
-    /// Update admin user - Admin can only update THEIR OWN profile, SuperAdmin can also update their own
-    /// User ID is extracted from JWT token (AuthContext)
+    /// Update admin user - Admin can only update THEIR OWN profile, SuperAdmin can update ANY admin
+    /// User ID is extracted from JWT token (AuthContext), or from payload for SuperAdmin
     pub async fn update_admin_user(
         &self,
         auth_user_id: uuid::Uuid,  // From AuthContext (JWT)
+        auth_role: crate::models::schema::UserRole,  // From AuthContext (JWT)
         request: UpdateAdminRequest,
     ) -> ApiResult<AdminUserResponse> {
+        // Determine which user to update based on role
+        let target_user_id = if matches!(auth_role, crate::models::schema::UserRole::SuperAdmin) {
+            // SuperAdmin can update any admin if user_id provided in payload
+            if let Some(ref uid) = request.user_id {
+                ValidationUtils::validate_uuid(uid)?;
+                uuid::Uuid::parse_str(uid)
+                    .map_err(|_| AppError::Validation("Invalid user_id format".to_string()))?
+            } else {
+                auth_user_id  // Update own profile if no user_id provided
+            }
+        } else {
+            // Admin can only update their own profile (ignore user_id in payload)
+            auth_user_id
+        };
+
         let updated = self.dao.update_admin_user(
-            auth_user_id,  // Always update the authenticated user's profile
+            target_user_id,
             request.first_name,
             request.last_name,
             request.phone_number,

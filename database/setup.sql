@@ -421,7 +421,7 @@ AND (is_verified = false OR is_verified IS NULL);
 -- PART 3: UPDATE TRIGGER FOR AUTH.USERS SYNC
 -- ==========================================
 
--- Update the auth user sync function to respect role-based is_verified
+-- Update the auth user sync function to respect is_verified from metadata
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -456,12 +456,15 @@ BEGIN
             NEW.raw_user_meta_data->>'role',
             'Parent'
         ),
-        -- Set is_verified based on role
-        CASE
-            WHEN COALESCE(NEW.raw_user_meta_data->>'role', 'Parent') IN ('Parent', 'primary-parent', 'secondary-parent')
-            THEN true
-            ELSE false
-        END,
+        -- Respect is_verified from metadata if provided, otherwise default based on role
+        COALESCE(
+            (NEW.raw_user_meta_data->>'is_verified')::boolean,
+            CASE
+                WHEN COALESCE(NEW.raw_user_meta_data->>'role', 'Parent') IN ('Parent', 'primary-parent', 'secondary-parent')
+                THEN true
+                ELSE false
+            END
+        ),
         NOW(),
         NEW.raw_user_meta_data,
         true

@@ -170,6 +170,70 @@ impl AuthDao {
         Ok(admins)
     }
 
+    /// Update admin user profile (first_name, last_name, phone_number)
+    pub async fn update_admin_user(
+        &self,
+        user_id: uuid::Uuid,
+        first_name: Option<String>,
+        last_name: Option<String>,
+        phone_number: Option<String>,
+    ) -> ApiResult<UserDetails> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE users
+            SET first_name = COALESCE($2, first_name),
+                last_name = COALESCE($3, last_name),
+                phone_number = COALESCE($4, phone_number),
+                updated_at = NOW()
+            WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
+            RETURNING id, school_id, first_name, last_name, email, role,
+                      COALESCE(is_verified, false) as is_verified, created_at
+        "#;
+
+        match client.query_opt(query, &[&user_id, &first_name, &last_name, &phone_number]).await {
+            Ok(Some(row)) => {
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+
+                Ok(UserDetails {
+                    id: row.get("id"),
+                    school_id: row.get("school_id"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    email: row.get("email"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    created_at,
+                })
+            },
+            Ok(None) => Err(AppError::NotFound("Admin user not found or already deleted".to_string())),
+            Err(e) => Err(AppError::Database(format!("Failed to update admin: {}", e))),
+        }
+    }
+
+    /// Soft delete admin user (set is_active = false)
+    pub async fn soft_delete_admin_user(&self, user_id: uuid::Uuid) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE users
+            SET is_active = false, updated_at = NOW()
+            WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
+        "#;
+
+        let result = client.execute(query, &[&user_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to delete admin: {}", e)))?;
+
+        if result == 0 {
+            return Err(AppError::NotFound("Admin user not found or already deleted".to_string()));
+        }
+
+        Ok(())
+    }
+
     pub async fn get_user_by_id(&self, user_id: uuid::Uuid) -> ApiResult<UserDetails> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

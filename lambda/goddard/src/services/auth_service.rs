@@ -101,6 +101,18 @@ pub struct AdminUserResponse {
     pub is_verified: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateAdminRequest {
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub phone_number: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteAdminRequest {
+    pub user_id: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FilteredUserResponse {
     pub school_id: String,
@@ -258,7 +270,7 @@ impl AuthService {
             request.last_name.clone(),
             request.role.clone(),
             None,  // phone_number - not provided in enhanced endpoint
-            None,  // is_verified - will be set after email confirmation
+            Some(true),  // is_verified = true
         );
 
         // Create user invitation via Supabase with enhanced metadata
@@ -362,6 +374,40 @@ impl AuthService {
         }
 
         Ok(response_users)
+    }
+
+    /// Update admin user - Admin can only update THEIR OWN profile, SuperAdmin can also update their own
+    /// User ID is extracted from JWT token (AuthContext)
+    pub async fn update_admin_user(
+        &self,
+        auth_user_id: uuid::Uuid,  // From AuthContext (JWT)
+        request: UpdateAdminRequest,
+    ) -> ApiResult<AdminUserResponse> {
+        let updated = self.dao.update_admin_user(
+            auth_user_id,  // Always update the authenticated user's profile
+            request.first_name,
+            request.last_name,
+            request.phone_number,
+        ).await?;
+
+        Ok(AdminUserResponse {
+            id: updated.id.to_string(),
+            school_id: updated.school_id.to_string(),
+            first_name: updated.first_name,
+            last_name: updated.last_name,
+            email: updated.email,
+            role: updated.role,
+            is_verified: updated.is_verified,
+        })
+    }
+
+    /// Soft delete admin user (SuperAdmin only)
+    pub async fn delete_admin_user(&self, request: DeleteAdminRequest) -> ApiResult<()> {
+        ValidationUtils::validate_uuid(&request.user_id)?;
+        let user_uuid = uuid::Uuid::parse_str(&request.user_id)
+            .map_err(|_| AppError::Validation("Invalid user_id format".to_string()))?;
+
+        self.dao.soft_delete_admin_user(user_uuid).await
     }
 
     /// Get all verified Admin users for a specific school (SuperAdmin only)

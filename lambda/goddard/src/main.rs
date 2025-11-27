@@ -27,7 +27,8 @@ use controllers::{
         clear_auth_table,
         debug_auth_users,
         get_users_by_school_and_role,
-        get_current_user_profile
+        get_current_user_profile,
+        get_admins_by_school
     },
     school_controller::{
         create_school, get_all_schools, update_school, delete_school
@@ -74,7 +75,7 @@ use dao::{
 use services::{
     AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService
 };
-use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only};
+use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -189,12 +190,13 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         // Authorization Verification Routes (Legacy)
         .route("/auth/verification-status", get(get_auth_verification_status))
         .route("/auth/invitation-summary", get(get_invitation_summary))
-        .route("/auth/invite-create", post(create_invitation))
-        .route("/auth/invite-create-enhanced", post(create_invitation_enhanced))
+        .route("/auth/invite-create", post(create_invitation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/auth/invite-create-enhanced", post(create_invitation_enhanced).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .route("/auth/clear-table", delete(clear_auth_table))
         .route("/auth/debug-users", get(debug_auth_users))
         .route("/auth/users/filter", get(get_users_by_school_and_role))
         .route("/users/me", get(get_current_user_profile))
+        .route("/users/admin", get(get_admins_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .with_state(auth_service)
 
         // School Management APIs (Admin JWT or API Key)

@@ -6,6 +6,8 @@ use axum::{
 };
 use serde::Deserialize;
 use std::sync::Arc;
+use serde_json::json;
+use axum::http::StatusCode;
 
 use crate::{
     services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced}},
@@ -127,6 +129,34 @@ pub async fn get_users_by_school_and_role(
         .await?;
 
     Ok(ResponseUtils::success(users))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetAdminsBySchoolQuery {
+    pub school_id: String,
+}
+
+/// GET /users/admin?school_id=<uuid>
+/// Get all verified Admin users for a specific school (SuperAdmin only)
+pub async fn get_admins_by_school(
+    State(auth_service): State<Arc<AuthService>>,
+    Query(query): Query<GetAdminsBySchoolQuery>,
+) -> impl IntoResponse {
+    match auth_service.get_admins_by_school(&query.school_id).await {
+        Ok(admins) => {
+            let count = admins.len();
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "data": admins,
+                    "count": count,
+                    "timestamp": chrono::Utc::now()
+                }))
+            ).into_response()
+        },
+        Err(e) => e.into_response(),
+    }
 }
 
 /// GET /users/me

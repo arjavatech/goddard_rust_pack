@@ -66,8 +66,10 @@ pub struct ResendInvitationResponse {
 #[derive(Debug, Deserialize)]
 pub struct CreateInvitationRequest {
     pub email: String,
-    pub school_id: Option<String>,
-    pub user_metadata: Option<serde_json::Value>,
+    pub school_id: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,  // Only phone_number is optional
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,6 +88,17 @@ pub struct CreateInvitationResponse {
     pub email: String,
     pub user_id: String,
     pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminUserResponse {
+    pub id: String,
+    pub school_id: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub role: String,
+    pub is_verified: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -244,6 +257,8 @@ impl AuthService {
             request.first_name.clone(),
             request.last_name.clone(),
             request.role.clone(),
+            None,  // phone_number - not provided in enhanced endpoint
+            None,  // is_verified - will be set after email confirmation
         );
 
         // Create user invitation via Supabase with enhanced metadata
@@ -262,18 +277,28 @@ impl AuthService {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
 
-        // Validate school_id if provided
-        if let Some(ref school_id) = request.school_id {
-            ValidationUtils::validate_uuid(school_id)?;
-        }
+        // Validate and parse school_id (required field)
+        ValidationUtils::validate_uuid(&request.school_id)?;
+        let school_uuid = uuid::Uuid::parse_str(&request.school_id)
+            .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
         // Check if user already exists
         if self.dao.user_exists_by_email(&request.email).await? {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
 
-        // Create user invitation via Supabase
-        let user_id = self.supabase_client.create_user_invitation(&request.email, request.user_metadata).await?;
+        // Build metadata with is_verified = true and role = "Admin"
+        let metadata = UserMetadata::new(
+            Some(school_uuid),
+            Some(request.first_name.clone()),
+            Some(request.last_name.clone()),
+            Some("Admin".to_string()),  // Default role = Admin
+            request.phone_number.clone(),  // Optional - can be None
+            Some(true),  // is_verified = true
+        );
+
+        // Create user invitation via Supabase with enhanced metadata
+        let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
 
         Ok(CreateInvitationResponse {
             success: true,
@@ -337,6 +362,25 @@ impl AuthService {
         }
 
         Ok(response_users)
+    }
+
+    /// Get all verified Admin users for a specific school (SuperAdmin only)
+    pub async fn get_admins_by_school(&self, school_id: &str) -> ApiResult<Vec<AdminUserResponse>> {
+        ValidationUtils::validate_uuid(school_id)?;
+        let school_uuid = uuid::Uuid::parse_str(school_id)
+            .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
+
+        let admins = self.dao.get_admins_by_school(school_uuid).await?;
+
+        Ok(admins.into_iter().map(|u| AdminUserResponse {
+            id: u.id.to_string(),
+            school_id: u.school_id.to_string(),
+            first_name: u.first_name,
+            last_name: u.last_name,
+            email: u.email,
+            role: u.role,
+            is_verified: u.is_verified,
+        }).collect())
     }
 
     pub async fn get_user_profile_from_jwt(&self, jwt_token: &str) -> ApiResult<FilteredUserResponse> {

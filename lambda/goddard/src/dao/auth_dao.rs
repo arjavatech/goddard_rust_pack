@@ -134,6 +134,42 @@ impl AuthDao {
         }
     }
 
+    /// Get all verified Admin users for a specific school
+    pub async fn get_admins_by_school(&self, school_id: uuid::Uuid) -> ApiResult<Vec<UserDetails>> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            SELECT id, school_id, first_name, last_name, email, role,
+                   COALESCE(is_verified, false) as is_verified, created_at
+            FROM users
+            WHERE school_id = $1 AND role = 'Admin' AND is_verified = true
+            ORDER BY first_name, last_name
+        "#;
+
+        let rows = client.query(query, &[&school_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to query admins: {}", e)))?;
+
+        let mut admins = Vec::new();
+        for row in rows {
+            let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+            let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+
+            admins.push(UserDetails {
+                id: row.get("id"),
+                school_id: row.get("school_id"),
+                first_name: row.get("first_name"),
+                last_name: row.get("last_name"),
+                email: row.get("email"),
+                role: row.get("role"),
+                is_verified: row.get("is_verified"),
+                created_at,
+            });
+        }
+
+        Ok(admins)
+    }
+
     pub async fn get_user_by_id(&self, user_id: uuid::Uuid) -> ApiResult<UserDetails> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

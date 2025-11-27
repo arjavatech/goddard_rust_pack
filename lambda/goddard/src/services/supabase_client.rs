@@ -14,6 +14,8 @@ pub struct UserMetadata {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub role: Option<String>,
+    pub phone_number: Option<String>,
+    pub is_verified: Option<bool>,
 }
 
 fn serialize_uuid_option<S>(uuid: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
@@ -38,12 +40,21 @@ where
 }
 
 impl UserMetadata {
-    pub fn new(school_id: Option<Uuid>, first_name: Option<String>, last_name: Option<String>, role: Option<String>) -> Self {
+    pub fn new(
+        school_id: Option<Uuid>,
+        first_name: Option<String>,
+        last_name: Option<String>,
+        role: Option<String>,
+        phone_number: Option<String>,
+        is_verified: Option<bool>,
+    ) -> Self {
         Self {
             school_id,
             first_name,
             last_name,
             role,
+            phone_number,
+            is_verified,
         }
     }
 }
@@ -338,7 +349,7 @@ impl SupabaseClient {
         // Extract user_metadata
         if let Some(metadata_value) = user_data.get("user_metadata") {
             let user_metadata: UserMetadata = serde_json::from_value(metadata_value.clone())
-                .unwrap_or_else(|_| UserMetadata::new(None, None, None, None));
+                .unwrap_or_else(|_| UserMetadata::new(None, None, None, None, None, None));
             Ok(Some(user_metadata))
         } else {
             Ok(None)

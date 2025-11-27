@@ -10,10 +10,12 @@ use serde_json::json;
 use axum::http::StatusCode;
 
 use crate::{
-    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced}},
+    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, UpdateAdminRequest, DeleteAdminRequest}},
     utils::ResponseUtils,
     error::AppError,
+    middleware::auth::AuthContext,
 };
+use axum::Extension;
 
 #[derive(Debug, Deserialize)]
 pub struct VerificationQuery {
@@ -183,4 +185,43 @@ pub async fn get_current_user_profile(
         .await?;
 
     Ok(ResponseUtils::success(user_profile))
+}
+
+/// PUT /users/admin - Update OWN admin profile (Admin + SuperAdmin)
+/// Admin can only update their own profile, identified from JWT
+pub async fn update_admin_user(
+    Extension(auth): Extension<AuthContext>,
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<UpdateAdminRequest>,
+) -> impl IntoResponse {
+    match auth_service.update_admin_user(auth.user_id, payload).await {
+        Ok(admin) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Admin user updated successfully",
+                "data": admin,
+                "timestamp": chrono::Utc::now()
+            }))
+        ).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// DELETE /users/admin - Soft delete admin user (SuperAdmin only)
+pub async fn delete_admin_user(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<DeleteAdminRequest>,
+) -> impl IntoResponse {
+    match auth_service.delete_admin_user(payload).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Admin user deleted successfully",
+                "timestamp": chrono::Utc::now()
+            }))
+        ).into_response(),
+        Err(e) => e.into_response(),
+    }
 }

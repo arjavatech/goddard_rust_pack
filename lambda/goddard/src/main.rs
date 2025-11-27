@@ -28,7 +28,9 @@ use controllers::{
         debug_auth_users,
         get_users_by_school_and_role,
         get_current_user_profile,
-        get_admins_by_school
+        get_admins_by_school,
+        update_admin_user,
+        delete_admin_user
     },
     school_controller::{
         create_school, get_all_schools, update_school, delete_school
@@ -196,7 +198,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/auth/debug-users", get(debug_auth_users))
         .route("/auth/users/filter", get(get_users_by_school_and_role))
         .route("/users/me", get(get_current_user_profile))
-        .route("/users/admin", get(get_admins_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/users/admin",
+            get(get_admins_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only))
+            .merge(put(update_admin_user).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+            .merge(delete(delete_admin_user).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        )
         .with_state(auth_service)
 
         // School Management APIs (Admin JWT or API Key)

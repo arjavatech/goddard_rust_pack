@@ -209,7 +209,7 @@ impl StudentFormAssignmentService {
 
         // Validate that the form template is active
         let form_template_ids = vec![request.form_template_id];
-        self.form_template_dao.validate_form_templates_active(&form_template_ids).await?;
+        self.dao.validate_form_templates_active(&form_template_ids).await?;
         println!("[DEBUG] StudentFormAssignmentService: Form template validated");
 
         // Call DAO to assign forms to all active students

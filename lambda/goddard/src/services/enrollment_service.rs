@@ -177,7 +177,9 @@ impl EnrollmentService {
             Some(school_id),
             Some(first_name.to_string()),
             Some(last_name.to_string()),
-            Some(role.to_string())
+            Some(role.to_string()),
+            None,  // phone_number - not provided in enrollment flow
+            None,  // is_verified - will be set after email confirmation
         );
 
         let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;

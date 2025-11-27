@@ -143,7 +143,7 @@ impl AuthDao {
             SELECT id, school_id, first_name, last_name, email, role,
                    COALESCE(is_verified, false) as is_verified, created_at
             FROM users
-            WHERE school_id = $1 AND role = 'Admin' AND is_verified = true
+            WHERE school_id = $1 AND role = 'Admin' AND is_verified = true AND (is_active = true OR is_active IS NULL)
             ORDER BY first_name, last_name
         "#;
 

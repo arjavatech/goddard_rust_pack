@@ -187,14 +187,15 @@ pub async fn get_current_user_profile(
     Ok(ResponseUtils::success(user_profile))
 }
 
-/// PUT /users/admin - Update OWN admin profile (Admin + SuperAdmin)
-/// Admin can only update their own profile, identified from JWT
+/// PUT /users/admin - Update admin profile
+/// Admin can only update their own profile (user_id from JWT)
+/// SuperAdmin can update any admin's profile (user_id from payload, or own if not provided)
 pub async fn update_admin_user(
     Extension(auth): Extension<AuthContext>,
     State(auth_service): State<Arc<AuthService>>,
     Json(payload): Json<UpdateAdminRequest>,
 ) -> impl IntoResponse {
-    match auth_service.update_admin_user(auth.user_id, payload).await {
+    match auth_service.update_admin_user(auth.user_id, auth.role.clone(), payload).await {
         Ok(admin) => (
             StatusCode::OK,
             Json(json!({

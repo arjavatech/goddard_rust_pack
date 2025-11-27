@@ -66,3 +66,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 2. Admin users created via /auth/invite-create-enhanced will have is_verified = true
 -- 3. Parent users will still default to is_verified = true
 -- 4. Other roles without explicit is_verified will default to false
+
+
+ALTER TABLE users
+ADD COLUMN phone_number VARCHAR(20) DEFAULT NULL;

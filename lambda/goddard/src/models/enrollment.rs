@@ -249,6 +249,16 @@ pub struct ChildWithForms {
     pub classroom_id: Uuid,
     pub classroom_name: String,
     pub forms: Vec<FormStatus>,
+    // Primary parent info
+    pub primary_parent_id: Uuid,
+    pub primary_parent_first_name: String,
+    pub primary_parent_last_name: String,
+    pub primary_parent_email: String,
+    // Secondary parent info (optional)
+    pub secondary_parent_id: Option<Uuid>,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -336,6 +346,11 @@ pub struct SchoolFormDetails {
     /// Example: { "Admission Form": { "status": "incomplete", "assigned_at": "26-09-2025" } }
     pub forms: serde_json::Value,
     pub additional_parent_email: Option<String>,
+    // Secondary parent details
+    pub secondary_parent_id: Option<Uuid>,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
 }
 
 // 8.4.1 Get Class-Based Enrollment Form Details

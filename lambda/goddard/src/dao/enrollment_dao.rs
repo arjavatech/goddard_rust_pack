@@ -448,6 +448,16 @@ impl EnrollmentDao {
                     e.id as enrollment_id,
                     cl.id as classroom_id,
                     cl.name as classroom_name,
+                    -- Primary parent info
+                    c.parent_id as primary_parent_id,
+                    pu.first_name as primary_parent_first_name,
+                    pu.last_name as primary_parent_last_name,
+                    pu.email as primary_parent_email,
+                    -- Secondary parent info
+                    c.secondary_parent_id as secondary_parent_id,
+                    su.first_name as secondary_parent_first_name,
+                    su.last_name as secondary_parent_last_name,
+                    su.email as secondary_parent_email,
                     sfa.id as student_form_assignment_id,
                     sfa.form_template_id,
                     ft.form_name,
@@ -460,13 +470,15 @@ impl EnrollmentDao {
                     sfa.approved_on
                 FROM users u
                 LEFT JOIN auth.users au ON au.email = u.email
-                INNER JOIN children c ON c.parent_id = u.id
+                INNER JOIN children c ON (c.parent_id = u.id OR c.secondary_parent_id = u.id)
+                INNER JOIN users pu ON pu.id = c.parent_id
+                LEFT JOIN users su ON su.id = c.secondary_parent_id
                 INNER JOIN enrollments e ON e.child_id = c.id
                 INNER JOIN classrooms cl ON cl.id = e.classroom_id
                 LEFT JOIN student_form_assignments sfa ON sfa.child_id = c.id
                 LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
                 WHERE u.school_id = $1
-                    AND u.role = 'Parent'
+                    AND u.role IN ('Parent', 'secondary-parent')
                 ORDER BY u.email, c.id, sfa.form_template_id
             )
             SELECT
@@ -483,6 +495,14 @@ impl EnrollmentDao {
                 enrollment_id,
                 classroom_id,
                 classroom_name,
+                primary_parent_id,
+                primary_parent_first_name,
+                primary_parent_last_name,
+                primary_parent_email,
+                secondary_parent_id,
+                secondary_parent_first_name,
+                secondary_parent_last_name,
+                secondary_parent_email,
                 COALESCE(
                     json_agg(
                         CASE WHEN form_template_id IS NOT NULL THEN
@@ -510,7 +530,9 @@ impl EnrollmentDao {
             FROM parent_children_forms
             GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_is_active, signed_status,
                      child_id, child_full_name, child_dob, child_status, enrollment_id,
-                     classroom_id, classroom_name
+                     classroom_id, classroom_name,
+                     primary_parent_id, primary_parent_first_name, primary_parent_last_name, primary_parent_email,
+                     secondary_parent_id, secondary_parent_first_name, secondary_parent_last_name, secondary_parent_email
             ORDER BY parent_email, child_full_name
         ";
 
@@ -541,6 +563,14 @@ impl EnrollmentDao {
                 classroom_id: row.get("classroom_id"),
                 classroom_name: row.get("classroom_name"),
                 forms,
+                primary_parent_id: row.get("primary_parent_id"),
+                primary_parent_first_name: row.get("primary_parent_first_name"),
+                primary_parent_last_name: row.get("primary_parent_last_name"),
+                primary_parent_email: row.get("primary_parent_email"),
+                secondary_parent_id: row.get("secondary_parent_id"),
+                secondary_parent_first_name: row.get("secondary_parent_first_name"),
+                secondary_parent_last_name: row.get("secondary_parent_last_name"),
+                secondary_parent_email: row.get("secondary_parent_email"),
             };
 
             // Add to parent or create new parent entry
@@ -646,10 +676,15 @@ impl EnrollmentDao {
                     ),
                     '{}'::jsonb
                 ) as forms,
-                NULL as additional_parent_email
+                NULL as additional_parent_email,
+                c.secondary_parent_id as secondary_parent_id,
+                sp.first_name as secondary_parent_first_name,
+                sp.last_name as secondary_parent_last_name,
+                sp.email as secondary_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             JOIN users u ON c.parent_id = u.id
+            LEFT JOIN users sp ON c.secondary_parent_id = sp.id
             JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE e.school_id = $1
                 AND u.is_active = true
@@ -676,6 +711,10 @@ impl EnrollmentDao {
             form_status: row.get("form_status"),
             forms: row.get("forms"),
             additional_parent_email: row.get("additional_parent_email"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            secondary_parent_first_name: row.get("secondary_parent_first_name"),
+            secondary_parent_last_name: row.get("secondary_parent_last_name"),
+            secondary_parent_email: row.get("secondary_parent_email"),
         }).collect())
     }
 
@@ -695,10 +734,15 @@ impl EnrollmentDao {
                 u.email as primary_email,
                 COALESCE(e.status, 'pending') as form_status,
                 COALESCE(e.application_status, '{}') as forms,
-                NULL as additional_parent_email
+                NULL as additional_parent_email,
+                c.secondary_parent_id as secondary_parent_id,
+                sp.first_name as secondary_parent_first_name,
+                sp.last_name as secondary_parent_last_name,
+                sp.email as secondary_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             JOIN users u ON c.parent_id = u.id
+            LEFT JOIN users sp ON c.secondary_parent_id = sp.id
             JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE e.school_id = $1
                 AND e.classroom_id = $2
@@ -726,6 +770,10 @@ impl EnrollmentDao {
             form_status: row.get("form_status"),
             forms: row.get("forms"),
             additional_parent_email: row.get("additional_parent_email"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            secondary_parent_first_name: row.get("secondary_parent_first_name"),
+            secondary_parent_last_name: row.get("secondary_parent_last_name"),
+            secondary_parent_email: row.get("secondary_parent_email"),
         }).collect())
     }
 

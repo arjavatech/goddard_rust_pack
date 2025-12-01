@@ -21,6 +21,7 @@ pub struct ParentChild {
     pub enrollment_id: Uuid,
     pub classroom_id: Uuid,
     pub classroom_name: String,
+    pub parent_type: String,  // "primary_parent" or "secondary_parent"
     pub forms: Vec<ParentChildForm>,
 }
 
@@ -52,6 +53,8 @@ pub struct ParentDetailsRow {
     pub child_last_name: Option<String>,
     pub child_dob: Option<NaiveDate>,
     pub child_status: Option<String>,
+    pub child_parent_id: Option<Uuid>,           // Child's primary parent_id
+    pub child_secondary_parent_id: Option<Uuid>, // Child's secondary_parent_id
     pub enrollment_id: Option<Uuid>,
     pub classroom_id: Option<Uuid>,
     pub classroom_name: Option<String>,

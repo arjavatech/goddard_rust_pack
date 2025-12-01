@@ -42,7 +42,14 @@ impl EnrollmentService {
             return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
         }
 
-        // Step 2: Create auth user via Supabase
+        // Step 1.1: Validate secondary parent fields if email is provided
+        if request.secondary_parent_email.is_some() {
+            if request.secondary_parent_first_name.is_none() || request.secondary_parent_last_name.is_none() {
+                return Err(AppError::Validation("Secondary parent first name and last name are required when secondary parent email is provided".to_string()));
+            }
+        }
+
+        // Step 2: Create auth user via Supabase (primary parent)
         let auth_result = self.create_auth_user(
             &request.parent_email,
             request.school_id,
@@ -66,7 +73,43 @@ impl EnrollmentService {
             }
         };
 
-        // Step 4: Create child
+        // Step 3.1: Create secondary parent if provided
+        let (secondary_parent_id, secondary_signup_email_sent, created_secondary_parent) =
+            if let (Some(sec_email), Some(sec_first_name), Some(sec_last_name)) = (
+                &request.secondary_parent_email,
+                &request.secondary_parent_first_name,
+                &request.secondary_parent_last_name,
+            ) {
+                // Create auth user for secondary parent
+                let sec_auth_result = self.create_auth_user(
+                    sec_email,
+                    request.school_id,
+                    sec_first_name,
+                    sec_last_name,
+                    "secondary-parent"
+                ).await?;
+
+                // Get or create secondary parent user record
+                let sec_parent = match self.enrollment_dao.get_parent_by_id(sec_auth_result.auth_user_id, request.school_id).await {
+                    Ok(existing) => existing,
+                    Err(_) => {
+                        self.enrollment_dao.create_parent(
+                            sec_auth_result.auth_user_id,
+                            request.school_id,
+                            sec_first_name,
+                            sec_last_name,
+                            sec_email,
+                            "secondary-parent"
+                        ).await?
+                    }
+                };
+
+                (Some(sec_auth_result.auth_user_id), Some(true), Some(sec_parent))
+            } else {
+                (None, None, None)
+            };
+
+        // Step 4: Create child with optional secondary_parent_id
         let created_child = self.enrollment_dao.create_child(
             auth_result.auth_user_id,
             request.school_id,
@@ -74,6 +117,7 @@ impl EnrollmentService {
             &request.child_last_name,
             request.child_birth_date,
             &request.gender,
+            secondary_parent_id,
         ).await?;
 
         // Step 5: Create enrollment
@@ -111,9 +155,22 @@ impl EnrollmentService {
             created_at: created_parent.created_at,
         };
 
+        // Build secondary parent details if created
+        let secondary_parent = created_secondary_parent.map(|sp| ParentDetails {
+            id: sp.id,
+            school_id: sp.school_id,
+            first_name: sp.first_name,
+            last_name: sp.last_name,
+            email: sp.email,
+            role: sp.role,
+            is_verified: sp.is_verified,
+            created_at: sp.created_at,
+        });
+
         let child = ChildDetails {
             id: created_child.id,
             parent_id: created_child.parent_id,
+            secondary_parent_id: created_child.secondary_parent_id,
             school_id: created_child.school_id,
             first_name: created_child.first_name.clone(),
             last_name: created_child.last_name.clone(),
@@ -151,9 +208,16 @@ impl EnrollmentService {
             assigned_forms_count,
             invite_id: auth_result.auth_user_id,
             signup_email_sent: true,
-            message: "Parent invite created successfully and signup email sent".to_string(),
+            secondary_parent_id,
+            secondary_signup_email_sent,
+            message: if secondary_parent_id.is_some() {
+                "Parent invite created successfully. Signup emails sent to both primary and secondary parents".to_string()
+            } else {
+                "Parent invite created successfully and signup email sent".to_string()
+            },
             details: ParentInviteDetails {
                 parent,
+                secondary_parent,
                 child,
                 enrollment,
                 assigned_forms: assigned_form_details,
@@ -269,7 +333,7 @@ impl EnrollmentService {
             return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
         }
 
-        // Step 3: Create child in children table
+        // Step 3: Create child in children table (no secondary parent for add_child flow)
         let created_child = self.enrollment_dao.create_child(
             request.parent_id,
             request.school_id,
@@ -277,6 +341,7 @@ impl EnrollmentService {
             &request.child_last_name,
             request.child_birth_date,
             &request.gender,
+            None, // secondary_parent_id - not supported in add_child flow
         ).await?;
 
         // Step 4: Create enrollment
@@ -321,6 +386,7 @@ impl EnrollmentService {
                 child: ChildDetails {
                     id: created_child.id,
                     parent_id: created_child.parent_id,
+                    secondary_parent_id: created_child.secondary_parent_id,
                     school_id: created_child.school_id,
                     first_name: created_child.first_name,
                     last_name: created_child.last_name,
@@ -440,6 +506,13 @@ impl EnrollmentService {
             if let (Some(child_id), Some(child_first_name), Some(child_last_name)) =
                 (&row.child_id, &row.child_first_name, &row.child_last_name) {
 
+                // Determine parent_type based on whether requesting parent is primary or secondary
+                let parent_type = if row.child_parent_id == Some(parent_id) {
+                    "primary_parent".to_string()
+                } else {
+                    "secondary_parent".to_string()
+                };
+
                 let child = children_map.entry(*child_id).or_insert_with(|| {
                     ParentChild {
                         child_id: *child_id,
@@ -449,6 +522,7 @@ impl EnrollmentService {
                         enrollment_id: row.enrollment_id.unwrap_or_default(),
                         classroom_id: row.classroom_id.unwrap_or_default(),
                         classroom_name: row.classroom_name.clone().unwrap_or_default(),
+                        parent_type,
                         forms: Vec::new(),
                     }
                 });

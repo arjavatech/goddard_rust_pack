@@ -125,8 +125,8 @@ impl EnrollmentDao {
     }
 
     // Single transaction method to create child with explicit parent verification
-    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str) -> ApiResult<CreatedChild> {
-        println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}", parent_id, school_id);
+    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
+        println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}, secondary_parent_id: {:?}", parent_id, school_id, secondary_parent_id);
 
         use tokio::time::{timeout, Duration};
 
@@ -172,12 +172,41 @@ impl EnrollmentDao {
             return Err(AppError::Database(format!("Parent with id {} not found in school {}", parent_id, school_id)));
         }
 
-        // Now insert child in same transaction
-        let child_insert_query = "INSERT INTO children (id, parent_id, school_id, first_name, last_name, birth_date, gender, status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', true, NOW(), NOW()) RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+        // Verify secondary parent exists if provided
+        if let Some(sec_parent_id) = secondary_parent_id {
+            println!("[DEBUG] [create_child] Verifying secondary parent exists: {} in school: {}", sec_parent_id, school_id);
+            let sec_parent_check_result = timeout(Duration::from_secs(5),
+                transaction.query_opt(parent_check_query, &[&sec_parent_id, &school_id])
+            ).await;
 
-        println!("[DEBUG] [create_child] Inserting child with verified parent");
+            let sec_parent_exists = match sec_parent_check_result {
+                Ok(result) => {
+                    match result.map_err(|e| AppError::Database(format!("Failed to verify secondary parent: {}", e)))? {
+                        Some(_) => {
+                            println!("[DEBUG] [create_child] Secondary parent verified successfully");
+                            true
+                        },
+                        None => {
+                            println!("[DEBUG] [create_child] Secondary parent not found in database");
+                            false
+                        }
+                    }
+                },
+                Err(_) => return Err(AppError::Database("Timeout verifying secondary parent exists".to_string()))
+            };
+
+            if !sec_parent_exists {
+                transaction.rollback().await.ok();
+                return Err(AppError::Database(format!("Secondary parent with id {} not found in school {}", sec_parent_id, school_id)));
+            }
+        }
+
+        // Now insert child in same transaction
+        let child_insert_query = "INSERT INTO children (id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'active', true, NOW(), NOW()) RETURNING id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+
+        println!("[DEBUG] [create_child] Inserting child with verified parent(s)");
         let child_result = timeout(Duration::from_secs(10),
-            transaction.query_one(child_insert_query, &[&parent_id, &school_id, &first_name, &last_name, &birth_date, &gender])
+            transaction.query_one(child_insert_query, &[&parent_id, &secondary_parent_id, &school_id, &first_name, &last_name, &birth_date, &gender])
         ).await;
 
         let row = match child_result {
@@ -197,6 +226,7 @@ impl EnrollmentDao {
         Ok(CreatedChild {
             id: row.get("id"),
             parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
             school_id: row.get("school_id"),
             first_name: row.get("first_name"),
             last_name: row.get("last_name"),
@@ -750,6 +780,8 @@ impl EnrollmentDao {
                 c.last_name as child_last_name,
                 c.birth_date as child_dob,
                 c.status as child_status,
+                c.parent_id as child_parent_id,
+                c.secondary_parent_id as child_secondary_parent_id,
                 e.id as enrollment_id,
                 cl.id as classroom_id,
                 cl.name as classroom_name,
@@ -797,6 +829,8 @@ impl EnrollmentDao {
             child_last_name: row.get("child_last_name"),
             child_dob: row.get("child_dob"),
             child_status: row.get("child_status"),
+            child_parent_id: row.get("child_parent_id"),
+            child_secondary_parent_id: row.get("child_secondary_parent_id"),
             enrollment_id: row.get("enrollment_id"),
             classroom_id: row.get("classroom_id"),
             classroom_name: row.get("classroom_name"),

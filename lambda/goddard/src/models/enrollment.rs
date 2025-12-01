@@ -14,6 +14,10 @@ pub struct ParentInviteRequest {
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    // Optional secondary parent fields
+    pub secondary_parent_email: Option<String>,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -24,6 +28,9 @@ pub struct ParentInviteResponse {
     pub assigned_forms_count: usize,
     pub invite_id: Uuid,
     pub signup_email_sent: bool,
+    // Secondary parent fields (optional)
+    pub secondary_parent_id: Option<Uuid>,
+    pub secondary_signup_email_sent: Option<bool>,
     pub message: String,
     pub details: ParentInviteDetails,
 }
@@ -31,6 +38,7 @@ pub struct ParentInviteResponse {
 #[derive(Debug, Serialize)]
 pub struct ParentInviteDetails {
     pub parent: ParentDetails,
+    pub secondary_parent: Option<ParentDetails>,
     pub child: ChildDetails,
     pub enrollment: EnrollmentDetails,
     pub assigned_forms: Vec<AssignedFormDetails>,
@@ -52,6 +60,7 @@ pub struct ParentDetails {
 pub struct ChildDetails {
     pub id: Uuid,
     pub parent_id: Uuid,
+    pub secondary_parent_id: Option<Uuid>,
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,
@@ -105,6 +114,7 @@ pub struct CreatedUser {
 pub struct CreatedChild {
     pub id: Uuid,
     pub parent_id: Uuid,
+    pub secondary_parent_id: Option<Uuid>,
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,

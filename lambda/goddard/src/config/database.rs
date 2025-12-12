@@ -58,24 +58,24 @@ impl DatabaseConfig {
             return Err(AppError::Database("Invalid DATABASE_URL format".to_string()));
         }
 
-        // Serverless optimized connection pool settings
-        // Use small pool size (3-4) as Docker/Lambda concurrency handles load distribution
-        // Pool size of 3-4 allows for nested transactions without deadlocks
+        // Fly.io optimized connection pool settings
+        // Pool size of 6 per machine (2 machines = 12 total) for persistent server deployment
+        // Allows for nested transactions without deadlocks while handling concurrent requests
         // (e.g., create_child opens transaction, create_enrollment needs separate connection)
-        let mut pool_config = PoolConfig::new(4);
+        let mut pool_config = PoolConfig::new(6);
 
-        // Timeouts optimized for Supabase Session Pooler
-        // Session pooler efficiently manages connections across multiple clients
+        // Timeouts optimized for Supabase Session Pooler on Fly.io
+        // Session Pooler maintains persistent connections across requests
         pool_config.timeouts.wait = Some(Duration::from_secs(5)); // Max wait time for connection from pool
         pool_config.timeouts.create = Some(Duration::from_secs(10)); // Max time to create new connection
         pool_config.timeouts.recycle = Some(Duration::from_secs(5)); // Max time to recycle connection
 
         config.pool = Some(pool_config);
 
-        // Supabase Session Pooler Configuration
-        // Uses Fast recycling method for efficient connection reuse
+        // Fly.io Session Pooler Configuration
+        // Uses Verified recycling method to enable prepared statements and connection validation
         config.manager = Some(deadpool_postgres::ManagerConfig {
-            recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+            recycling_method: deadpool_postgres::RecyclingMethod::Verified,
         });
 
         config.create_pool(Some(Runtime::Tokio1), NoTls)

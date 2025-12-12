@@ -660,6 +660,8 @@ impl EnrollmentService {
         let to_classroom = self.enrollment_dao.get_classroom_by_id(request.to_classroom_id).await?;
 
         // Build response
+        let message = format!("Student successfully promoted from {} to {}", from_classroom.name, to_classroom.name);
+
         let response = crate::models::enrollment::PromoteEnrollmentResponse {
             enrollment_id,
             child_id: enrollment.child_id,
@@ -678,7 +680,7 @@ impl EnrollmentService {
                 changed_by: Some(changed_by_user_id),
                 reason: request.reason,
             },
-            message: format!("Student successfully promoted from {} to {}", from_classroom.name, to_classroom.name),
+            message,
         };
 
         println!("[DEBUG] EnrollmentService: Successfully promoted enrollment {}", enrollment_id);

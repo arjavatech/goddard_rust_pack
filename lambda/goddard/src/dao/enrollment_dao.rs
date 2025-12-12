@@ -20,6 +20,21 @@ pub struct EnrollmentDao {
     pool: Pool,
 }
 
+#[derive(Debug)]
+pub struct EnrollmentWithClassroom {
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub classroom_id: Uuid,
+    pub child_first_name: String,
+    pub child_last_name: String,
+}
+
+#[derive(Debug)]
+pub struct ClassroomInfo {
+    pub id: Uuid,
+    pub name: String,
+}
+
 impl EnrollmentDao {
     pub fn new(pool: Pool) -> Self {
         Self { pool }
@@ -1061,6 +1076,65 @@ impl EnrollmentDao {
         Ok(())
     }
 
+    /// Get enrollment with classroom and child details
+    pub async fn get_enrollment_with_classroom(
+        &self,
+        enrollment_id: Uuid,
+        school_id: Uuid,
+    ) -> ApiResult<EnrollmentWithClassroom> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let query = r#"
+            SELECT
+                e.id AS enrollment_id,
+                e.child_id,
+                e.classroom_id,
+                c.first_name AS child_first_name,
+                c.last_name AS child_last_name
+            FROM enrollments e
+            INNER JOIN children c ON e.child_id = c.id
+            WHERE e.id = $1
+                AND e.school_id = $2
+                AND e.is_active = true
+        "#;
+
+        let row = client
+            .query_one(query, &[&enrollment_id, &school_id])
+            .await
+            .map_err(|_| AppError::NotFound("Enrollment not found".to_string()))?;
+
+        Ok(EnrollmentWithClassroom {
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            classroom_id: row.get("classroom_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+        })
+    }
+
+    /// Get classroom by ID
+    pub async fn get_classroom_by_id(&self, classroom_id: Uuid) -> ApiResult<ClassroomInfo> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let query = r#"
+            SELECT id, name
+            FROM classrooms
+            WHERE id = $1 AND is_active = true
+        "#;
+
+        let row = client
+            .query_one(query, &[&classroom_id])
+            .await
+            .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
+
+        Ok(ClassroomInfo {
+            id: row.get("id"),
+            name: row.get("name"),
+        })
+    }
+
     /// Update enrollment classroom (trigger will create transition record)
     pub async fn update_enrollment_classroom(
         &self,
@@ -1222,7 +1296,7 @@ impl EnrollmentDao {
 
     /// Get child by ID
     pub async fn get_child_by_id(&self, child_id: Uuid) -> ApiResult<crate::models::enrollment::ChildDetails> {
-        let query = "SELECT id, first_name, last_name, birth_date, gender, status, created_at
+        let query = "SELECT id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at
                      FROM children
                      WHERE id = $1 AND is_active = true";
 
@@ -1235,6 +1309,9 @@ impl EnrollmentDao {
 
         Ok(crate::models::enrollment::ChildDetails {
             id: row.get("id"),
+            parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            school_id: row.get("school_id"),
             first_name: row.get("first_name"),
             last_name: row.get("last_name"),
             birth_date: row.get("birth_date"),

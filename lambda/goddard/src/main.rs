@@ -24,6 +24,7 @@ use controllers::{
         get_invitation_summary,
         create_invitation,
         create_invitation_enhanced,
+        create_superadmin,
         clear_auth_table,
         debug_auth_users,
         get_users_by_school_and_role,
@@ -194,6 +195,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/auth/invitation-summary", get(get_invitation_summary))
         .route("/auth/invite-create", post(create_invitation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .route("/auth/invite-create-enhanced", post(create_invitation_enhanced).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/auth/create-superadmin", post(create_superadmin).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/auth/clear-table", delete(clear_auth_table))
         .route("/auth/debug-users", get(debug_auth_users))
         .route("/auth/users/filter", get(get_users_by_school_and_role))

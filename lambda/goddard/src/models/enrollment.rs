@@ -415,3 +415,78 @@ pub struct UpdateChildStatusResponse {
     pub updated_at: NaiveDateTime,
     pub message: String,
 }
+
+// ==========================================
+// CLASS TRANSITIONS API MODELS
+// ==========================================
+
+// ClassTransition model (database record)
+#[derive(Debug, Serialize, Clone)]
+pub struct ClassTransition {
+    pub id: Uuid,
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub school_id: Uuid,
+    pub from_classroom_id: Uuid,
+    pub to_classroom_id: Uuid,
+    pub changed_by: Option<Uuid>,
+    pub reason: Option<String>,
+    pub transitioned_at: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+}
+
+// API 1: Promote Enrollment - Request/Response
+#[derive(Debug, Deserialize)]
+pub struct PromoteEnrollmentRequest {
+    pub to_classroom_id: Uuid,
+    pub reason: Option<String>,
+    pub effective_date: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PromoteEnrollmentResponse {
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub child_name: String,
+    pub from_classroom: ClassroomInfo,
+    pub to_classroom: ClassroomInfo,
+    pub transition: TransitionInfo,
+    pub message: String,
+}
+
+// API 2: Edit Class Transition - Request/Response
+#[derive(Debug, Deserialize)]
+pub struct EditClassTransitionRequest {
+    pub to_classroom_id: Option<Uuid>,
+    pub reason: Option<String>,
+    pub transitioned_at: Option<NaiveDateTime>,
+    pub sync_enrollment: Option<bool>,  // Default: false
+}
+
+#[derive(Debug, Serialize)]
+pub struct EditClassTransitionResponse {
+    pub transition_id: Uuid,
+    pub enrollment_id: Uuid,
+    pub child_name: String,
+    pub from_classroom: ClassroomInfo,
+    pub to_classroom: ClassroomInfo,
+    pub transitioned_at: NaiveDateTime,
+    pub reason: Option<String>,
+    pub enrollment_synced: bool,
+    pub message: String,
+}
+
+// Shared helper structs
+#[derive(Debug, Serialize)]
+pub struct ClassroomInfo {
+    pub id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransitionInfo {
+    pub id: Uuid,
+    pub transitioned_at: NaiveDateTime,
+    pub changed_by: Option<Uuid>,
+    pub reason: Option<String>,
+}

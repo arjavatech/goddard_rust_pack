@@ -1043,4 +1043,204 @@ impl EnrollmentDao {
             })
         }).await
     }
+
+    // ==========================================
+    // CLASS TRANSITIONS DAO METHODS
+    // ==========================================
+
+    /// Set PostgreSQL session variable for trigger context
+    pub async fn set_current_user_context(&self, user_id: Uuid) -> ApiResult<()> {
+        let query = "SET LOCAL app.current_user_id = $1";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&user_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to set user context: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Update enrollment classroom (trigger will create transition record)
+    pub async fn update_enrollment_classroom(
+        &self,
+        enrollment_id: Uuid,
+        new_classroom_id: Uuid,
+        effective_date: Option<chrono::NaiveDateTime>,
+    ) -> ApiResult<()> {
+        let query = "UPDATE enrollments
+                     SET classroom_id = $1, updated_at = COALESCE($2, NOW())
+                     WHERE id = $3";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&new_classroom_id, &effective_date, &enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update enrollment classroom: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get latest transition for enrollment
+    pub async fn get_latest_transition_for_enrollment(
+        &self,
+        enrollment_id: Uuid
+    ) -> ApiResult<crate::models::enrollment::ClassTransition> {
+        let query = "SELECT id, enrollment_id, child_id, school_id,
+                            from_classroom_id, to_classroom_id, changed_by, reason,
+                            transitioned_at, created_at
+                     FROM class_transitions
+                     WHERE enrollment_id = $1 AND is_active = true
+                     ORDER BY transitioned_at DESC
+                     LIMIT 1";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_one(query, &[&enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get latest transition: {}", e)))?;
+
+        Ok(crate::models::enrollment::ClassTransition {
+            id: row.get("id"),
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            school_id: row.get("school_id"),
+            from_classroom_id: row.get("from_classroom_id"),
+            to_classroom_id: row.get("to_classroom_id"),
+            changed_by: row.get("changed_by"),
+            reason: row.get("reason"),
+            transitioned_at: row.get("transitioned_at"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    /// Update transition reason
+    pub async fn update_transition_reason(
+        &self,
+        transition_id: Uuid,
+        reason: &str
+    ) -> ApiResult<()> {
+        let query = "UPDATE class_transitions SET reason = $1 WHERE id = $2";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&reason, &transition_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update transition reason: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get transition by ID
+    pub async fn get_transition_by_id(
+        &self,
+        transition_id: Uuid,
+        school_id: Uuid
+    ) -> ApiResult<crate::models::enrollment::ClassTransition> {
+        let query = "SELECT id, enrollment_id, child_id, school_id,
+                            from_classroom_id, to_classroom_id, changed_by, reason,
+                            transitioned_at, created_at
+                     FROM class_transitions
+                     WHERE id = $1 AND school_id = $2 AND is_active = true";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_opt(query, &[&transition_id, &school_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get transition: {}", e)))?
+            .ok_or_else(|| AppError::NotFound("Transition record not found".to_string()))?;
+
+        Ok(crate::models::enrollment::ClassTransition {
+            id: row.get("id"),
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            school_id: row.get("school_id"),
+            from_classroom_id: row.get("from_classroom_id"),
+            to_classroom_id: row.get("to_classroom_id"),
+            changed_by: row.get("changed_by"),
+            reason: row.get("reason"),
+            transitioned_at: row.get("transitioned_at"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    /// Update transition record fields (NO trigger, direct UPDATE)
+    pub async fn update_transition_record(
+        &self,
+        transition_id: Uuid,
+        to_classroom_id: Option<Uuid>,
+        reason: Option<String>,
+        transitioned_at: Option<chrono::NaiveDateTime>,
+    ) -> ApiResult<crate::models::enrollment::ClassTransition> {
+        let query = "UPDATE class_transitions
+                     SET to_classroom_id = COALESCE($1, to_classroom_id),
+                         reason = COALESCE($2, reason),
+                         transitioned_at = COALESCE($3, transitioned_at)
+                     WHERE id = $4
+                     RETURNING id, enrollment_id, child_id, school_id,
+                               from_classroom_id, to_classroom_id, changed_by, reason,
+                               transitioned_at, created_at";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_one(query, &[&to_classroom_id, &reason, &transitioned_at, &transition_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update transition record: {}", e)))?;
+
+        Ok(crate::models::enrollment::ClassTransition {
+            id: row.get("id"),
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            school_id: row.get("school_id"),
+            from_classroom_id: row.get("from_classroom_id"),
+            to_classroom_id: row.get("to_classroom_id"),
+            changed_by: row.get("changed_by"),
+            reason: row.get("reason"),
+            transitioned_at: row.get("transitioned_at"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    /// Update enrollment classroom WITHOUT triggering transition (for sync)
+    pub async fn update_enrollment_classroom_direct(
+        &self,
+        enrollment_id: Uuid,
+        new_classroom_id: Uuid,
+    ) -> ApiResult<()> {
+        let query = "UPDATE enrollments
+                     SET classroom_id = $1, updated_at = NOW()
+                     WHERE id = $2";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&new_classroom_id, &enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update enrollment classroom: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get child by ID
+    pub async fn get_child_by_id(&self, child_id: Uuid) -> ApiResult<crate::models::enrollment::ChildDetails> {
+        let query = "SELECT id, first_name, last_name, birth_date, gender, status, created_at
+                     FROM children
+                     WHERE id = $1 AND is_active = true";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_opt(query, &[&child_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get child: {}", e)))?
+            .ok_or_else(|| AppError::NotFound("Child not found".to_string()))?;
+
+        Ok(crate::models::enrollment::ChildDetails {
+            id: row.get("id"),
+            first_name: row.get("first_name"),
+            last_name: row.get("last_name"),
+            birth_date: row.get("birth_date"),
+            gender: row.get("gender"),
+            status: row.get("status"),
+            created_at: row.get("created_at"),
+        })
+    }
 }

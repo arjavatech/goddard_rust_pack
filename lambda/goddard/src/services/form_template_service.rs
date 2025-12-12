@@ -18,6 +18,16 @@ impl FormTemplateService {
             return Err(AppError::Validation("Form name cannot be empty".to_string()));
         }
 
+        // Validate due_date is not in the past
+        if let Some(due_date) = request.due_date {
+            let today = chrono::Local::now().date_naive();
+            if due_date < today {
+                return Err(AppError::Validation(
+                    "due_date must be greater than or equal to current date".to_string()
+                ));
+            }
+        }
+
         self.dao.create_form_template(&request).await
     }
 
@@ -28,6 +38,16 @@ impl FormTemplateService {
     pub async fn update_form_template(&self, request: UpdateFormTemplateRequest) -> Result<FormTemplate, AppError> {
         if request.form_name.trim().is_empty() {
             return Err(AppError::Validation("Form name cannot be empty".to_string()));
+        }
+
+        // Validate due_date is not in the past
+        if let Some(due_date) = request.due_date {
+            let today = chrono::Local::now().date_naive();
+            if due_date < today {
+                return Err(AppError::Validation(
+                    "due_date must be greater than or equal to current date".to_string()
+                ));
+            }
         }
 
         self.dao.update_form_template(&request).await

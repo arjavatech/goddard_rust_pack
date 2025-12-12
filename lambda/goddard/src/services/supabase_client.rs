@@ -139,6 +139,11 @@ impl SupabaseClient {
     }
 
     pub async fn create_user_invitation(&self, email: &str, user_metadata: Option<serde_json::Value>) -> Result<String, AppError> {
+        // DEBUG: Log service role key prefix for verification
+        let key_len = self.service_role_key.len();
+        let prefix_len = std::cmp::min(30, key_len);
+        tracing::info!("🔑 Creating user with service_role_key (prefix): {}...", &self.service_role_key[..prefix_len]);
+
         // Step 1: Create user with email_confirm: false (unconfirmed state)
         let mut create_request_body = json!({
             "email": email,

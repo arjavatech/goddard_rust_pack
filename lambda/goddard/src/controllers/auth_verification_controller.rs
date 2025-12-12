@@ -10,7 +10,7 @@ use serde_json::json;
 use axum::http::StatusCode;
 
 use crate::{
-    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, UpdateAdminRequest, DeleteAdminRequest}},
+    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest}},
     utils::ResponseUtils,
     error::AppError,
     middleware::auth::AuthContext,
@@ -63,6 +63,16 @@ pub async fn create_invitation(
     Json(payload): Json<CreateInvitationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let response = auth_service.create_invitation(payload).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// POST /auth/create-superadmin
+/// Create SuperAdmin user for a school
+pub async fn create_superadmin(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<CreateSuperAdminRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = auth_service.create_superadmin(payload).await?;
     Ok(ResponseUtils::success(response))
 }
 

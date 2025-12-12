@@ -81,6 +81,15 @@ pub struct CreateInvitationRequestEnhanced {
     pub role: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateSuperAdminRequest {
+    pub email: String,
+    pub school_id: String,           // UUID format
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CreateInvitationResponse {
     pub success: bool,
@@ -316,6 +325,49 @@ impl AuthService {
         Ok(CreateInvitationResponse {
             success: true,
             message: "User invitation created successfully. Please check email for confirmation link.".to_string(),
+            email: request.email,
+            user_id,
+            timestamp: Utc::now(),
+        })
+    }
+
+    /// Create SuperAdmin user for a school
+    /// - Sets role to "SuperAdmin"
+    /// - Pre-sets is_verified to true
+    /// - Pre-sets is_active to true (via database defaults)
+    pub async fn create_superadmin(&self, request: CreateSuperAdminRequest) -> ApiResult<CreateInvitationResponse> {
+        // Step 1: Validate email format
+        ValidationUtils::validate_email(&request.email)?;
+
+        // Step 2: Validate and parse school_id (required)
+        ValidationUtils::validate_uuid(&request.school_id)?;
+        let school_uuid = uuid::Uuid::parse_str(&request.school_id)
+            .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
+
+        // Step 3: Check if user already exists
+        if self.dao.user_exists_by_email(&request.email).await? {
+            return Err(AppError::Conflict("User already exists".to_string()));
+        }
+
+        // Step 4: Build metadata with role = "SuperAdmin" and is_verified = true
+        let metadata = UserMetadata::new(
+            Some(school_uuid),
+            Some(request.first_name.clone()),
+            Some(request.last_name.clone()),
+            Some("SuperAdmin".to_string()),  // ROLE = SuperAdmin
+            request.phone_number.clone(),
+            Some(true),  // is_verified = true
+        );
+
+        // Step 5: Create user invitation via Supabase with enhanced metadata
+        let user_id = self.supabase_client
+            .create_user_invitation_enhanced(&request.email, metadata)
+            .await?;
+
+        // Step 6: Return success response
+        Ok(CreateInvitationResponse {
+            success: true,
+            message: "SuperAdmin user created successfully. Please check email for confirmation link.".to_string(),
             email: request.email,
             user_id,
             timestamp: Utc::now(),

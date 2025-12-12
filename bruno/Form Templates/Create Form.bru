@@ -16,10 +16,46 @@ headers {
 
 body:json {
   {
-       "school_id": "8863a33c-ab95-4ab9-8b47-24e33bc52849",
+    "school_id": "8863a33c-ab95-4ab9-8b47-24e33bc52849",
+    "form_name": "Student Auth Form",
+    "fillout_form_id": "www.google.com",
+    "due_date": "2025-12-31"
+  }
+}
+
+docs {
+  # Create Form Template
+
+  Creates a new form template for a school.
+
+  **Authentication**: API Key (X-API-Key header)
+
+  **Request Body**:
+  - `school_id` (UUID, required) - School ID
+  - `form_name` (string, required) - Name of the form
+  - `fillout_form_id` (string, optional) - Fillout form ID/URL
+  - `due_date` (date, optional) - Form completion deadline (YYYY-MM-DD format, must be >= current date)
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "uuid",
+      "school_id": "uuid",
       "form_name": "Student Auth Form",
-    "fillout_form_id": "www.google.com"
+      "form_type": null,
+      "fillout_form_id": "www.google.com",
+      "due_date": "2025-12-31",
+      "status": "school_default",
+      "is_required": false,
+      "display_order": null,
+      "is_active": true,
+      "created_at": "timestamp",
+      "updated_at": "timestamp"
     }
+  }
+  ```
 }
 
 settings {

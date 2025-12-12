@@ -1,0 +1,74 @@
+meta {
+  name: Update Admin
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{base_url}}/users/admin
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{jwt_token}}
+}
+
+body:json {
+  {
+    "user_id": "{{admin_user_id}}",
+    "school_id": "{{school_id}}",
+    "first_name": "Updated First Name",
+    "last_name": "Updated Last Name",
+    "role": "admin"
+  }
+}
+
+vars:pre-request {
+  admin_user_id:
+  school_id:
+}
+
+assert {
+  res.status: eq 200
+  res.body.success: eq true
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("updated_admin_id", res.body.data.id);
+    console.log("Admin updated successfully:", res.body.data.email);
+  }
+}
+
+docs {
+  # Update Admin User
+
+  Updates an existing admin user's details including name and role.
+
+  **Authentication**: JWT Bearer Token (Admin role required)
+
+  **Request Body**:
+  - `user_id` (UUID, required) - ID of the admin user to update
+  - `school_id` (UUID, required) - School ID for authorization
+  - `first_name` (string, required) - Updated first name
+  - `last_name` (string, required) - Updated last name
+  - `role` (string, required) - Updated role (admin/superadmin)
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "uuid",
+      "school_id": "uuid",
+      "first_name": "Updated First Name",
+      "last_name": "Updated Last Name",
+      "email": "admin@example.com",
+      "role": "admin",
+      "is_verified": true,
+      "created_at": "timestamp"
+    }
+  }
+  ```
+}

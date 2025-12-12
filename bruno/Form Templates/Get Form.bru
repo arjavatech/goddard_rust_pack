@@ -21,3 +21,40 @@ headers {
 settings {
   encodeUrl: true
 }
+
+docs {
+  # Get Form Templates
+
+  Retrieves all active form templates for a specific school.
+
+  **Authentication**: API Key (X-API-Key header)
+
+  **Query Parameters**:
+  - `school_id` (UUID, required) - School ID to filter forms
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": "uuid",
+        "school_id": "uuid",
+        "form_name": "Admission Form",
+        "form_type": "school_form",
+        "fillout_form_id": "www.example.com",
+        "due_date": "2025-12-31",
+        "status": "school_default",
+        "is_required": false,
+        "display_order": null,
+        "created_at": "timestamp"
+      }
+    ]
+  }
+  ```
+
+  **Note**:
+  - Only returns active forms (is_active = true)
+  - Forms are sorted by form_name in ascending order
+  - The `due_date` field indicates when the form must be completed (optional)
+}

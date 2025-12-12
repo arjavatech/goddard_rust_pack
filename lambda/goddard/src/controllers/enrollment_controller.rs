@@ -151,3 +151,48 @@ pub async fn update_child_status(
     let response = enrollment_service.update_child_status(child_id, payload).await?;
     Ok(ResponseUtils::success(response))
 }
+
+// ==========================================
+// CLASS TRANSITIONS CONTROLLER HANDLERS
+// ==========================================
+
+/// POST /enrollments/:enrollment_id/promote
+/// Promote student to next class (creates new transition record) (JWT protected - Admin/SuperAdmin)
+pub async fn promote_enrollment(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(enrollment_id): Path<Uuid>,
+    Json(payload): Json<crate::models::enrollment::PromoteEnrollmentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Promoting enrollment - User: {}, Role: {:?}, Enrollment ID: {}, Target Classroom: {}",
+        auth.email, auth.role, enrollment_id, payload.to_classroom_id);
+
+    let response = enrollment_service.promote_enrollment(
+        enrollment_id,
+        payload,
+        auth.user_id,
+        auth.school_id
+    ).await?;
+
+    Ok(ResponseUtils::success(response))
+}
+
+/// PATCH /class-transitions/:transition_id
+/// Edit existing transition record (no new entry created) (JWT protected - Admin/SuperAdmin)
+pub async fn edit_class_transition(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(transition_id): Path<Uuid>,
+    Json(payload): Json<crate::models::enrollment::EditClassTransitionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Editing class transition - User: {}, Role: {:?}, Transition ID: {}",
+        auth.email, auth.role, transition_id);
+
+    let response = enrollment_service.edit_class_transition(
+        transition_id,
+        payload,
+        auth.school_id
+    ).await?;
+
+    Ok(ResponseUtils::success(response))
+}

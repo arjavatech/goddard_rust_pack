@@ -21,6 +21,7 @@ impl FormTemplateDao {
             form_name: row.get("form_name"),
             form_type: row.get("form_type"),
             fillout_form_id: row.get("fillout_form_id"),
+            due_date: row.get("due_date"),
             status: row.get("status"),
             is_required: row.get("is_required"),
             display_order: row.get("display_order"),
@@ -35,15 +36,15 @@ impl FormTemplateDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let query = r#"
-            INSERT INTO form_templates (id, school_id, form_name, fillout_form_id, status, is_active, created_at, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, 'school_default', true, NOW(), NOW())
-            RETURNING id, school_id, form_name, form_type, fillout_form_id, status, is_required, display_order, is_active, created_at, updated_at
+            INSERT INTO form_templates (id, school_id, form_name, fillout_form_id, due_date, status, is_active, created_at, updated_at)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, 'school_default', true, NOW(), NOW())
+            RETURNING id, school_id, form_name, form_type, fillout_form_id, due_date, status, is_required, display_order, is_active, created_at, updated_at
         "#;
 
         let stmt = client.prepare(query).await
             .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
 
-        let row = client.query_one(&stmt, &[&request.school_id, &request.form_name, &request.fillout_form_id])
+        let row = client.query_one(&stmt, &[&request.school_id, &request.form_name, &request.fillout_form_id, &request.due_date])
             .await
             .map_err(|e| AppError::Database(format!("Failed to create form template: {}", e)))?;
 
@@ -55,7 +56,7 @@ impl FormTemplateDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let query = r#"
-            SELECT id, school_id, form_name, form_type, fillout_form_id, status, is_required, display_order, is_active, created_at, updated_at
+            SELECT id, school_id, form_name, form_type, fillout_form_id, due_date, status, is_required, display_order, is_active, created_at, updated_at
             FROM form_templates
             WHERE school_id = $1 AND (is_active = true OR is_active IS NULL)
             ORDER BY form_name ASC
@@ -78,15 +79,15 @@ impl FormTemplateDao {
 
         let query = r#"
             UPDATE form_templates
-            SET form_name = $3, form_type = $4, fillout_form_id = $5, status = $6, is_required = $7, display_order = $8, updated_at = NOW()
+            SET form_name = $3, form_type = $4, fillout_form_id = $5, due_date = $6, status = $7, is_required = $8, display_order = $9, updated_at = NOW()
             WHERE id = $2 AND school_id = $1 AND (is_active = true OR is_active IS NULL)
-            RETURNING id, school_id, form_name, form_type, fillout_form_id, status, is_required, display_order, is_active, created_at, updated_at
+            RETURNING id, school_id, form_name, form_type, fillout_form_id, due_date, status, is_required, display_order, is_active, created_at, updated_at
         "#;
 
         let stmt = client.prepare(query).await
             .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
 
-        let rows = client.query(&stmt, &[&request.school_id, &request.id, &request.form_name, &request.form_type, &request.fillout_form_id, &request.status, &request.is_required, &request.display_order])
+        let rows = client.query(&stmt, &[&request.school_id, &request.id, &request.form_name, &request.form_type, &request.fillout_form_id, &request.due_date, &request.status, &request.is_required, &request.display_order])
             .await
             .map_err(|e| AppError::Database(format!("Failed to update form template: {}", e)))?;
 

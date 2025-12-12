@@ -609,4 +609,150 @@ impl EnrollmentService {
         println!("[DEBUG] EnrollmentService: Updating child {} status to: {}", child_id, request.status);
         self.enrollment_dao.update_child_status(child_id, &request.status).await
     }
+
+    // ==========================================
+    // CLASS TRANSITIONS SERVICE METHODS
+    // ==========================================
+
+    /// Promote student to next class (creates new transition record via trigger)
+    pub async fn promote_enrollment(
+        &self,
+        enrollment_id: Uuid,
+        request: crate::models::enrollment::PromoteEnrollmentRequest,
+        changed_by_user_id: Uuid,
+        school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::PromoteEnrollmentResponse> {
+        println!("[DEBUG] EnrollmentService: Promoting enrollment {} to classroom {}", enrollment_id, request.to_classroom_id);
+
+        // Step 1: Get current enrollment details
+        let enrollment = self.enrollment_dao.get_enrollment_with_classroom(enrollment_id, school_id).await?;
+
+        // Step 2: Verify target classroom belongs to same school
+        if !self.enrollment_dao.verify_classroom_belongs_to_school(request.to_classroom_id, school_id).await? {
+            return Err(AppError::Validation("Target classroom does not belong to the school".to_string()));
+        }
+
+        // Step 3: Verify different classroom (prevent no-op)
+        if enrollment.classroom_id == request.to_classroom_id {
+            return Err(AppError::Validation("Student is already in the target classroom".to_string()));
+        }
+
+        // Step 4: Set PostgreSQL session variable for trigger to capture changed_by
+        self.enrollment_dao.set_current_user_context(changed_by_user_id).await?;
+
+        // Step 5: Update enrollment classroom_id (trigger will create transition record)
+        self.enrollment_dao.update_enrollment_classroom(
+            enrollment_id,
+            request.to_classroom_id,
+            request.effective_date
+        ).await?;
+
+        // Step 6: Get the newly created transition record
+        let transition = self.enrollment_dao.get_latest_transition_for_enrollment(enrollment_id).await?;
+
+        // Step 7: Update transition reason if provided
+        if let Some(reason) = &request.reason {
+            self.enrollment_dao.update_transition_reason(transition.id, reason).await?;
+        }
+
+        // Step 8: Get classroom details for response
+        let from_classroom = self.enrollment_dao.get_classroom_by_id(enrollment.classroom_id).await?;
+        let to_classroom = self.enrollment_dao.get_classroom_by_id(request.to_classroom_id).await?;
+
+        // Build response
+        let response = crate::models::enrollment::PromoteEnrollmentResponse {
+            enrollment_id,
+            child_id: enrollment.child_id,
+            child_name: format!("{} {}", enrollment.child_first_name, enrollment.child_last_name),
+            from_classroom: crate::models::enrollment::ClassroomInfo {
+                id: from_classroom.id,
+                name: from_classroom.name,
+            },
+            to_classroom: crate::models::enrollment::ClassroomInfo {
+                id: to_classroom.id,
+                name: to_classroom.name,
+            },
+            transition: crate::models::enrollment::TransitionInfo {
+                id: transition.id,
+                transitioned_at: transition.transitioned_at,
+                changed_by: Some(changed_by_user_id),
+                reason: request.reason,
+            },
+            message: format!("Student successfully promoted from {} to {}", from_classroom.name, to_classroom.name),
+        };
+
+        println!("[DEBUG] EnrollmentService: Successfully promoted enrollment {}", enrollment_id);
+        Ok(response)
+    }
+
+    /// Edit existing class transition record (no new entry created)
+    pub async fn edit_class_transition(
+        &self,
+        transition_id: Uuid,
+        request: crate::models::enrollment::EditClassTransitionRequest,
+        school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::EditClassTransitionResponse> {
+        println!("[DEBUG] EnrollmentService: Editing class transition {}", transition_id);
+
+        // Step 1: Get existing transition record
+        let transition = self.enrollment_dao.get_transition_by_id(transition_id, school_id).await?;
+
+        // Step 2: Validate new classroom if provided
+        if let Some(new_classroom_id) = request.to_classroom_id {
+            if !self.enrollment_dao.verify_classroom_belongs_to_school(new_classroom_id, school_id).await? {
+                return Err(AppError::Validation("Target classroom does not belong to the school".to_string()));
+            }
+
+            // Prevent setting to same classroom as 'from'
+            if new_classroom_id == transition.from_classroom_id {
+                return Err(AppError::Validation("Cannot set to_classroom same as from_classroom".to_string()));
+            }
+        }
+
+        // Step 3: Update transition record (NO NEW ENTRY)
+        let updated_transition = self.enrollment_dao.update_transition_record(
+            transition_id,
+            request.to_classroom_id,
+            request.reason.clone(),
+            request.transitioned_at,
+        ).await?;
+
+        // Step 4: Optionally sync enrollment if requested
+        let mut enrollment_synced = false;
+        if request.sync_enrollment.unwrap_or(false) && request.to_classroom_id.is_some() {
+            self.enrollment_dao.update_enrollment_classroom_direct(
+                transition.enrollment_id,
+                request.to_classroom_id.unwrap(),
+            ).await?;
+            enrollment_synced = true;
+        }
+
+        // Step 5: Get classroom details
+        let from_classroom = self.enrollment_dao.get_classroom_by_id(transition.from_classroom_id).await?;
+        let to_classroom = self.enrollment_dao.get_classroom_by_id(updated_transition.to_classroom_id).await?;
+
+        // Step 6: Get child name
+        let child = self.enrollment_dao.get_child_by_id(transition.child_id).await?;
+
+        let response = crate::models::enrollment::EditClassTransitionResponse {
+            transition_id,
+            enrollment_id: transition.enrollment_id,
+            child_name: format!("{} {}", child.first_name, child.last_name),
+            from_classroom: crate::models::enrollment::ClassroomInfo {
+                id: from_classroom.id,
+                name: from_classroom.name,
+            },
+            to_classroom: crate::models::enrollment::ClassroomInfo {
+                id: to_classroom.id,
+                name: to_classroom.name,
+            },
+            transitioned_at: updated_transition.transitioned_at,
+            reason: updated_transition.reason,
+            enrollment_synced,
+            message: "Transition record updated successfully".to_string(),
+        };
+
+        println!("[DEBUG] EnrollmentService: Successfully edited class transition {}", transition_id);
+        Ok(response)
+    }
 }

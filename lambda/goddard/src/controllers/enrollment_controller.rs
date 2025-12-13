@@ -156,7 +156,7 @@ pub async fn update_child_status(
 // CLASS TRANSITIONS CONTROLLER HANDLERS
 // ==========================================
 
-/// POST /enrollments/:enrollment_id/promote
+/// POST /class-promotions/:enrollment_id
 /// Promote student to next class (creates new transition record) (JWT protected - Admin/SuperAdmin)
 pub async fn promote_enrollment(
     Extension(auth): Extension<AuthContext>,

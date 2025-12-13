@@ -252,7 +252,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/parent/:parent_id/activate", patch(activate_parent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/children/:child_id/status", patch(update_child_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         // Class Transitions APIs (Admin JWT or API Key)
-        .route("/enrollments/:enrollment_id/promote", post(promote_enrollment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-promotions/:enrollment_id", post(promote_enrollment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/class-transitions/:transition_id", patch(edit_class_transition).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(enrollment_service)
 

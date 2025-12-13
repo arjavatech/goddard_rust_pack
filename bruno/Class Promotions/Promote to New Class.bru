@@ -1,11 +1,11 @@
 meta {
-  name: Promote Enrollment
+  name: Promote to New Class
   type: http
-  seq: 20
+  seq: 1
 }
 
 post {
-  url: {{base_url}}/enrollments/{{enrollment_id}}/promote
+  url: {{base_url}}/class-promotions/{{enrollment_id}}
   body: json
   auth: bearer
 }
@@ -40,7 +40,7 @@ script:post-response {
 }
 
 docs {
-  # Promote Enrollment to Next Class
+  # Promote Student to New Class
 
   Promotes a student to a new classroom by creating a class transition record.
 

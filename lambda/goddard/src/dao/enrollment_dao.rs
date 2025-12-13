@@ -85,6 +85,17 @@ impl EnrollmentDao {
         }).await
     }
 
+    // Step 1.1: Verify enrollment belongs to school
+    pub async fn verify_enrollment_belongs_to_school(&self, enrollment_id: Uuid, school_id: Uuid) -> ApiResult<bool> {
+        self.execute_with_connection(|client| async move {
+            let query = "SELECT COUNT(*) as count FROM enrollments WHERE id = $1 AND school_id = $2 AND is_active = true";
+            let row = client.query_one(query, &[&enrollment_id, &school_id]).await
+                .map_err(|e| AppError::Database(format!("Failed to verify enrollment: {}", e)))?;
+            let count: i64 = row.get("count");
+            Ok(count > 0)
+        }).await
+    }
+
     // Step 2: Check if parent email already exists for this school
     pub async fn check_email_exists(&self, email: &str, school_id: Uuid) -> ApiResult<bool> {
         let email = email.to_string(); // Clone for move
@@ -1063,19 +1074,6 @@ impl EnrollmentDao {
     // CLASS TRANSITIONS DAO METHODS
     // ==========================================
 
-    /// Set PostgreSQL session variable for trigger context
-    pub async fn set_current_user_context(&self, user_id: Uuid) -> ApiResult<()> {
-        let query = "SET LOCAL app.current_user_id = $1";
-
-        let client = self.pool.get().await
-            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
-
-        client.execute(query, &[&user_id]).await
-            .map_err(|e| AppError::Database(format!("Failed to set user context: {}", e)))?;
-
-        Ok(())
-    }
-
     /// Get enrollment with classroom and child details
     pub async fn get_enrollment_with_classroom(
         &self,
@@ -1155,6 +1153,43 @@ impl EnrollmentDao {
         Ok(())
     }
 
+    /// Update enrollment classroom with user context in a single transaction
+    /// This ensures the database trigger can capture the changed_by user
+    pub async fn update_enrollment_classroom_with_user_context(
+        &self,
+        enrollment_id: Uuid,
+        new_classroom_id: Uuid,
+        _effective_date: Option<chrono::NaiveDateTime>,
+        changed_by_user_id: Uuid,
+    ) -> ApiResult<()> {
+        self.execute_with_connection(|mut client| async move {
+            // Start transaction
+            let transaction = client.transaction().await
+                .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+            // SET LOCAL - must use string formatting because PostgreSQL doesn't support $N in SET commands
+            // Safe: UUID is validated type, no SQL injection possible
+            let set_context_query = format!("SET LOCAL app.current_user_id = '{}'", changed_by_user_id);
+            transaction.execute(&set_context_query, &[]).await
+                .map_err(|e| AppError::Database(format!("Failed to set user context: {}", e)))?;
+
+            // UPDATE enrollments - trigger will fire and read app.current_user_id
+            // Note: updated_at always uses NOW() as it represents when the record was modified
+            let update_query = "UPDATE enrollments
+                               SET classroom_id = $1, updated_at = NOW()
+                               WHERE id = $2";
+
+            transaction.execute(update_query, &[&new_classroom_id, &enrollment_id]).await
+                .map_err(|e| AppError::Database(format!("Failed to update enrollment classroom: {}", e)))?;
+
+            // Commit transaction
+            transaction.commit().await
+                .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+            Ok(())
+        }).await
+    }
+
     /// Get latest transition for enrollment
     pub async fn get_latest_transition_for_enrollment(
         &self,
@@ -1165,14 +1200,29 @@ impl EnrollmentDao {
                             transitioned_at, created_at
                      FROM class_transitions
                      WHERE enrollment_id = $1 AND is_active = true
-                     ORDER BY transitioned_at DESC
+                     ORDER BY transitioned_at DESC, created_at DESC, id DESC
                      LIMIT 1";
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
-        let row = client.query_one(query, &[&enrollment_id]).await
-            .map_err(|e| AppError::Database(format!("Failed to get latest transition: {}", e)))?;
+        let rows = client.query(query, &[&enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to query transitions: {}", e)))?;
+
+        if rows.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "No class transitions found for enrollment {}",
+                enrollment_id
+            )));
+        }
+
+        // If multiple rows exist, log warning but continue with first (most recent)
+        if rows.len() > 1 {
+            println!("[WARN] Found {} active transitions for enrollment {}. Using most recent.",
+                rows.len(), enrollment_id);
+        }
+
+        let row = &rows[0];
 
         Ok(crate::models::enrollment::ClassTransition {
             id: row.get("id"),

@@ -46,7 +46,7 @@ use controllers::{
         create_class_form_override, delete_class_form_override
     },
     enrollment_controller::{
-        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, activate_parent, update_child_status, promote_enrollment, edit_class_transition
+        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, activate_parent, update_child_status, promote_enrollment, bulk_promote_enrollments, edit_class_transition
     },
     parent_details_controller::{
         get_parent_details_by_id
@@ -253,7 +253,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/children/:child_id/status", patch(update_child_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         // Class Transitions APIs (Admin JWT or API Key)
         .route("/class-promotions/:enrollment_id", post(promote_enrollment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
-        .route("/class-transitions/:transition_id", patch(edit_class_transition).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-promotions/bulk", post(bulk_promote_enrollments).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-transitions/:enrollment_id", patch(edit_class_transition).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(enrollment_service)
 
         // Form Submissions Management APIs (Admin JWT or API Key)

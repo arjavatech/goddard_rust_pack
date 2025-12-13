@@ -249,6 +249,7 @@ impl StudentFormAssignmentDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // Convert status enum to string for database
         let status_str = match request.status {
             StudentFormAssignmentStatus::Approved => "approved",
             StudentFormAssignmentStatus::Rejected => "rejected",
@@ -257,7 +258,7 @@ impl StudentFormAssignmentDao {
 
         let now = Utc::now().naive_utc();
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Executing review update query");
+        println!("[DEBUG] StudentFormAssignmentDAO: Executing review update query with status: {}", status_str);
         let row = client.query_one(
             r#"
             UPDATE student_form_assignments
@@ -289,14 +290,18 @@ impl StudentFormAssignmentDao {
 
         println!("[DEBUG] StudentFormAssignmentDAO: Review update completed successfully");
 
-        // Convert row to response
+        // Get the status from the returned row to confirm the update
         let status_str: String = row.try_get("status")
             .map_err(|e| AppError::Database(format!("Failed to extract status: {}", e)))?;
 
+        // Convert back to enum for response
         let status = match status_str.as_str() {
             "approved" => StudentFormAssignmentStatus::Approved,
             "rejected" => StudentFormAssignmentStatus::Rejected,
-            _ => return Err(AppError::Database(format!("Invalid status after update: {}", status_str))),
+            "incomplete" => StudentFormAssignmentStatus::Incomplete,
+            "in_progress" => StudentFormAssignmentStatus::InProgress,
+            "completed" => StudentFormAssignmentStatus::Completed,
+            _ => return Err(AppError::Database(format!("Unknown status value: {}", status_str))),
         };
 
         Ok(ReviewStudentFormAssignmentResponse {

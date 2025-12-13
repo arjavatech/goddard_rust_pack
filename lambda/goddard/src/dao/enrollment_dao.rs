@@ -1238,6 +1238,26 @@ impl EnrollmentDao {
         })
     }
 
+    /// Check if any active transitions exist for an enrollment
+    /// Used to determine if we should allow promoting to the same classroom (backfilling scenario)
+    pub async fn has_any_transitions_for_enrollment(
+        &self,
+        enrollment_id: Uuid
+    ) -> ApiResult<bool> {
+        let query = "SELECT EXISTS(
+            SELECT 1 FROM class_transitions
+            WHERE enrollment_id = $1 AND is_active = true
+        ) as has_transitions";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_one(query, &[&enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to check transitions: {}", e)))?;
+
+        Ok(row.get("has_transitions"))
+    }
+
     /// Update transition reason
     pub async fn update_transition_reason(
         &self,

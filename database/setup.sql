@@ -207,7 +207,7 @@ ALTER TABLE student_form_assignments ADD CONSTRAINT check_assignment_source
 CHECK (assignment_source IN ('school_default', 'class_override', 'manual'));
 
 ALTER TABLE student_form_assignments ADD CONSTRAINT check_status
-CHECK (status IN ('incomplete', 'in_progress', 'completed', 'archived'));
+CHECK (status IN ('incomplete', 'in_progress', 'completed', 'archived', 'approved', 'rejected'));
 
 -- Comments for documentation
 COMMENT ON TABLE schools IS 'School entities in the multi-tenant system';

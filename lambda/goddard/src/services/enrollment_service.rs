@@ -635,7 +635,19 @@ impl EnrollmentService {
 
         // Step 3: Verify different classroom (prevent no-op)
         if enrollment.classroom_id == request.to_classroom_id {
-            return Err(AppError::Validation("Student is already in the target classroom".to_string()));
+            // Allow if this is the first transition (backfilling scenario)
+            let has_transitions = self.enrollment_dao
+                .has_any_transitions_for_enrollment(enrollment_id)
+                .await?;
+
+            if has_transitions {
+                return Err(AppError::Validation(
+                    "Student is already in the target classroom".to_string()
+                ));
+            }
+
+            // Allow creating first transition record even to same classroom
+            println!("[DEBUG] Allowing promotion to same classroom - creating first transition record for enrollment {}", enrollment_id);
         }
 
         // Step 4: Update enrollment with user context (single transaction)
@@ -899,7 +911,19 @@ impl EnrollmentService {
 
         // Step 2: Verify different classroom (prevent no-op)
         if enrollment.classroom_id == to_classroom_id {
-            return Err(AppError::Validation("Student is already in the target classroom".to_string()));
+            // Allow if this is the first transition (backfilling scenario)
+            let has_transitions = self.enrollment_dao
+                .has_any_transitions_for_enrollment(enrollment_id)
+                .await?;
+
+            if has_transitions {
+                return Err(AppError::Validation(
+                    "Student is already in the target classroom".to_string()
+                ));
+            }
+
+            // Allow creating first transition record even to same classroom
+            println!("[DEBUG] Bulk promotion: Allowing promotion to same classroom - creating first transition record for enrollment {}", enrollment_id);
         }
 
         // Step 3: Update enrollment with user context (single transaction)

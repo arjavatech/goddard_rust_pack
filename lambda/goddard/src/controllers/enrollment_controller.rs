@@ -177,19 +177,45 @@ pub async fn promote_enrollment(
     Ok(ResponseUtils::success(response))
 }
 
-/// PATCH /class-transitions/:transition_id
-/// Edit existing transition record (no new entry created) (JWT protected - Admin/SuperAdmin)
+/// POST /class-promotions/bulk
+/// Bulk promote multiple students to new classrooms (JWT protected - Admin/SuperAdmin)
+pub async fn bulk_promote_enrollments(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Json(payload): Json<crate::models::enrollment::BulkPromoteEnrollmentsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Bulk promoting {} students - User: {}, Role: {:?}, School: {}",
+        payload.promotions.len(), auth.email, auth.role, payload.school_id);
+
+    let response = enrollment_service.bulk_promote_enrollments(
+        payload,
+        auth.user_id,
+        auth.school_id,
+    ).await?;
+
+    // Return 207 Multi-Status if any failures, 200 OK if all successful
+    let status_code = if response.failed.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::MULTI_STATUS
+    };
+
+    Ok((status_code, ResponseUtils::success(response)))
+}
+
+/// PATCH /class-transitions/:enrollment_id
+/// Edit latest class transition record for an enrollment (JWT protected - Admin/SuperAdmin)
 pub async fn edit_class_transition(
     Extension(auth): Extension<AuthContext>,
     State(enrollment_service): State<Arc<EnrollmentService>>,
-    Path(transition_id): Path<Uuid>,
+    Path(enrollment_id): Path<Uuid>,
     Json(payload): Json<crate::models::enrollment::EditClassTransitionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Editing class transition - User: {}, Role: {:?}, Transition ID: {}",
-        auth.email, auth.role, transition_id);
+    println!("[DEBUG] Editing latest class transition for enrollment - User: {}, Role: {:?}, Enrollment ID: {}",
+        auth.email, auth.role, enrollment_id);
 
     let response = enrollment_service.edit_class_transition(
-        transition_id,
+        enrollment_id,
         payload,
         auth.school_id
     ).await?;

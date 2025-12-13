@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use std::collections::HashMap;
+use chrono::{DateTime, Utc};
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
@@ -637,14 +638,14 @@ impl EnrollmentService {
             return Err(AppError::Validation("Student is already in the target classroom".to_string()));
         }
 
-        // Step 4: Set PostgreSQL session variable for trigger to capture changed_by
-        self.enrollment_dao.set_current_user_context(changed_by_user_id).await?;
-
-        // Step 5: Update enrollment classroom_id (trigger will create transition record)
-        self.enrollment_dao.update_enrollment_classroom(
+        // Step 4: Update enrollment with user context (single transaction)
+        // This sets the session variable and updates the classroom in one transaction
+        // so the database trigger can capture the changed_by user
+        self.enrollment_dao.update_enrollment_classroom_with_user_context(
             enrollment_id,
             request.to_classroom_id,
-            request.effective_date
+            request.effective_date.map(|dt| dt.naive_utc()),
+            changed_by_user_id
         ).await?;
 
         // Step 6: Get the newly created transition record
@@ -690,14 +691,44 @@ impl EnrollmentService {
     /// Edit existing class transition record (no new entry created)
     pub async fn edit_class_transition(
         &self,
-        transition_id: Uuid,
+        enrollment_id: Uuid,
         request: crate::models::enrollment::EditClassTransitionRequest,
         school_id: Uuid,
     ) -> ApiResult<crate::models::enrollment::EditClassTransitionResponse> {
-        println!("[DEBUG] EnrollmentService: Editing class transition {}", transition_id);
+        println!("[DEBUG] EnrollmentService: Editing latest transition for enrollment {}", enrollment_id);
 
-        // Step 1: Get existing transition record
-        let transition = self.enrollment_dao.get_transition_by_id(transition_id, school_id).await?;
+        // Step 1A: Verify enrollment belongs to school
+        let enrollment_exists = self.enrollment_dao
+            .verify_enrollment_belongs_to_school(enrollment_id, school_id)
+            .await?;
+
+        if !enrollment_exists {
+            return Err(AppError::NotFound(
+                format!("Enrollment {} not found or does not belong to school", enrollment_id)
+            ));
+        }
+
+        // Step 1B: Get latest transition for enrollment
+        let transition = self.enrollment_dao
+            .get_latest_transition_for_enrollment(enrollment_id)
+            .await
+            .map_err(|e| match e {
+                AppError::Database(ref msg) if msg.contains("query returned no rows") => {
+                    AppError::NotFound(
+                        format!("No class transitions found for enrollment {}", enrollment_id)
+                    )
+                },
+                _ => e
+            })?;
+
+        // Step 1C: Security check - verify transition belongs to school
+        if transition.school_id != school_id {
+            return Err(AppError::Authorization(
+                "This transition does not belong to your school".to_string()
+            ));
+        }
+
+        let transition_id = transition.id;  // Extract for subsequent operations
 
         // Step 2: Validate new classroom if provided
         if let Some(new_classroom_id) = request.to_classroom_id {
@@ -712,11 +743,12 @@ impl EnrollmentService {
         }
 
         // Step 3: Update transition record (NO NEW ENTRY)
+        // Convert DateTime<Utc> to NaiveDateTime for database storage
         let updated_transition = self.enrollment_dao.update_transition_record(
             transition_id,
             request.to_classroom_id,
             request.reason.clone(),
-            request.transitioned_at,
+            request.transitioned_at.map(|dt| dt.naive_utc()),
         ).await?;
 
         // Step 4: Optionally sync enrollment if requested
@@ -756,5 +788,164 @@ impl EnrollmentService {
 
         println!("[DEBUG] EnrollmentService: Successfully edited class transition {}", transition_id);
         Ok(response)
+    }
+
+    /// Bulk promote multiple students to new classrooms
+    pub async fn bulk_promote_enrollments(
+        &self,
+        request: crate::models::enrollment::BulkPromoteEnrollmentsRequest,
+        changed_by_user_id: Uuid,
+        auth_school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::BulkPromoteEnrollmentsResponse> {
+        use crate::models::enrollment::{PromoteEnrollmentResponse, FailedPromotion, PromotionSummary};
+
+        println!("[DEBUG] EnrollmentService: Bulk promoting {} students", request.promotions.len());
+
+        // Validation 1: School ID must match auth school ID
+        if request.school_id != auth_school_id {
+            return Err(AppError::Validation(
+                "School ID in request does not match authenticated user's school".to_string()
+            ));
+        }
+
+        // Validation 2: Array must have at least 1 promotion
+        if request.promotions.is_empty() {
+            return Err(AppError::Validation("Promotions array cannot be empty".to_string()));
+        }
+
+        // Validation 3: Maximum 100 promotions per request
+        if request.promotions.len() > 100 {
+            return Err(AppError::Validation(
+                format!("Cannot process more than 100 promotions at once. Received: {}", request.promotions.len())
+            ));
+        }
+
+        // Validation 4: Pre-validate all target classrooms belong to school
+        let unique_classroom_ids: std::collections::HashSet<Uuid> = request.promotions
+            .iter()
+            .map(|p| p.to_classroom_id)
+            .collect();
+
+        for classroom_id in unique_classroom_ids {
+            if !self.enrollment_dao.verify_classroom_belongs_to_school(classroom_id, request.school_id).await? {
+                return Err(AppError::Validation(
+                    format!("Classroom {} does not belong to school {}", classroom_id, request.school_id)
+                ));
+            }
+        }
+
+        // Process each promotion individually with user context in transaction
+        let mut successful: Vec<PromoteEnrollmentResponse> = Vec::new();
+        let mut failed: Vec<FailedPromotion> = Vec::new();
+
+        for promotion in request.promotions {
+            match self.promote_single_enrollment_internal(
+                promotion.enrollment_id,
+                promotion.to_classroom_id,
+                promotion.reason,
+                promotion.effective_date,
+                changed_by_user_id,
+                request.school_id,
+            ).await {
+                Ok(response) => {
+                    successful.push(response);
+                }
+                Err(e) => {
+                    // Try to get child name for better error reporting
+                    let child_name = self.enrollment_dao.get_enrollment_with_classroom(promotion.enrollment_id, request.school_id)
+                        .await
+                        .ok()
+                        .map(|e| format!("{} {}", e.child_first_name, e.child_last_name));
+
+                    failed.push(FailedPromotion {
+                        enrollment_id: promotion.enrollment_id,
+                        child_name,
+                        to_classroom_id: promotion.to_classroom_id,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        let summary = PromotionSummary {
+            total_requested: successful.len() + failed.len(),
+            successful_count: successful.len(),
+            failed_count: failed.len(),
+        };
+
+        println!("[DEBUG] EnrollmentService: Bulk promotion complete - {}/{} successful",
+            summary.successful_count, summary.total_requested);
+
+        Ok(crate::models::enrollment::BulkPromoteEnrollmentsResponse {
+            successful,
+            failed,
+            summary,
+        })
+    }
+
+    /// Internal helper to promote a single enrollment (used by both individual and bulk endpoints)
+    async fn promote_single_enrollment_internal(
+        &self,
+        enrollment_id: Uuid,
+        to_classroom_id: Uuid,
+        reason: Option<String>,
+        effective_date: Option<DateTime<Utc>>,
+        changed_by_user_id: Uuid,
+        school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::PromoteEnrollmentResponse> {
+        // Step 1: Get current enrollment details
+        // Note: DAO query enforces school_id and is_active constraints via WHERE clause
+        let enrollment = self.enrollment_dao.get_enrollment_with_classroom(enrollment_id, school_id).await?;
+
+        // Step 2: Verify different classroom (prevent no-op)
+        if enrollment.classroom_id == to_classroom_id {
+            return Err(AppError::Validation("Student is already in the target classroom".to_string()));
+        }
+
+        // Step 3: Update enrollment with user context (single transaction)
+        // This sets the session variable and updates the classroom in one transaction
+        // so the database trigger can capture the changed_by user
+        self.enrollment_dao.update_enrollment_classroom_with_user_context(
+            enrollment_id,
+            to_classroom_id,
+            effective_date.map(|dt| dt.naive_utc()),
+            changed_by_user_id
+        ).await?;
+
+        // Step 4: Get the newly created transition record
+        let transition = self.enrollment_dao.get_latest_transition_for_enrollment(enrollment_id).await?;
+
+        // Step 5: Update transition reason if provided
+        if let Some(reason_text) = &reason {
+            self.enrollment_dao.update_transition_reason(transition.id, reason_text).await?;
+        }
+
+        // Step 6: Get classroom details for response
+        let from_classroom = self.enrollment_dao.get_classroom_by_id(enrollment.classroom_id).await?;
+        let to_classroom = self.enrollment_dao.get_classroom_by_id(to_classroom_id).await?;
+
+        // Build response
+        let message = format!("Student successfully promoted from {} to {}", from_classroom.name, to_classroom.name);
+
+        Ok(crate::models::enrollment::PromoteEnrollmentResponse {
+            enrollment_id,
+            child_id: enrollment.child_id,
+            child_name: format!("{} {}", enrollment.child_first_name, enrollment.child_last_name),
+            from_classroom: crate::models::enrollment::ClassroomInfo {
+                id: from_classroom.id,
+                name: from_classroom.name,
+            },
+            to_classroom: crate::models::enrollment::ClassroomInfo {
+                id: to_classroom.id,
+                name: to_classroom.name,
+            },
+            transition: crate::models::enrollment::TransitionInfo {
+                id: transition.id,
+                transitioned_at: transition.transitioned_at,
+                changed_by: Some(changed_by_user_id),
+                reason,
+            },
+            message,
+        })
     }
 }

@@ -440,7 +440,44 @@ pub struct ClassTransition {
 pub struct PromoteEnrollmentRequest {
     pub to_classroom_id: Uuid,
     pub reason: Option<String>,
-    pub effective_date: Option<NaiveDateTime>,
+    pub effective_date: Option<DateTime<Utc>>,
+}
+
+// Bulk Promotion Models
+#[derive(Debug, Deserialize)]
+pub struct PromotionRequest {
+    pub enrollment_id: Uuid,
+    pub to_classroom_id: Uuid,
+    pub reason: Option<String>,
+    pub effective_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkPromoteEnrollmentsRequest {
+    pub school_id: Uuid,
+    pub promotions: Vec<PromotionRequest>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FailedPromotion {
+    pub enrollment_id: Uuid,
+    pub child_name: Option<String>,
+    pub to_classroom_id: Uuid,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkPromoteEnrollmentsResponse {
+    pub successful: Vec<PromoteEnrollmentResponse>,
+    pub failed: Vec<FailedPromotion>,
+    pub summary: PromotionSummary,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PromotionSummary {
+    pub total_requested: usize,
+    pub successful_count: usize,
+    pub failed_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -459,7 +496,7 @@ pub struct PromoteEnrollmentResponse {
 pub struct EditClassTransitionRequest {
     pub to_classroom_id: Option<Uuid>,
     pub reason: Option<String>,
-    pub transitioned_at: Option<NaiveDateTime>,
+    pub transitioned_at: Option<DateTime<Utc>>,
     pub sync_enrollment: Option<bool>,  // Default: false
 }
 

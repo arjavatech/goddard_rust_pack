@@ -69,6 +69,9 @@ use controllers::{
     admin_controller::{
         get_admin_dashboard_metrics
     },
+    email_controller::{
+        send_bulk_form_reminders
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
@@ -76,7 +79,7 @@ use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -162,6 +165,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
+    let email_service = Arc::new(EmailService::new());
 
     // Initialize tracing
     tracing_subscriber::fmt()
@@ -239,6 +243,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         // Admin Dashboard APIs (JWT protected - Admin/SuperAdmin)
         .route("/admin/dashboard-metrics", get(get_admin_dashboard_metrics).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(admin_service)
+
+        // Email APIs (JWT or API Key protected - Admin/SuperAdmin only)
+        .route("/emails/bulk-form-reminders", post(send_bulk_form_reminders).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .with_state(email_service)
 
         // Enrollment Management APIs (Admin JWT or API Key)
         .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))

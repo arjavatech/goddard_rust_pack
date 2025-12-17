@@ -30,6 +30,7 @@ pub struct ParentChildForm {
     pub form_id: String, // Format: "form_{uuid}"
     pub student_form_assignment_id: Uuid,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<String>, // Format: DD-MM-YYYY
     pub form_name: String,
     pub status: String,
     pub is_required: bool,
@@ -62,6 +63,7 @@ pub struct ParentDetailsRow {
     pub form_template_id: Option<Uuid>,
     pub form_name: Option<String>,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub recent_edit_link: Option<String>,

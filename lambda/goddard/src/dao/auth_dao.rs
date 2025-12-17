@@ -36,6 +36,20 @@ pub struct UserDetails {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone)]
+pub struct OwnerDetailsWithAuth {
+    pub id: uuid::Uuid,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub role: String,
+    pub is_verified: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_sign_in_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Clone)]
 pub struct AuthDao {
     pool: Pool,
 }
@@ -258,6 +272,85 @@ impl AuthDao {
             },
             Ok(None) => Err(AppError::NotFound("User not found".to_string())),
             Err(e) => Err(AppError::Database(format!("Failed to query user: {}", e))),
+        }
+    }
+
+    pub async fn get_superadmin_with_login_status_by_school(
+        &self,
+        school_id: &uuid::Uuid
+    ) -> ApiResult<Option<OwnerDetailsWithAuth>> {
+        println!("[AuthDao] Getting SuperAdmin with login status for school_id: {}", school_id);
+
+        let client = match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.pool.get()
+        ).await {
+            Ok(Ok(client)) => client,
+            Ok(Err(e)) => return Err(AppError::Database(format!("Failed to get connection: {}", e))),
+            Err(_) => return Err(AppError::Database("Connection timeout".to_string())),
+        };
+
+        let query = r#"
+            SELECT
+                u.id,
+                u.email,
+                u.first_name,
+                u.last_name,
+                u.metadata->>'phone_number' as phone_number,
+                u.role,
+                u.is_verified,
+                u.created_at,
+                au.last_sign_in_at::timestamp as last_sign_in_at
+            FROM public.users u
+            LEFT JOIN auth.users au ON u.id::text = au.id::text
+            WHERE u.school_id = $1
+              AND u.role = 'SuperAdmin'
+              AND (u.is_active = true OR u.is_active IS NULL)
+            ORDER BY u.created_at ASC
+            LIMIT 1
+        "#;
+
+        println!("[AuthDao] Executing query to join public.users with auth.users");
+
+        match client.query_opt(query, &[&school_id]).await {
+            Ok(Some(row)) => {
+                println!("[AuthDao] SuperAdmin found for school");
+
+                // Parse created_at
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::from_naive_utc_and_offset(
+                    created_at_naive,
+                    chrono::Utc
+                );
+
+                // Parse last_sign_in_at (can be null)
+                let last_sign_in_at: Option<chrono::NaiveDateTime> = row.get("last_sign_in_at");
+                let last_sign_in_at_utc = last_sign_in_at.map(|dt| {
+                    chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc)
+                });
+
+                println!("[AuthDao] Last sign in status: has_logged_in={}", last_sign_in_at_utc.is_some());
+
+                Ok(Some(OwnerDetailsWithAuth {
+                    id: row.get("id"),
+                    email: row.get("email"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    phone_number: row.get("phone_number"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    created_at,
+                    last_sign_in_at: last_sign_in_at_utc,
+                }))
+            },
+            Ok(None) => {
+                println!("[AuthDao] No SuperAdmin found for school");
+                Ok(None)
+            },
+            Err(e) => {
+                println!("[AuthDao] Database error: {:?}", e);
+                Err(AppError::Database(format!("Failed to query SuperAdmin: {}", e)))
+            }
         }
     }
 }

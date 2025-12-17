@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, DateTime, Utc};
 use uuid::Uuid;
 use serde_json::Value;
 
@@ -73,4 +73,66 @@ impl From<School> for SchoolListItem {
             subdomain: school.subdomain,
         }
     }
+}
+
+// Models for creating school with owner endpoint
+
+#[derive(Debug, Deserialize)]
+pub struct SchoolInfo {
+    pub name: String,
+    pub subdomain: String,
+    pub settings: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OwnerInfo {
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSchoolWithOwnerRequest {
+    pub school: SchoolInfo,
+    pub owner: OwnerInfo,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OwnerCreatedResponse {
+    pub user_id: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub role: String,
+    pub email_sent: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateSchoolWithOwnerResponse {
+    pub school: SchoolResponse,
+    pub owner: OwnerCreatedResponse,
+}
+
+// Models for GET school with owner endpoint
+
+#[derive(Debug, Serialize)]
+pub struct OwnerDetailsResponse {
+    pub user_id: Uuid,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub role: String,
+    pub is_verified: bool,
+    pub has_logged_in: bool,
+    pub last_sign_in_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SchoolWithOwnerResponse {
+    pub school: SchoolResponse,
+    pub owner: OwnerDetailsResponse,
 }

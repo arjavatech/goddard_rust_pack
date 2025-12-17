@@ -543,6 +543,7 @@ impl EnrollmentService {
                         form_id: format!("form_{}", form_template_id),
                         student_form_assignment_id: *assignment_id,
                         fillout_form_id,
+                        due_date: row.due_date.map(|d| d.format("%d-%m-%Y").to_string()),
                         form_name: form_name.clone(),
                         status: row.status.clone().unwrap_or_else(|| "incomplete".to_string()),
                         is_required: row.is_required.unwrap_or(false),

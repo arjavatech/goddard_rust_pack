@@ -34,7 +34,7 @@ use controllers::{
         delete_admin_user
     },
     school_controller::{
-        create_school, get_all_schools, update_school, delete_school
+        create_school, get_all_schools, update_school, delete_school, create_school_with_owner, get_school_with_owner, get_all_schools_with_owners
     },
     classroom_controller::{
         create_classroom, get_classrooms_by_school, update_classroom, delete_classroom
@@ -146,8 +146,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     }
 
     // Initialize services
-    let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client.clone()));
-    let school_service = Arc::new(SchoolService::new(school_dao));
+    let auth_service = Arc::new(AuthService::new(auth_dao.clone(), supabase_client.clone()));
+    let school_service = Arc::new(SchoolService::new(school_dao, supabase_client.clone(), auth_dao.clone()));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
@@ -208,6 +208,9 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .with_state(auth_service)
 
         // School Management APIs (Admin JWT or API Key)
+        .route("/schools/with-owner", post(create_school_with_owner).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/schools/with-owners", get(get_all_schools_with_owners).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/schools/:id/owner", get(get_school_with_owner).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/schools", post(create_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/schools", get(get_all_schools)) // Public
         .route("/schools", put(update_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))

@@ -16,6 +16,7 @@ pub struct UserMetadata {
     pub role: Option<String>,
     pub phone_number: Option<String>,
     pub is_verified: Option<bool>,
+    pub school_name: Option<String>,  // NEW: For email template personalization
 }
 
 fn serialize_uuid_option<S>(uuid: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
@@ -55,7 +56,14 @@ impl UserMetadata {
             role,
             phone_number,
             is_verified,
+            school_name: None,  // Default to None
         }
+    }
+
+    /// Builder method to set school_name for email personalization
+    pub fn with_school_name(mut self, school_name: String) -> Self {
+        self.school_name = Some(school_name);
+        self
     }
 }
 
@@ -131,14 +139,23 @@ impl SupabaseClient {
     }
 
     pub async fn create_user_invitation_enhanced(&self, email: &str, metadata: UserMetadata) -> Result<String, AppError> {
+        // Determine email template type based on role
+        let template_type = match metadata.role.as_deref() {
+            Some("SuperAdmin") | Some("Admin") => "invite",
+            Some("Parent") => "signup",
+            _ => "signup",  // Default to parent template
+        };
+
+        tracing::info!("[SupabaseClient] Sending email to {} with template type: {}", email, template_type);
+
         // Convert UserMetadata to serde_json::Value
         let user_metadata = serde_json::to_value(&metadata)
             .map_err(|e| AppError::Internal(format!("Failed to serialize user metadata: {}", e)))?;
 
-        self.create_user_invitation(email, Some(user_metadata)).await
+        self.create_user_invitation_with_template(email, Some(user_metadata), template_type).await
     }
 
-    pub async fn create_user_invitation(&self, email: &str, user_metadata: Option<serde_json::Value>) -> Result<String, AppError> {
+    pub async fn create_user_invitation_with_template(&self, email: &str, user_metadata: Option<serde_json::Value>, template_type: &str) -> Result<String, AppError> {
         // DEBUG: Log service role key prefix for verification
         let key_len = self.service_role_key.len();
         let prefix_len = std::cmp::min(30, key_len);
@@ -194,11 +211,12 @@ impl SupabaseClient {
             .ok_or_else(|| AppError::ExternalService(format!("User ID not found in response. Response: {}", serde_json::to_string(&create_data).unwrap_or_default())))?;
 
         // Step 2: Send signup confirmation email using the resend endpoint
+        // Use role-based template type (invite for admins, signup for parents)
         let resend_request_body = json!({
             "email": email,
-            "type": "signup",
+            "type": template_type,  // ROLE-BASED: "invite" or "signup"
             "options": {
-                "emailRedirectTo": "https://your-domain.com/set_password.html"
+                "emailRedirectTo": "https://your-domain.com/set_password.html"  // Same for all roles
             }
         });
 
@@ -220,6 +238,12 @@ impl SupabaseClient {
         }
 
         Ok(user_id.to_string())
+    }
+
+    /// Legacy method for backwards compatibility
+    pub async fn create_user_invitation(&self, email: &str, user_metadata: Option<serde_json::Value>) -> Result<String, AppError> {
+        // Default to "signup" template for backwards compatibility
+        self.create_user_invitation_with_template(email, user_metadata, "signup").await
     }
 
     pub async fn create_auth_user(&self, email: &str) -> Result<uuid::Uuid, AppError> {

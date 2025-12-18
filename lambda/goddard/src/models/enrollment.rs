@@ -267,6 +267,7 @@ pub struct FormStatus {
     pub student_form_assignment_id: Option<Uuid>,
     pub fillout_form_id: Option<String>,
     pub form_name: String,
+    pub due_date: Option<String>,
     pub status: String,
     pub is_required: bool,
     pub recent_edit_link: Option<String>,

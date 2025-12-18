@@ -488,6 +488,7 @@ impl EnrollmentDao {
                     sfa.form_template_id,
                     ft.form_name,
                     ft.fillout_form_id,
+                    ft.due_date,
                     COALESCE(sfa.status, 'incomplete') as form_status,
                     COALESCE(sfa.is_required, false) as is_required,
                     sfa.recent_edit_link,
@@ -542,6 +543,7 @@ impl EnrollmentDao {
                                     ELSE fillout_form_id
                                 END,
                                 'form_name', form_name,
+                                'due_date', TO_CHAR(due_date, 'DD-MM-YYYY'),
                                 'status', form_status,
                                 'is_required', is_required,
                                 'recent_edit_link', recent_edit_link,

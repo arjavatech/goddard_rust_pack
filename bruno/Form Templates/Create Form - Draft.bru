@@ -1,0 +1,40 @@
+meta {
+  name: Create Form - Draft
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/form-templates
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    "school_id": "8863a33c-ab95-4ab9-8b47-24e33bc52849",
+    "form_name": "Draft Emergency Contact Form",
+    "fillout_form_id": "draft-form-123",
+    "due_date": "2025-12-31",
+    "status": "draft"
+  }
+}
+
+docs {
+  # Create Form Template - Draft Status
+
+  Example of creating a form template with status='draft'.
+
+  Draft forms are typically used for forms that are still being prepared
+  and are not yet ready to be assigned to students.
+
+  **Status**: 'draft'
+}
+
+settings {
+  encodeUrl: true
+}

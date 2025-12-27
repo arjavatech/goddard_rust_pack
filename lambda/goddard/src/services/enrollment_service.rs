@@ -26,13 +26,15 @@ type ApiResult<T> = Result<T, AppError>;
 
 pub struct EnrollmentService {
     enrollment_dao: EnrollmentDao,
+    school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
 }
 
 impl EnrollmentService {
-    pub fn new(enrollment_dao: EnrollmentDao, supabase_client: SupabaseClient) -> Self {
+    pub fn new(enrollment_dao: EnrollmentDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
         Self {
             enrollment_dao,
+            school_dao,
             supabase_client,
         }
     }
@@ -237,7 +239,24 @@ impl EnrollmentService {
         last_name: &str,
         role: &str
     ) -> ApiResult<AuthUserResult> {
-        // Create user metadata with school_id and other details
+        // STEP 1: Fetch school name FIRST - PREREQUISITE VALIDATION
+        tracing::info!("🔍 Fetching school name for school_id: {}", school_id);
+
+        let school_name = match self.school_dao.get_school_name(&school_id).await {
+            Ok(name) => {
+                tracing::info!("✅ School name fetched: '{}' for school {}", name, school_id);
+                name  // String, not Option<String>
+            },
+            Err(e) => {
+                tracing::error!("❌ Failed to fetch school name for {}: {}", school_id, e);
+                return Err(crate::error::AppError::Database(format!(
+                    "Cannot create parent invitation: School name not found for school_id {}: {}",
+                    school_id, e
+                )));
+            }
+        };
+
+        // STEP 2: Create user metadata with VALIDATED school_name
         let metadata = crate::services::supabase_client::UserMetadata::new(
             Some(school_id),
             Some(first_name.to_string()),
@@ -245,8 +264,10 @@ impl EnrollmentService {
             Some(role.to_string()),
             None,  // phone_number - not provided in enrollment flow
             None,  // is_verified - will be set after email confirmation
-        );
+        )
+        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
 
+        // STEP 3: Create user invitation
         let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)

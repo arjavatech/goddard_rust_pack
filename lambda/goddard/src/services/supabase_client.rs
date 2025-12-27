@@ -65,6 +65,28 @@ impl UserMetadata {
         self.school_name = Some(school_name);
         self
     }
+
+    /// Builder method to set school_name from Option<String>
+    pub fn with_school_name_option(mut self, school_name: Option<String>) -> Self {
+        self.school_name = school_name;
+        self
+    }
+
+    /// Convert to Supabase-compatible metadata format
+    /// Fields are placed at the top level for:
+    /// 1. Database trigger to extract values (e.g., raw_user_meta_data->>'first_name')
+    /// 2. Email templates to access via {{ .Data.first_name }} (where .Data is the entire metadata object)
+    pub fn to_supabase_metadata(&self) -> serde_json::Value {
+        json!({
+            "school_id": self.school_id.map(|id| id.to_string()),
+            "role": self.role,
+            "is_verified": self.is_verified,
+            "school_name": self.school_name,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "phone_number": self.phone_number
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -73,6 +95,7 @@ pub struct SupabaseClient {
     project_url: String,
     service_role_key: String,
     anon_key: String,
+    frontend_url: String,
 }
 
 impl SupabaseClient {
@@ -91,6 +114,13 @@ impl SupabaseClient {
             ));
         }
 
+        // Read frontend URL from environment, with fallback to dev URL
+        let frontend_url = env::var("FRONTEND_URL")
+            .unwrap_or_else(|_| {
+                eprintln!("⚠️  FRONTEND_URL not set, using default dev URL");
+                "https://dev.goddard-app.pages.dev".to_string()
+            });
+
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
@@ -104,6 +134,7 @@ impl SupabaseClient {
             project_url,
             service_role_key,
             anon_key,
+            frontend_url,
         })
     }
 
@@ -139,103 +170,99 @@ impl SupabaseClient {
     }
 
     pub async fn create_user_invitation_enhanced(&self, email: &str, metadata: UserMetadata) -> Result<String, AppError> {
-        // Determine email template type based on role
-        let template_type = match metadata.role.as_deref() {
-            Some("SuperAdmin") | Some("Admin") => "invite",
-            Some("Parent") => "signup",
-            _ => "signup",  // Default to parent template
-        };
+        // Use "signup" for all roles - Supabase only supports: signup, email_change, sms, phone_change
+        let template_type = "signup";  // ✅ VALID for all user types
 
         tracing::info!("[SupabaseClient] Sending email to {} with template type: {}", email, template_type);
 
-        // Convert UserMetadata to serde_json::Value
-        let user_metadata = serde_json::to_value(&metadata)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize user metadata: {}", e)))?;
+        // Log the actual metadata values BEFORE transformation
+        tracing::info!("📋 [SupabaseClient] Metadata before transformation: first_name={:?}, last_name={:?}, school_name={:?}",
+            metadata.first_name, metadata.last_name, metadata.school_name);
+
+        // Convert to Supabase-compatible metadata format
+        let user_metadata = metadata.to_supabase_metadata();
+
+        // Log the transformed metadata JSON
+        tracing::info!("📋 [SupabaseClient] Transformed metadata JSON: {}",
+            serde_json::to_string_pretty(&user_metadata).unwrap_or_default());
+
+        // Specifically log school_name value
+        if let Some(school_name) = user_metadata.get("school_name") {
+            tracing::info!("📋 [SupabaseClient] school_name in metadata: {:?}", school_name);
+        } else {
+            tracing::warn!("⚠️  [SupabaseClient] school_name is MISSING from metadata!");
+        }
 
         self.create_user_invitation_with_template(email, Some(user_metadata), template_type).await
     }
 
     pub async fn create_user_invitation_with_template(&self, email: &str, user_metadata: Option<serde_json::Value>, template_type: &str) -> Result<String, AppError> {
-        // DEBUG: Log service role key prefix for verification
-        let key_len = self.service_role_key.len();
-        let prefix_len = std::cmp::min(30, key_len);
-        tracing::info!("🔑 Creating user with service_role_key (prefix): {}...", &self.service_role_key[..prefix_len]);
+        // Note: template_type parameter is kept for backward compatibility but unused
+        // The /auth/v1/invite endpoint always uses the "Invite User" template
 
-        // Step 1: Create user with email_confirm: false (unconfirmed state)
-        let mut create_request_body = json!({
+        // Build invite request body
+        let mut invite_request_body = json!({
             "email": email,
-            "email_confirm": false
         });
 
         // Add user metadata if provided
+        // Note: The key is "data" not "user_metadata" for the invite endpoint
         if let Some(metadata) = user_metadata {
-            create_request_body["user_metadata"] = metadata;
+            invite_request_body["data"] = metadata;
         }
 
-        let create_response = self.client
-            .post(&format!("{}/auth/v1/admin/users", self.project_url))
+        // Add redirect URL for password setup
+        invite_request_body["options"] = json!({
+            "emailRedirectTo": format!("{}/set-password", self.frontend_url)
+        });
+
+        tracing::info!("📧 Sending invitation email using /auth/v1/invite endpoint");
+        tracing::debug!("📧 Invite request body: {}",
+            serde_json::to_string_pretty(&invite_request_body).unwrap_or_default());
+
+        // Send invitation (creates user + sends "Invite User" template in one request)
+        let invite_response = self.client
+            .post(&format!("{}/auth/v1/invite", self.project_url))
             .header("Authorization", format!("Bearer {}", self.service_role_key))
             .header("apikey", &self.service_role_key)
             .header("Content-Type", "application/json")
-            .json(&create_request_body)
+            .json(&invite_request_body)
             .send()
             .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to create user: {}", e)))?;
+            .map_err(|e| AppError::ExternalService(format!("Failed to send invitation: {}", e)))?;
 
-        if !create_response.status().is_success() {
-            let status_code = create_response.status();
-            let error_text = create_response.text().await.unwrap_or_default();
+        let status_code = invite_response.status();
+        tracing::info!("📧 Invite response status: {}", status_code);
+
+        if !status_code.is_success() {
+            let error_body = invite_response.text().await.unwrap_or_default();
+            tracing::error!("📧 Invite failed with status {}: {}", status_code, error_body);
 
             // Handle specific error cases
-            if status_code == 422 && error_text.contains("already been registered") {
+            if status_code == 422 && error_body.contains("already been registered") {
                 return Err(AppError::Conflict("User with this email already exists".to_string()));
             }
 
-            return Err(AppError::ExternalService(format!("Failed to create user: {}", error_text)));
+            return Err(AppError::ExternalService(format!("Failed to send invitation: {}", error_body)));
         }
 
-        let create_data: serde_json::Value = create_response
+        let invite_data: serde_json::Value = invite_response
             .json()
             .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to parse create user response: {}", e)))?;
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse invite response: {}", e)))?;
 
-        // Response logged only in debug builds for performance
-        #[cfg(debug_assertions)]
-        eprintln!("Supabase create user response: {}", serde_json::to_string_pretty(&create_data).unwrap_or_default());
+        tracing::info!("✅ Invitation sent successfully to {}", email);
 
-        let user_id = create_data
+        // Extract user ID from response
+        let user_id = invite_data
             .get("user")
             .and_then(|u| u.get("id"))
             .and_then(|id| id.as_str())
-            .or_else(|| create_data.get("id").and_then(|id| id.as_str()))
-            .ok_or_else(|| AppError::ExternalService(format!("User ID not found in response. Response: {}", serde_json::to_string(&create_data).unwrap_or_default())))?;
-
-        // Step 2: Send signup confirmation email using the resend endpoint
-        // Use role-based template type (invite for admins, signup for parents)
-        let resend_request_body = json!({
-            "email": email,
-            "type": template_type,  // ROLE-BASED: "invite" or "signup"
-            "options": {
-                "emailRedirectTo": "https://your-domain.com/set_password.html"  // Same for all roles
-            }
-        });
-
-        let resend_response = self.client
-            .post(&format!("{}/auth/v1/resend", self.project_url))
-            .header("Authorization", format!("Bearer {}", self.service_role_key))
-            .header("apikey", &self.service_role_key)
-            .header("Content-Type", "application/json")
-            .json(&resend_request_body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send signup confirmation email: {}", e)))?;
-
-        // Resend endpoint might return 200 even if rate limited, but we still want to proceed
-        if !resend_response.status().is_success() {
-            // Log the error but don't fail the entire operation since user was created
-            #[cfg(debug_assertions)]
-            eprintln!("Warning: Failed to send signup confirmation email, but user was created successfully. Status: {}", resend_response.status());
-        }
+            .or_else(|| invite_data.get("id").and_then(|id| id.as_str()))
+            .ok_or_else(|| AppError::ExternalService(
+                format!("User ID not found in invite response. Response: {}",
+                    serde_json::to_string(&invite_data).unwrap_or_default())
+            ))?;
 
         Ok(user_id.to_string())
     }

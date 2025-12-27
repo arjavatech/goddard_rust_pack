@@ -136,12 +136,13 @@ pub struct FilteredUserResponse {
 
 pub struct AuthService {
     dao: AuthDao,
+    school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
 }
 
 impl AuthService {
-    pub fn new(dao: AuthDao, supabase_client: SupabaseClient) -> Self {
-        Self { dao, supabase_client }
+    pub fn new(dao: AuthDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
+        Self { dao, school_dao, supabase_client }
     }
 
     pub async fn get_auth_verification_status(
@@ -259,31 +260,51 @@ impl AuthService {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
 
-        // Parse and validate school_id if provided
+        // Parse and validate school_id - NOW REQUIRED
         let school_uuid = if let Some(ref school_id) = request.school_id {
             ValidationUtils::validate_uuid(school_id)?;
-            Some(uuid::Uuid::parse_str(school_id)
-                .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?)
+            uuid::Uuid::parse_str(school_id)
+                .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?
         } else {
-            None
+            // FAIL if school_id is missing for admin/owner invitations
+            tracing::warn!("⚠️  No school_id provided for admin/owner invitation");
+            return Err(AppError::Validation("school_id is required for admin/owner invitations".to_string()));
         };
 
-        // Check if user already exists
+        // STEP 1: Fetch school name FIRST - PREREQUISITE VALIDATION
+        tracing::info!("🔍 Fetching school name for school_id: {}", school_uuid);
+
+        let school_name = match self.school_dao.get_school_name(&school_uuid).await {
+            Ok(name) => {
+                tracing::info!("✅ School name fetched: '{}' for school {}", name, school_uuid);
+                name  // Return String, not Option<String>
+            },
+            Err(e) => {
+                tracing::error!("❌ Failed to fetch school name for {}: {}", school_uuid, e);
+                return Err(AppError::Database(format!(
+                    "Cannot create invitation: School name not found for school_id {}: {}",
+                    school_uuid, e
+                )));
+            }
+        };
+
+        // STEP 2: Now check if user exists (after school validation)
         if self.dao.user_exists_by_email(&request.email).await? {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
 
-        // Create user metadata
+        // STEP 3: Create user metadata with VALIDATED school_name
         let metadata = UserMetadata::new(
-            school_uuid,
+            Some(school_uuid),
             request.first_name.clone(),
             request.last_name.clone(),
             request.role.clone(),
             None,  // phone_number - not provided in enhanced endpoint
             Some(true),  // is_verified = true
-        );
+        )
+        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
 
-        // Create user invitation via Supabase with enhanced metadata
+        // STEP 4: Create user invitation via Supabase with enhanced metadata
         let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
 
         Ok(CreateInvitationResponse {

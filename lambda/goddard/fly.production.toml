@@ -10,6 +10,7 @@ primary_region = "dfw"
 
 [env]
   PORT = '8080'
+  FRONTEND_URL = 'https://goddardschool.org'
 
 [http_service]
   internal_port = 8080

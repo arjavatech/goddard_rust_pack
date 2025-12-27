@@ -149,12 +149,12 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     }
 
     // Initialize services
-    let auth_service = Arc::new(AuthService::new(auth_dao.clone(), supabase_client.clone()));
-    let school_service = Arc::new(SchoolService::new(school_dao, supabase_client.clone(), auth_dao.clone()));
+    let auth_service = Arc::new(AuthService::new(auth_dao.clone(), school_dao.clone(), supabase_client.clone()));
+    let school_service = Arc::new(SchoolService::new(school_dao.clone(), supabase_client.clone(), auth_dao.clone()));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
-    let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
+    let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, school_dao.clone(), supabase_client.clone()));
     let form_submission_service = Arc::new(
         if let Some(fillout) = fillout_service {
             FormSubmissionService::new_with_fillout(form_submission_dao, fillout)

@@ -28,6 +28,18 @@ impl FormTemplateService {
             }
         }
 
+        // Validate status if provided
+        if let Some(ref status) = request.status {
+            let valid_statuses = vec!["active", "inactive", "draft", "archived", "school_default", "available"];
+            if !valid_statuses.contains(&status.as_str()) {
+                return Err(AppError::Validation(format!(
+                    "Invalid status '{}'. Must be one of: {}",
+                    status,
+                    valid_statuses.join(", ")
+                )));
+            }
+        }
+
         self.dao.create_form_template(&request).await
     }
 

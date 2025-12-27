@@ -24,6 +24,7 @@ pub struct CreateFormTemplateRequest {
     pub form_name: String,
     pub fillout_form_id: Option<String>,
     pub due_date: Option<NaiveDate>,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

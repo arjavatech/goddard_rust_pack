@@ -35,16 +35,19 @@ impl FormTemplateDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
+        // Extract status or default to 'school_default' for backward compatibility
+        let status = request.status.as_deref().unwrap_or("school_default");
+
         let query = r#"
             INSERT INTO form_templates (id, school_id, form_name, fillout_form_id, due_date, status, is_active, created_at, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, 'school_default', true, NOW(), NOW())
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, true, NOW(), NOW())
             RETURNING id, school_id, form_name, form_type, fillout_form_id, due_date, status, is_required, display_order, is_active, created_at, updated_at
         "#;
 
         let stmt = client.prepare(query).await
             .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
 
-        let row = client.query_one(&stmt, &[&request.school_id, &request.form_name, &request.fillout_form_id, &request.due_date])
+        let row = client.query_one(&stmt, &[&request.school_id, &request.form_name, &request.fillout_form_id, &request.due_date, &status])
             .await
             .map_err(|e| AppError::Database(format!("Failed to create form template: {}", e)))?;
 

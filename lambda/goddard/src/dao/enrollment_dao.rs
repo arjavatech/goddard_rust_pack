@@ -76,6 +76,11 @@ impl EnrollmentDao {
 
     // Step 1: Verify classroom belongs to school
     pub async fn verify_classroom_belongs_to_school(&self, classroom_id: Uuid, school_id: Uuid) -> ApiResult<bool> {
+        // If school_id is nil (API key with SuperAdmin), skip school verification
+        if school_id.is_nil() {
+            return Ok(true);
+        }
+
         self.execute_with_connection(|client| async move {
             let query = "SELECT COUNT(*) as count FROM classrooms WHERE id = $1 AND school_id = $2";
             let row = client.query_one(query, &[&classroom_id, &school_id]).await
@@ -87,6 +92,11 @@ impl EnrollmentDao {
 
     // Step 1.1: Verify enrollment belongs to school
     pub async fn verify_enrollment_belongs_to_school(&self, enrollment_id: Uuid, school_id: Uuid) -> ApiResult<bool> {
+        // If school_id is nil (API key with SuperAdmin), skip school verification
+        if school_id.is_nil() {
+            return Ok(true);
+        }
+
         self.execute_with_connection(|client| async move {
             let query = "SELECT COUNT(*) as count FROM enrollments WHERE id = $1 AND school_id = $2 AND is_active = true";
             let row = client.query_one(query, &[&enrollment_id, &school_id]).await
@@ -1088,22 +1098,44 @@ impl EnrollmentDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
-        let query = r#"
-            SELECT
-                e.id AS enrollment_id,
-                e.child_id,
-                e.classroom_id,
-                c.first_name AS child_first_name,
-                c.last_name AS child_last_name
-            FROM enrollments e
-            INNER JOIN children c ON e.child_id = c.id
-            WHERE e.id = $1
-                AND e.school_id = $2
-                AND e.is_active = true
-        "#;
+        // If school_id is nil (API key access with SuperAdmin), skip school check
+        let (query, params): (&str, Vec<&(dyn tokio_postgres::types::ToSql + Sync)>) = if school_id.is_nil() {
+            (
+                r#"
+                    SELECT
+                        e.id AS enrollment_id,
+                        e.child_id,
+                        e.classroom_id,
+                        c.first_name AS child_first_name,
+                        c.last_name AS child_last_name
+                    FROM enrollments e
+                    INNER JOIN children c ON e.child_id = c.id
+                    WHERE e.id = $1
+                        AND e.is_active = true
+                "#,
+                vec![&enrollment_id],
+            )
+        } else {
+            (
+                r#"
+                    SELECT
+                        e.id AS enrollment_id,
+                        e.child_id,
+                        e.classroom_id,
+                        c.first_name AS child_first_name,
+                        c.last_name AS child_last_name
+                    FROM enrollments e
+                    INNER JOIN children c ON e.child_id = c.id
+                    WHERE e.id = $1
+                        AND e.school_id = $2
+                        AND e.is_active = true
+                "#,
+                vec![&enrollment_id, &school_id],
+            )
+        };
 
         let row = client
-            .query_one(query, &[&enrollment_id, &school_id])
+            .query_one(query, &params[..])
             .await
             .map_err(|_| AppError::NotFound("Enrollment not found".to_string()))?;
 

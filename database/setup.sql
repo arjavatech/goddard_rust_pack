@@ -821,7 +821,6 @@ CREATE INDEX idx_class_transitions_child_time ON class_transitions(child_id, tra
 CREATE OR REPLACE FUNCTION track_classroom_transition()
 RETURNS TRIGGER AS $$
 DECLARE
-    has_submissions BOOLEAN;
     current_user_id UUID;
     recent_transition_count INTEGER;
 BEGIN
@@ -842,50 +841,44 @@ BEGIN
             RETURN NEW;
         END IF;
 
-        -- Check if student has any form submissions (indicates real enrollment)
-        -- This smart detection prevents tracking data corrections/mistakes
-        SELECT EXISTS (
-            SELECT 1
-            FROM form_submissions
-            WHERE enrollment_id = NEW.id
-            AND is_active = true
-        ) INTO has_submissions;
+        -- Always create transition record for all classroom changes
+        -- Updated 2025-12-30: Removed form submission check to fix promotion 404 errors
 
-        -- Only create transition record if there were submissions
-        -- No submissions = likely a data correction, not a real class change
-        IF has_submissions THEN
+        -- Try to get current user from session settings
+        BEGIN
+            current_user_id := current_setting('app.current_user_id', true)::UUID;
+        EXCEPTION WHEN OTHERS THEN
+            current_user_id := NULL;
+        END;
 
-            -- Try to get current user from session settings
-            BEGIN
-                current_user_id := current_setting('app.current_user_id', true)::UUID;
-            EXCEPTION WHEN OTHERS THEN
-                current_user_id := NULL;
-            END;
-
-            INSERT INTO class_transitions (
-                enrollment_id,
-                child_id,
-                school_id,
-                from_classroom_id,
-                to_classroom_id,
-                changed_by,
-                transitioned_at
-            ) VALUES (
-                NEW.id,
-                NEW.child_id,
-                NEW.school_id,
-                OLD.classroom_id,
-                NEW.classroom_id,
-                current_user_id,
-                NOW()
-            );
-        END IF;
-        -- If no submissions exist, this is likely a correction - silently skip tracking
+        INSERT INTO class_transitions (
+            enrollment_id,
+            child_id,
+            school_id,
+            from_classroom_id,
+            to_classroom_id,
+            changed_by,
+            transitioned_at
+        ) VALUES (
+            NEW.id,
+            NEW.child_id,
+            NEW.school_id,
+            OLD.classroom_id,
+            NEW.classroom_id,
+            current_user_id,
+            NOW()
+        );
 
     END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Add comment explaining the function behavior
+COMMENT ON FUNCTION track_classroom_transition() IS
+'Automatically tracks classroom transitions when enrollment.classroom_id changes.
+Always creates audit trail records for all classroom changes regardless of form submission status.
+Updated 2025-12-30: Removed form submission requirement to fix promotion 404 errors and ensure complete audit trail.';
 
 -- ==========================================
 -- TRIGGER: Automatically track class changes

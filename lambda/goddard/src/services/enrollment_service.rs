@@ -267,8 +267,8 @@ impl EnrollmentService {
         )
         .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
 
-        // STEP 3: Create user invitation
-        let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;
+        // STEP 3: Create user with signup confirmation email
+        let auth_user_id_string = self.supabase_client.create_user_with_signup_confirmation(email, metadata).await?;
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;

@@ -139,13 +139,14 @@ impl SupabaseClient {
     }
 
     pub async fn resend_invitation(&self, email: &str) -> Result<(), AppError> {
-        // For existing users, use the magic link endpoint to resend invitation
+        // For existing users, resend signup confirmation email
         let invite_response = self.client
-            .post(&format!("{}/auth/v1/magiclink", self.project_url))
+            .post(&format!("{}/auth/v1/resend", self.project_url))
             .header("Authorization", format!("Bearer {}", self.service_role_key))
             .header("apikey", &self.service_role_key)
             .header("Content-Type", "application/json")
             .json(&json!({
+                "type": "signup",
                 "email": email
             }))
             .send()
@@ -167,6 +168,81 @@ impl SupabaseClient {
         }
 
         Ok(())
+    }
+
+    /// Creates a new user and sends "Confirm Sign Up" email template
+    ///
+    /// This method:
+    /// 1. Creates user via /auth/v1/admin/users with email_confirm=false
+    /// 2. Sends "Confirm Sign Up" email via /auth/v1/resend (type: "signup")
+    ///
+    /// Use this for parent invitations where users need to confirm their email.
+    pub async fn create_user_with_signup_confirmation(
+        &self,
+        email: &str,
+        metadata: UserMetadata,
+    ) -> Result<String, AppError> {
+        tracing::info!("Creating user with signup confirmation for {}", email);
+
+        // Step 1: Create user via Admin API without email confirmation
+        let user_metadata_json = metadata.to_supabase_metadata();
+
+        let create_user_body = json!({
+            "email": email,
+            "email_confirm": false,  // User must confirm email
+            "user_metadata": user_metadata_json,
+            "app_metadata": {
+                "provider": "email",
+                "providers": ["email"]
+            }
+        });
+
+        tracing::debug!("Creating user with body: {}",
+            serde_json::to_string_pretty(&create_user_body).unwrap_or_default());
+
+        let create_response = self.client
+            .post(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&create_user_body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to create user: {}", e)))?;
+
+        // Handle response
+        let status_code = create_response.status();
+
+        if !status_code.is_success() {
+            let error_body = create_response.text().await.unwrap_or_default();
+            tracing::error!("User creation failed with status {}: {}", status_code, error_body);
+
+            // Handle specific error cases
+            if status_code == 422 && error_body.contains("already been registered") {
+                return Err(AppError::Conflict("User with this email already exists".to_string()));
+            }
+
+            return Err(AppError::ExternalService(format!("Failed to create user: {}", error_body)));
+        }
+
+        let user_data: serde_json::Value = create_response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user creation response: {}", e)))?;
+
+        // Extract user ID
+        let user_id = user_data
+            .get("id")
+            .and_then(|id| id.as_str())
+            .ok_or_else(|| AppError::ExternalService("User ID not found in response".to_string()))?;
+
+        tracing::info!("User created successfully with ID: {}", user_id);
+
+        // Step 2: Send "Confirm Sign Up" email via resend endpoint
+        tracing::info!("Sending confirmation email to {}", email);
+        self.resend_invitation(email).await?;
+
+        Ok(user_id.to_string())
     }
 
     pub async fn create_user_invitation_enhanced(&self, email: &str, metadata: UserMetadata) -> Result<String, AppError> {

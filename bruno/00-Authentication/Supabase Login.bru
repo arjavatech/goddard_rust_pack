@@ -1,0 +1,66 @@
+meta {
+  name: Supabase Login
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{supabase_url}}/auth/v1/token?grant_type=password
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  apikey: {{supabase_anon_key}}
+}
+
+body:json {
+  {
+    "email": "phobosmailbox@unwita.com",
+    "password": "your-password-here"
+  }
+}
+
+script:post-response {
+  if (res.status === 200) {
+    const data = res.getBody();
+    if (data.access_token) {
+      bru.setEnvVar("token", data.access_token);
+      console.log("Token saved to environment variable 'token'");
+    }
+  }
+}
+
+docs {
+  # Supabase Login
+
+  Authenticates a user with Supabase using email and password credentials.
+  **After successful login, the access_token is automatically saved to the `token` environment variable.**
+
+  ## Request Body Fields
+  - `email` (required): User's email address
+  - `password` (required): User's password
+
+  ## Response
+  - 200: Login Successful
+    - Returns `access_token` (JWT token for API authentication)
+    - Returns `refresh_token` (for token renewal)
+    - Returns `user` object with user details
+  - 400: Bad Request - Invalid email or password format
+  - 401: Unauthorized - Invalid credentials
+
+  ## Usage
+  1. Update the email and password in the request body
+  2. Run this request
+  3. On success, the `token` variable is automatically updated
+  4. All other requests will use the new token automatically
+
+  ## Note
+  The access token is a JWT that includes:
+  - `sub`: User ID (used for last_updated_by fields)
+  - `email`: User's email
+  - `app_metadata.role`: User's role (admin, op_manager, appraiser)
+
+  Token expires after 1 hour. Run this request again to get a new token.
+}

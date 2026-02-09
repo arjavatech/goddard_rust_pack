@@ -1,0 +1,32 @@
+meta {
+  name: 00-Authentication
+}
+
+docs {
+  # Authentication
+
+  This folder contains Supabase authentication endpoints.
+
+  ## Email/Password Authentication
+  1. **Supabase Login** - Login with email/password
+  2. **Supabase Signup** - Register new user with email/password
+
+  ## Flow
+  ```
+  Supabase Signup → Supabase Login → Get Token
+  ```
+
+  ## Token Usage
+  After successful authentication, the `token` environment variable is automatically updated.
+  All other API requests use this token via the `Authorization: Bearer {{token}}` header.
+
+  ## User Creation
+  When a user authenticates for the first time:
+  1. Record is created in `auth.users` (Supabase)
+  2. Database trigger creates record in `public.users`
+  3. Default role "appraiser" is assigned
+
+  ## Token Expiry
+  - Access token expires after 1 hour
+  - Use Login again to get a new token
+}

@@ -108,6 +108,22 @@ validate: ## Validate ARM64 architecture configuration
 	./scripts/validate-architecture.sh
 
 # =============================================
+# FLY.IO DEPLOYMENT
+# =============================================
+
+deploy-flyio-dev: ## 🚀 Deploy to Fly.io Development
+	@chmod +x scripts/deploy-flyio-dev.sh
+	@./scripts/deploy-flyio-dev.sh
+
+deploy-flyio-prod: ## ⚠️  Deploy to Fly.io Production (confirmation required)
+	@chmod +x scripts/deploy-flyio-prod.sh
+	@./scripts/deploy-flyio-prod.sh
+
+preflight-check: ## 🔍 Run pre-deployment validation
+	@chmod +x scripts/preflight-check.sh
+	@./scripts/preflight-check.sh $(ENV)
+
+# =============================================
 # DATABASE COMMANDS
 # =============================================
 

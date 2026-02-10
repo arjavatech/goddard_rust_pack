@@ -710,7 +710,7 @@ impl EnrollmentDao {
                     '{}'::json
                 ) as forms
             FROM classrooms cl
-            LEFT JOIN enrollments e ON cl.id = e.classroom_id AND e.school_id = cl.school_id
+            LEFT JOIN enrollments e ON cl.id = e.classroom_id AND e.school_id = cl.school_id AND e.is_active = true 
             LEFT JOIN class_form_overrides cfo ON cfo.classroom_id = cl.id AND cfo.school_id = cl.school_id AND cfo.is_active = true
             LEFT JOIN form_templates ft ON ft.id = cfo.form_template_id AND ft.is_active = true
             WHERE cl.school_id = $1 AND cl.is_active = true

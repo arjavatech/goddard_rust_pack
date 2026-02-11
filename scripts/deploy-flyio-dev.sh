@@ -70,6 +70,18 @@ cd "$PROJECT_DIR"
 
 if fly deploy --app "$FLY_APP_NAME" --config fly.toml; then
     echo ""
+    echo -e "${BLUE}▶ Syncing configuration to Fly.io${NC}"
+
+    # Apply fly.toml configuration to the app
+    if fly apps update --app "$FLY_APP_NAME" --config fly.toml 2>/dev/null; then
+        echo -e "${GREEN}✓ Configuration synced successfully${NC}"
+    else
+        echo -e "${YELLOW}⚠ Configuration sync failed${NC}"
+        echo -e "${YELLOW}Image deployed but fly.toml config may not match${NC}"
+        echo -e "${BLUE}Run manually: fly apps update --app ${FLY_APP_NAME} --config fly.toml${NC}"
+    fi
+
+    echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}✨ Deployment successful!${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

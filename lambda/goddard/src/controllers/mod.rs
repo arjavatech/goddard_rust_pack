@@ -11,3 +11,4 @@ pub mod student_form_assignment_review_controller;
 pub mod parent_details_controller;
 pub mod portal_controller;
 pub mod admin_controller;
+pub mod email_controller;

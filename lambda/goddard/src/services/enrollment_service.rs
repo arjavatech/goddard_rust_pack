@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use std::collections::HashMap;
+use chrono::{DateTime, Utc};
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
@@ -25,13 +26,15 @@ type ApiResult<T> = Result<T, AppError>;
 
 pub struct EnrollmentService {
     enrollment_dao: EnrollmentDao,
+    school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
 }
 
 impl EnrollmentService {
-    pub fn new(enrollment_dao: EnrollmentDao, supabase_client: SupabaseClient) -> Self {
+    pub fn new(enrollment_dao: EnrollmentDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
         Self {
             enrollment_dao,
+            school_dao,
             supabase_client,
         }
     }
@@ -42,7 +45,14 @@ impl EnrollmentService {
             return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
         }
 
-        // Step 2: Create auth user via Supabase
+        // Step 1.1: Validate secondary parent fields if email is provided
+        if request.secondary_parent_email.is_some() {
+            if request.secondary_parent_first_name.is_none() || request.secondary_parent_last_name.is_none() {
+                return Err(AppError::Validation("Secondary parent first name and last name are required when secondary parent email is provided".to_string()));
+            }
+        }
+
+        // Step 2: Create auth user via Supabase (primary parent)
         let auth_result = self.create_auth_user(
             &request.parent_email,
             request.school_id,
@@ -66,7 +76,43 @@ impl EnrollmentService {
             }
         };
 
-        // Step 4: Create child
+        // Step 3.1: Create secondary parent if provided
+        let (secondary_parent_id, secondary_signup_email_sent, created_secondary_parent) =
+            if let (Some(sec_email), Some(sec_first_name), Some(sec_last_name)) = (
+                &request.secondary_parent_email,
+                &request.secondary_parent_first_name,
+                &request.secondary_parent_last_name,
+            ) {
+                // Create auth user for secondary parent
+                let sec_auth_result = self.create_auth_user(
+                    sec_email,
+                    request.school_id,
+                    sec_first_name,
+                    sec_last_name,
+                    "secondary-parent"
+                ).await?;
+
+                // Get or create secondary parent user record
+                let sec_parent = match self.enrollment_dao.get_parent_by_id(sec_auth_result.auth_user_id, request.school_id).await {
+                    Ok(existing) => existing,
+                    Err(_) => {
+                        self.enrollment_dao.create_parent(
+                            sec_auth_result.auth_user_id,
+                            request.school_id,
+                            sec_first_name,
+                            sec_last_name,
+                            sec_email,
+                            "secondary-parent"
+                        ).await?
+                    }
+                };
+
+                (Some(sec_auth_result.auth_user_id), Some(true), Some(sec_parent))
+            } else {
+                (None, None, None)
+            };
+
+        // Step 4: Create child with optional secondary_parent_id
         let created_child = self.enrollment_dao.create_child(
             auth_result.auth_user_id,
             request.school_id,
@@ -74,6 +120,7 @@ impl EnrollmentService {
             &request.child_last_name,
             request.child_birth_date,
             &request.gender,
+            secondary_parent_id,
         ).await?;
 
         // Step 5: Create enrollment
@@ -111,9 +158,22 @@ impl EnrollmentService {
             created_at: created_parent.created_at,
         };
 
+        // Build secondary parent details if created
+        let secondary_parent = created_secondary_parent.map(|sp| ParentDetails {
+            id: sp.id,
+            school_id: sp.school_id,
+            first_name: sp.first_name,
+            last_name: sp.last_name,
+            email: sp.email,
+            role: sp.role,
+            is_verified: sp.is_verified,
+            created_at: sp.created_at,
+        });
+
         let child = ChildDetails {
             id: created_child.id,
             parent_id: created_child.parent_id,
+            secondary_parent_id: created_child.secondary_parent_id,
             school_id: created_child.school_id,
             first_name: created_child.first_name.clone(),
             last_name: created_child.last_name.clone(),
@@ -151,9 +211,16 @@ impl EnrollmentService {
             assigned_forms_count,
             invite_id: auth_result.auth_user_id,
             signup_email_sent: true,
-            message: "Parent invite created successfully and signup email sent".to_string(),
+            secondary_parent_id,
+            secondary_signup_email_sent,
+            message: if secondary_parent_id.is_some() {
+                "Parent invite created successfully. Signup emails sent to both primary and secondary parents".to_string()
+            } else {
+                "Parent invite created successfully and signup email sent".to_string()
+            },
             details: ParentInviteDetails {
                 parent,
+                secondary_parent,
                 child,
                 enrollment,
                 assigned_forms: assigned_form_details,
@@ -172,15 +239,36 @@ impl EnrollmentService {
         last_name: &str,
         role: &str
     ) -> ApiResult<AuthUserResult> {
-        // Create user metadata with school_id and other details
+        // STEP 1: Fetch school name FIRST - PREREQUISITE VALIDATION
+        tracing::info!("🔍 Fetching school name for school_id: {}", school_id);
+
+        let school_name = match self.school_dao.get_school_name(&school_id).await {
+            Ok(name) => {
+                tracing::info!("✅ School name fetched: '{}' for school {}", name, school_id);
+                name  // String, not Option<String>
+            },
+            Err(e) => {
+                tracing::error!("❌ Failed to fetch school name for {}: {}", school_id, e);
+                return Err(crate::error::AppError::Database(format!(
+                    "Cannot create parent invitation: School name not found for school_id {}: {}",
+                    school_id, e
+                )));
+            }
+        };
+
+        // STEP 2: Create user metadata with VALIDATED school_name
         let metadata = crate::services::supabase_client::UserMetadata::new(
             Some(school_id),
             Some(first_name.to_string()),
             Some(last_name.to_string()),
-            Some(role.to_string())
-        );
+            Some(role.to_string()),
+            None,  // phone_number - not provided in enrollment flow
+            None,  // is_verified - will be set after email confirmation
+        )
+        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
 
-        let auth_user_id_string = self.supabase_client.create_user_invitation_enhanced(email, metadata).await?;
+        // STEP 3: Create user with signup confirmation email
+        let auth_user_id_string = self.supabase_client.create_user_with_signup_confirmation(email, metadata).await?;
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
@@ -267,7 +355,7 @@ impl EnrollmentService {
             return Err(AppError::Validation("Classroom does not belong to the specified school".to_string()));
         }
 
-        // Step 3: Create child in children table
+        // Step 3: Create child in children table (no secondary parent for add_child flow)
         let created_child = self.enrollment_dao.create_child(
             request.parent_id,
             request.school_id,
@@ -275,6 +363,7 @@ impl EnrollmentService {
             &request.child_last_name,
             request.child_birth_date,
             &request.gender,
+            None, // secondary_parent_id - not supported in add_child flow
         ).await?;
 
         // Step 4: Create enrollment
@@ -319,6 +408,7 @@ impl EnrollmentService {
                 child: ChildDetails {
                     id: created_child.id,
                     parent_id: created_child.parent_id,
+                    secondary_parent_id: created_child.secondary_parent_id,
                     school_id: created_child.school_id,
                     first_name: created_child.first_name,
                     last_name: created_child.last_name,
@@ -438,6 +528,13 @@ impl EnrollmentService {
             if let (Some(child_id), Some(child_first_name), Some(child_last_name)) =
                 (&row.child_id, &row.child_first_name, &row.child_last_name) {
 
+                // Determine parent_type based on whether requesting parent is primary or secondary
+                let parent_type = if row.child_parent_id == Some(parent_id) {
+                    "primary_parent".to_string()
+                } else {
+                    "secondary_parent".to_string()
+                };
+
                 let child = children_map.entry(*child_id).or_insert_with(|| {
                     ParentChild {
                         child_id: *child_id,
@@ -447,6 +544,7 @@ impl EnrollmentService {
                         enrollment_id: row.enrollment_id.unwrap_or_default(),
                         classroom_id: row.classroom_id.unwrap_or_default(),
                         classroom_name: row.classroom_name.clone().unwrap_or_default(),
+                        parent_type,
                         forms: Vec::new(),
                     }
                 });
@@ -466,6 +564,7 @@ impl EnrollmentService {
                         form_id: format!("form_{}", form_template_id),
                         student_form_assignment_id: *assignment_id,
                         fillout_form_id,
+                        due_date: row.due_date.map(|d| d.format("%d-%m-%Y").to_string()),
                         form_name: form_name.clone(),
                         status: row.status.clone().unwrap_or_else(|| "incomplete".to_string()),
                         is_required: row.is_required.unwrap_or(false),
@@ -532,5 +631,367 @@ impl EnrollmentService {
     pub async fn update_child_status(&self, child_id: Uuid, request: crate::models::enrollment::UpdateChildStatusRequest) -> ApiResult<crate::models::enrollment::UpdateChildStatusResponse> {
         println!("[DEBUG] EnrollmentService: Updating child {} status to: {}", child_id, request.status);
         self.enrollment_dao.update_child_status(child_id, &request.status).await
+    }
+
+    // ==========================================
+    // CLASS TRANSITIONS SERVICE METHODS
+    // ==========================================
+
+    /// Promote student to next class (creates new transition record via trigger)
+    pub async fn promote_enrollment(
+        &self,
+        enrollment_id: Uuid,
+        request: crate::models::enrollment::PromoteEnrollmentRequest,
+        changed_by_user_id: Uuid,
+        school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::PromoteEnrollmentResponse> {
+        println!("[DEBUG] EnrollmentService: Promoting enrollment {} to classroom {}", enrollment_id, request.to_classroom_id);
+
+        // Step 1: Get current enrollment details
+        let enrollment = self.enrollment_dao.get_enrollment_with_classroom(enrollment_id, school_id).await?;
+
+        // Step 2: Verify target classroom belongs to same school
+        if !self.enrollment_dao.verify_classroom_belongs_to_school(request.to_classroom_id, school_id).await? {
+            return Err(AppError::Validation("Target classroom does not belong to the school".to_string()));
+        }
+
+        // Step 3: Verify different classroom (prevent no-op)
+        if enrollment.classroom_id == request.to_classroom_id {
+            // Allow if this is the first transition (backfilling scenario)
+            let has_transitions = self.enrollment_dao
+                .has_any_transitions_for_enrollment(enrollment_id)
+                .await?;
+
+            if has_transitions {
+                return Err(AppError::Validation(
+                    "Student is already in the target classroom".to_string()
+                ));
+            }
+
+            // Allow creating first transition record even to same classroom
+            println!("[DEBUG] Allowing promotion to same classroom - creating first transition record for enrollment {}", enrollment_id);
+        }
+
+        // Step 4: Update enrollment with user context (single transaction)
+        // This sets the session variable and updates the classroom in one transaction
+        // so the database trigger can capture the changed_by user
+        self.enrollment_dao.update_enrollment_classroom_with_user_context(
+            enrollment_id,
+            request.to_classroom_id,
+            request.effective_date.map(|dt| dt.naive_utc()),
+            changed_by_user_id
+        ).await?;
+
+        // Step 6: Get the newly created transition record
+        let transition = self.enrollment_dao.get_latest_transition_for_enrollment(enrollment_id).await?;
+
+        // Step 7: Update transition reason if provided
+        if let Some(reason) = &request.reason {
+            self.enrollment_dao.update_transition_reason(transition.id, reason).await?;
+        }
+
+        // Step 8: Get classroom details for response
+        let from_classroom = self.enrollment_dao.get_classroom_by_id(enrollment.classroom_id).await?;
+        let to_classroom = self.enrollment_dao.get_classroom_by_id(request.to_classroom_id).await?;
+
+        // Build response
+        let message = format!("Student successfully promoted from {} to {}", from_classroom.name, to_classroom.name);
+
+        let response = crate::models::enrollment::PromoteEnrollmentResponse {
+            enrollment_id,
+            child_id: enrollment.child_id,
+            child_name: format!("{} {}", enrollment.child_first_name, enrollment.child_last_name),
+            from_classroom: crate::models::enrollment::ClassroomInfo {
+                id: from_classroom.id,
+                name: from_classroom.name,
+            },
+            to_classroom: crate::models::enrollment::ClassroomInfo {
+                id: to_classroom.id,
+                name: to_classroom.name,
+            },
+            transition: crate::models::enrollment::TransitionInfo {
+                id: transition.id,
+                transitioned_at: transition.transitioned_at,
+                changed_by: Some(changed_by_user_id),
+                reason: request.reason,
+            },
+            message,
+        };
+
+        println!("[DEBUG] EnrollmentService: Successfully promoted enrollment {}", enrollment_id);
+        Ok(response)
+    }
+
+    /// Edit existing class transition record (no new entry created)
+    pub async fn edit_class_transition(
+        &self,
+        enrollment_id: Uuid,
+        request: crate::models::enrollment::EditClassTransitionRequest,
+        school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::EditClassTransitionResponse> {
+        println!("[DEBUG] EnrollmentService: Editing latest transition for enrollment {}", enrollment_id);
+
+        // Step 1A: Verify enrollment belongs to school
+        let enrollment_exists = self.enrollment_dao
+            .verify_enrollment_belongs_to_school(enrollment_id, school_id)
+            .await?;
+
+        if !enrollment_exists {
+            return Err(AppError::NotFound(
+                format!("Enrollment {} not found or does not belong to school", enrollment_id)
+            ));
+        }
+
+        // Step 1B: Get latest transition for enrollment
+        let transition = self.enrollment_dao
+            .get_latest_transition_for_enrollment(enrollment_id)
+            .await
+            .map_err(|e| match e {
+                AppError::Database(ref msg) if msg.contains("query returned no rows") => {
+                    AppError::NotFound(
+                        format!("No class transitions found for enrollment {}", enrollment_id)
+                    )
+                },
+                _ => e
+            })?;
+
+        // Step 1C: Security check - verify transition belongs to school
+        if transition.school_id != school_id {
+            return Err(AppError::Authorization(
+                "This transition does not belong to your school".to_string()
+            ));
+        }
+
+        let transition_id = transition.id;  // Extract for subsequent operations
+
+        // Step 2: Validate new classroom if provided
+        if let Some(new_classroom_id) = request.to_classroom_id {
+            if !self.enrollment_dao.verify_classroom_belongs_to_school(new_classroom_id, school_id).await? {
+                return Err(AppError::Validation("Target classroom does not belong to the school".to_string()));
+            }
+
+            // Prevent setting to same classroom as 'from'
+            if new_classroom_id == transition.from_classroom_id {
+                return Err(AppError::Validation("Cannot set to_classroom same as from_classroom".to_string()));
+            }
+        }
+
+        // Step 3: Update transition record (NO NEW ENTRY)
+        // Convert DateTime<Utc> to NaiveDateTime for database storage
+        let updated_transition = self.enrollment_dao.update_transition_record(
+            transition_id,
+            request.to_classroom_id,
+            request.reason.clone(),
+            request.transitioned_at.map(|dt| dt.naive_utc()),
+        ).await?;
+
+        // Step 4: Optionally sync enrollment if requested
+        let mut enrollment_synced = false;
+        if request.sync_enrollment.unwrap_or(false) && request.to_classroom_id.is_some() {
+            self.enrollment_dao.update_enrollment_classroom_direct(
+                transition.enrollment_id,
+                request.to_classroom_id.unwrap(),
+            ).await?;
+            enrollment_synced = true;
+        }
+
+        // Step 5: Get classroom details
+        let from_classroom = self.enrollment_dao.get_classroom_by_id(transition.from_classroom_id).await?;
+        let to_classroom = self.enrollment_dao.get_classroom_by_id(updated_transition.to_classroom_id).await?;
+
+        // Step 6: Get child name
+        let child = self.enrollment_dao.get_child_by_id(transition.child_id).await?;
+
+        let response = crate::models::enrollment::EditClassTransitionResponse {
+            transition_id,
+            enrollment_id: transition.enrollment_id,
+            child_name: format!("{} {}", child.first_name, child.last_name),
+            from_classroom: crate::models::enrollment::ClassroomInfo {
+                id: from_classroom.id,
+                name: from_classroom.name,
+            },
+            to_classroom: crate::models::enrollment::ClassroomInfo {
+                id: to_classroom.id,
+                name: to_classroom.name,
+            },
+            transitioned_at: updated_transition.transitioned_at,
+            reason: updated_transition.reason,
+            enrollment_synced,
+            message: "Transition record updated successfully".to_string(),
+        };
+
+        println!("[DEBUG] EnrollmentService: Successfully edited class transition {}", transition_id);
+        Ok(response)
+    }
+
+    /// Bulk promote multiple students to new classrooms
+    pub async fn bulk_promote_enrollments(
+        &self,
+        request: crate::models::enrollment::BulkPromoteEnrollmentsRequest,
+        changed_by_user_id: Uuid,
+        auth_school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::BulkPromoteEnrollmentsResponse> {
+        use crate::models::enrollment::{PromoteEnrollmentResponse, FailedPromotion, PromotionSummary};
+
+        println!("[DEBUG] EnrollmentService: Bulk promoting {} students", request.promotions.len());
+
+        // Validation 1: School ID must match auth school ID
+        if request.school_id != auth_school_id {
+            return Err(AppError::Validation(
+                "School ID in request does not match authenticated user's school".to_string()
+            ));
+        }
+
+        // Validation 2: Array must have at least 1 promotion
+        if request.promotions.is_empty() {
+            return Err(AppError::Validation("Promotions array cannot be empty".to_string()));
+        }
+
+        // Validation 3: Maximum 100 promotions per request
+        if request.promotions.len() > 100 {
+            return Err(AppError::Validation(
+                format!("Cannot process more than 100 promotions at once. Received: {}", request.promotions.len())
+            ));
+        }
+
+        // Validation 4: Pre-validate all target classrooms belong to school
+        let unique_classroom_ids: std::collections::HashSet<Uuid> = request.promotions
+            .iter()
+            .map(|p| p.to_classroom_id)
+            .collect();
+
+        for classroom_id in unique_classroom_ids {
+            if !self.enrollment_dao.verify_classroom_belongs_to_school(classroom_id, request.school_id).await? {
+                return Err(AppError::Validation(
+                    format!("Classroom {} does not belong to school {}", classroom_id, request.school_id)
+                ));
+            }
+        }
+
+        // Process each promotion individually with user context in transaction
+        let mut successful: Vec<PromoteEnrollmentResponse> = Vec::new();
+        let mut failed: Vec<FailedPromotion> = Vec::new();
+
+        for promotion in request.promotions {
+            match self.promote_single_enrollment_internal(
+                promotion.enrollment_id,
+                promotion.to_classroom_id,
+                promotion.reason,
+                promotion.effective_date,
+                changed_by_user_id,
+                request.school_id,
+            ).await {
+                Ok(response) => {
+                    successful.push(response);
+                }
+                Err(e) => {
+                    // Try to get child name for better error reporting
+                    let child_name = self.enrollment_dao.get_enrollment_with_classroom(promotion.enrollment_id, request.school_id)
+                        .await
+                        .ok()
+                        .map(|e| format!("{} {}", e.child_first_name, e.child_last_name));
+
+                    failed.push(FailedPromotion {
+                        enrollment_id: promotion.enrollment_id,
+                        child_name,
+                        to_classroom_id: promotion.to_classroom_id,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        let summary = PromotionSummary {
+            total_requested: successful.len() + failed.len(),
+            successful_count: successful.len(),
+            failed_count: failed.len(),
+        };
+
+        println!("[DEBUG] EnrollmentService: Bulk promotion complete - {}/{} successful",
+            summary.successful_count, summary.total_requested);
+
+        Ok(crate::models::enrollment::BulkPromoteEnrollmentsResponse {
+            successful,
+            failed,
+            summary,
+        })
+    }
+
+    /// Internal helper to promote a single enrollment (used by both individual and bulk endpoints)
+    async fn promote_single_enrollment_internal(
+        &self,
+        enrollment_id: Uuid,
+        to_classroom_id: Uuid,
+        reason: Option<String>,
+        effective_date: Option<DateTime<Utc>>,
+        changed_by_user_id: Uuid,
+        school_id: Uuid,
+    ) -> ApiResult<crate::models::enrollment::PromoteEnrollmentResponse> {
+        // Step 1: Get current enrollment details
+        // Note: DAO query enforces school_id and is_active constraints via WHERE clause
+        let enrollment = self.enrollment_dao.get_enrollment_with_classroom(enrollment_id, school_id).await?;
+
+        // Step 2: Verify different classroom (prevent no-op)
+        if enrollment.classroom_id == to_classroom_id {
+            // Allow if this is the first transition (backfilling scenario)
+            let has_transitions = self.enrollment_dao
+                .has_any_transitions_for_enrollment(enrollment_id)
+                .await?;
+
+            if has_transitions {
+                return Err(AppError::Validation(
+                    "Student is already in the target classroom".to_string()
+                ));
+            }
+
+            // Allow creating first transition record even to same classroom
+            println!("[DEBUG] Bulk promotion: Allowing promotion to same classroom - creating first transition record for enrollment {}", enrollment_id);
+        }
+
+        // Step 3: Update enrollment with user context (single transaction)
+        // This sets the session variable and updates the classroom in one transaction
+        // so the database trigger can capture the changed_by user
+        self.enrollment_dao.update_enrollment_classroom_with_user_context(
+            enrollment_id,
+            to_classroom_id,
+            effective_date.map(|dt| dt.naive_utc()),
+            changed_by_user_id
+        ).await?;
+
+        // Step 4: Get the newly created transition record
+        let transition = self.enrollment_dao.get_latest_transition_for_enrollment(enrollment_id).await?;
+
+        // Step 5: Update transition reason if provided
+        if let Some(reason_text) = &reason {
+            self.enrollment_dao.update_transition_reason(transition.id, reason_text).await?;
+        }
+
+        // Step 6: Get classroom details for response
+        let from_classroom = self.enrollment_dao.get_classroom_by_id(enrollment.classroom_id).await?;
+        let to_classroom = self.enrollment_dao.get_classroom_by_id(to_classroom_id).await?;
+
+        // Build response
+        let message = format!("Student successfully promoted from {} to {}", from_classroom.name, to_classroom.name);
+
+        Ok(crate::models::enrollment::PromoteEnrollmentResponse {
+            enrollment_id,
+            child_id: enrollment.child_id,
+            child_name: format!("{} {}", enrollment.child_first_name, enrollment.child_last_name),
+            from_classroom: crate::models::enrollment::ClassroomInfo {
+                id: from_classroom.id,
+                name: from_classroom.name,
+            },
+            to_classroom: crate::models::enrollment::ClassroomInfo {
+                id: to_classroom.id,
+                name: to_classroom.name,
+            },
+            transition: crate::models::enrollment::TransitionInfo {
+                id: transition.id,
+                transitioned_at: transition.transitioned_at,
+                changed_by: Some(changed_by_user_id),
+                reason,
+            },
+            message,
+        })
     }
 }

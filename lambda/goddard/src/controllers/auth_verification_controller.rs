@@ -6,12 +6,16 @@ use axum::{
 };
 use serde::Deserialize;
 use std::sync::Arc;
+use serde_json::json;
+use axum::http::StatusCode;
 
 use crate::{
-    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced}},
+    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest}},
     utils::ResponseUtils,
     error::AppError,
+    middleware::auth::AuthContext,
 };
+use axum::Extension;
 
 #[derive(Debug, Deserialize)]
 pub struct VerificationQuery {
@@ -59,6 +63,16 @@ pub async fn create_invitation(
     Json(payload): Json<CreateInvitationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let response = auth_service.create_invitation(payload).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// POST /auth/create-superadmin
+/// Create SuperAdmin user for a school
+pub async fn create_superadmin(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<CreateSuperAdminRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = auth_service.create_superadmin(payload).await?;
     Ok(ResponseUtils::success(response))
 }
 
@@ -129,6 +143,34 @@ pub async fn get_users_by_school_and_role(
     Ok(ResponseUtils::success(users))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GetAdminsBySchoolQuery {
+    pub school_id: String,
+}
+
+/// GET /users/admin?school_id=<uuid>
+/// Get all verified Admin users for a specific school (SuperAdmin only)
+pub async fn get_admins_by_school(
+    State(auth_service): State<Arc<AuthService>>,
+    Query(query): Query<GetAdminsBySchoolQuery>,
+) -> impl IntoResponse {
+    match auth_service.get_admins_by_school(&query.school_id).await {
+        Ok(admins) => {
+            let count = admins.len();
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "data": admins,
+                    "count": count,
+                    "timestamp": chrono::Utc::now()
+                }))
+            ).into_response()
+        },
+        Err(e) => e.into_response(),
+    }
+}
+
 /// GET /users/me
 /// Get current user profile from JWT token
 pub async fn get_current_user_profile(
@@ -153,4 +195,44 @@ pub async fn get_current_user_profile(
         .await?;
 
     Ok(ResponseUtils::success(user_profile))
+}
+
+/// PUT /users/admin - Update admin profile
+/// Admin can only update their own profile (user_id from JWT)
+/// SuperAdmin can update any admin's profile (user_id from payload, or own if not provided)
+pub async fn update_admin_user(
+    Extension(auth): Extension<AuthContext>,
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<UpdateAdminRequest>,
+) -> impl IntoResponse {
+    match auth_service.update_admin_user(auth.user_id, auth.role.clone(), payload).await {
+        Ok(admin) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Admin user updated successfully",
+                "data": admin,
+                "timestamp": chrono::Utc::now()
+            }))
+        ).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// DELETE /users/admin - Soft delete admin user (SuperAdmin only)
+pub async fn delete_admin_user(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<DeleteAdminRequest>,
+) -> impl IntoResponse {
+    match auth_service.delete_admin_user(payload).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Admin user deleted successfully",
+                "timestamp": chrono::Utc::now()
+            }))
+        ).into_response(),
+        Err(e) => e.into_response(),
+    }
 }

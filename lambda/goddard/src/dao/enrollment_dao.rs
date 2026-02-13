@@ -20,6 +20,21 @@ pub struct EnrollmentDao {
     pool: Pool,
 }
 
+#[derive(Debug)]
+pub struct EnrollmentWithClassroom {
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub classroom_id: Uuid,
+    pub child_first_name: String,
+    pub child_last_name: String,
+}
+
+#[derive(Debug)]
+pub struct ClassroomInfo {
+    pub id: Uuid,
+    pub name: String,
+}
+
 impl EnrollmentDao {
     pub fn new(pool: Pool) -> Self {
         Self { pool }
@@ -61,10 +76,31 @@ impl EnrollmentDao {
 
     // Step 1: Verify classroom belongs to school
     pub async fn verify_classroom_belongs_to_school(&self, classroom_id: Uuid, school_id: Uuid) -> ApiResult<bool> {
+        // If school_id is nil (API key with SuperAdmin), skip school verification
+        if school_id.is_nil() {
+            return Ok(true);
+        }
+
         self.execute_with_connection(|client| async move {
             let query = "SELECT COUNT(*) as count FROM classrooms WHERE id = $1 AND school_id = $2";
             let row = client.query_one(query, &[&classroom_id, &school_id]).await
                 .map_err(|e| AppError::Database(format!("Failed to verify classroom belongs to school: {}", e)))?;
+            let count: i64 = row.get("count");
+            Ok(count > 0)
+        }).await
+    }
+
+    // Step 1.1: Verify enrollment belongs to school
+    pub async fn verify_enrollment_belongs_to_school(&self, enrollment_id: Uuid, school_id: Uuid) -> ApiResult<bool> {
+        // If school_id is nil (API key with SuperAdmin), skip school verification
+        if school_id.is_nil() {
+            return Ok(true);
+        }
+
+        self.execute_with_connection(|client| async move {
+            let query = "SELECT COUNT(*) as count FROM enrollments WHERE id = $1 AND school_id = $2 AND is_active = true";
+            let row = client.query_one(query, &[&enrollment_id, &school_id]).await
+                .map_err(|e| AppError::Database(format!("Failed to verify enrollment: {}", e)))?;
             let count: i64 = row.get("count");
             Ok(count > 0)
         }).await
@@ -125,8 +161,8 @@ impl EnrollmentDao {
     }
 
     // Single transaction method to create child with explicit parent verification
-    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str) -> ApiResult<CreatedChild> {
-        println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}", parent_id, school_id);
+    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
+        println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}, secondary_parent_id: {:?}", parent_id, school_id, secondary_parent_id);
 
         use tokio::time::{timeout, Duration};
 
@@ -172,12 +208,41 @@ impl EnrollmentDao {
             return Err(AppError::Database(format!("Parent with id {} not found in school {}", parent_id, school_id)));
         }
 
-        // Now insert child in same transaction
-        let child_insert_query = "INSERT INTO children (id, parent_id, school_id, first_name, last_name, birth_date, gender, status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', true, NOW(), NOW()) RETURNING id, parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+        // Verify secondary parent exists if provided
+        if let Some(sec_parent_id) = secondary_parent_id {
+            println!("[DEBUG] [create_child] Verifying secondary parent exists: {} in school: {}", sec_parent_id, school_id);
+            let sec_parent_check_result = timeout(Duration::from_secs(5),
+                transaction.query_opt(parent_check_query, &[&sec_parent_id, &school_id])
+            ).await;
 
-        println!("[DEBUG] [create_child] Inserting child with verified parent");
+            let sec_parent_exists = match sec_parent_check_result {
+                Ok(result) => {
+                    match result.map_err(|e| AppError::Database(format!("Failed to verify secondary parent: {}", e)))? {
+                        Some(_) => {
+                            println!("[DEBUG] [create_child] Secondary parent verified successfully");
+                            true
+                        },
+                        None => {
+                            println!("[DEBUG] [create_child] Secondary parent not found in database");
+                            false
+                        }
+                    }
+                },
+                Err(_) => return Err(AppError::Database("Timeout verifying secondary parent exists".to_string()))
+            };
+
+            if !sec_parent_exists {
+                transaction.rollback().await.ok();
+                return Err(AppError::Database(format!("Secondary parent with id {} not found in school {}", sec_parent_id, school_id)));
+            }
+        }
+
+        // Now insert child in same transaction
+        let child_insert_query = "INSERT INTO children (id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'active', true, NOW(), NOW()) RETURNING id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
+
+        println!("[DEBUG] [create_child] Inserting child with verified parent(s)");
         let child_result = timeout(Duration::from_secs(10),
-            transaction.query_one(child_insert_query, &[&parent_id, &school_id, &first_name, &last_name, &birth_date, &gender])
+            transaction.query_one(child_insert_query, &[&parent_id, &secondary_parent_id, &school_id, &first_name, &last_name, &birth_date, &gender])
         ).await;
 
         let row = match child_result {
@@ -197,6 +262,7 @@ impl EnrollmentDao {
         Ok(CreatedChild {
             id: row.get("id"),
             parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
             school_id: row.get("school_id"),
             first_name: row.get("first_name"),
             last_name: row.get("last_name"),
@@ -418,10 +484,21 @@ impl EnrollmentDao {
                     e.id as enrollment_id,
                     cl.id as classroom_id,
                     cl.name as classroom_name,
+                    -- Primary parent info
+                    c.parent_id as primary_parent_id,
+                    pu.first_name as primary_parent_first_name,
+                    pu.last_name as primary_parent_last_name,
+                    pu.email as primary_parent_email,
+                    -- Secondary parent info
+                    c.secondary_parent_id as secondary_parent_id,
+                    su.first_name as secondary_parent_first_name,
+                    su.last_name as secondary_parent_last_name,
+                    su.email as secondary_parent_email,
                     sfa.id as student_form_assignment_id,
                     sfa.form_template_id,
                     ft.form_name,
                     ft.fillout_form_id,
+                    ft.due_date,
                     COALESCE(sfa.status, 'incomplete') as form_status,
                     COALESCE(sfa.is_required, false) as is_required,
                     sfa.recent_edit_link,
@@ -430,13 +507,15 @@ impl EnrollmentDao {
                     sfa.approved_on
                 FROM users u
                 LEFT JOIN auth.users au ON au.email = u.email
-                INNER JOIN children c ON c.parent_id = u.id
+                INNER JOIN children c ON (c.parent_id = u.id OR c.secondary_parent_id = u.id)
+                INNER JOIN users pu ON pu.id = c.parent_id
+                LEFT JOIN users su ON su.id = c.secondary_parent_id
                 INNER JOIN enrollments e ON e.child_id = c.id
                 INNER JOIN classrooms cl ON cl.id = e.classroom_id
                 LEFT JOIN student_form_assignments sfa ON sfa.child_id = c.id
                 LEFT JOIN form_templates ft ON ft.id = sfa.form_template_id
                 WHERE u.school_id = $1
-                    AND u.role = 'Parent'
+                    AND u.role IN ('Parent', 'secondary-parent')
                 ORDER BY u.email, c.id, sfa.form_template_id
             )
             SELECT
@@ -453,6 +532,14 @@ impl EnrollmentDao {
                 enrollment_id,
                 classroom_id,
                 classroom_name,
+                primary_parent_id,
+                primary_parent_first_name,
+                primary_parent_last_name,
+                primary_parent_email,
+                secondary_parent_id,
+                secondary_parent_first_name,
+                secondary_parent_last_name,
+                secondary_parent_email,
                 COALESCE(
                     json_agg(
                         CASE WHEN form_template_id IS NOT NULL THEN
@@ -466,6 +553,7 @@ impl EnrollmentDao {
                                     ELSE fillout_form_id
                                 END,
                                 'form_name', form_name,
+                                'due_date', TO_CHAR(due_date, 'DD-MM-YYYY'),
                                 'status', form_status,
                                 'is_required', is_required,
                                 'recent_edit_link', recent_edit_link,
@@ -480,7 +568,9 @@ impl EnrollmentDao {
             FROM parent_children_forms
             GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_is_active, signed_status,
                      child_id, child_full_name, child_dob, child_status, enrollment_id,
-                     classroom_id, classroom_name
+                     classroom_id, classroom_name,
+                     primary_parent_id, primary_parent_first_name, primary_parent_last_name, primary_parent_email,
+                     secondary_parent_id, secondary_parent_first_name, secondary_parent_last_name, secondary_parent_email
             ORDER BY parent_email, child_full_name
         ";
 
@@ -511,6 +601,14 @@ impl EnrollmentDao {
                 classroom_id: row.get("classroom_id"),
                 classroom_name: row.get("classroom_name"),
                 forms,
+                primary_parent_id: row.get("primary_parent_id"),
+                primary_parent_first_name: row.get("primary_parent_first_name"),
+                primary_parent_last_name: row.get("primary_parent_last_name"),
+                primary_parent_email: row.get("primary_parent_email"),
+                secondary_parent_id: row.get("secondary_parent_id"),
+                secondary_parent_first_name: row.get("secondary_parent_first_name"),
+                secondary_parent_last_name: row.get("secondary_parent_last_name"),
+                secondary_parent_email: row.get("secondary_parent_email"),
             };
 
             // Add to parent or create new parent entry
@@ -588,6 +686,7 @@ impl EnrollmentDao {
     pub async fn get_school_forms(&self, school_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
         let query = "
             SELECT
+                e.id as enrollment_id,
                 c.parent_id as parent_id,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
@@ -604,7 +703,8 @@ impl EnrollmentDao {
                             ft.form_name,
                             jsonb_build_object(
                                 'status', COALESCE(sfa.status, 'incomplete'),
-                                'assigned_at', TO_CHAR(sfa.assigned_at, 'DD-MM-YYYY')
+                                'assigned_at', TO_CHAR(sfa.assigned_at, 'DD-MM-YYYY'),
+                                'due_date', TO_CHAR(ft.due_date, 'DD-MM-YYYY')
                             )
                         )
                         FROM student_form_assignments sfa
@@ -615,10 +715,15 @@ impl EnrollmentDao {
                     ),
                     '{}'::jsonb
                 ) as forms,
-                NULL as additional_parent_email
+                NULL as additional_parent_email,
+                c.secondary_parent_id as secondary_parent_id,
+                sp.first_name as secondary_parent_first_name,
+                sp.last_name as secondary_parent_last_name,
+                sp.email as secondary_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             JOIN users u ON c.parent_id = u.id
+            LEFT JOIN users sp ON c.secondary_parent_id = sp.id
             JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE e.school_id = $1
                 AND u.is_active = true
@@ -632,6 +737,7 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get school forms: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            enrollment_id: row.get("enrollment_id"),
             parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
@@ -644,6 +750,10 @@ impl EnrollmentDao {
             form_status: row.get("form_status"),
             forms: row.get("forms"),
             additional_parent_email: row.get("additional_parent_email"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            secondary_parent_first_name: row.get("secondary_parent_first_name"),
+            secondary_parent_last_name: row.get("secondary_parent_last_name"),
+            secondary_parent_email: row.get("secondary_parent_email"),
         }).collect())
     }
 
@@ -651,6 +761,7 @@ impl EnrollmentDao {
     pub async fn get_class_based_enrollments(&self, school_id: Uuid, class_id: Uuid) -> ApiResult<Vec<SchoolFormDetails>> {
         let query = "
             SELECT
+                e.id as enrollment_id,
                 c.parent_id as parent_id,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
@@ -662,10 +773,15 @@ impl EnrollmentDao {
                 u.email as primary_email,
                 COALESCE(e.status, 'pending') as form_status,
                 COALESCE(e.application_status, '{}') as forms,
-                NULL as additional_parent_email
+                NULL as additional_parent_email,
+                c.secondary_parent_id as secondary_parent_id,
+                sp.first_name as secondary_parent_first_name,
+                sp.last_name as secondary_parent_last_name,
+                sp.email as secondary_parent_email
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             JOIN users u ON c.parent_id = u.id
+            LEFT JOIN users sp ON c.secondary_parent_id = sp.id
             JOIN classrooms cl ON e.classroom_id = cl.id
             WHERE e.school_id = $1
                 AND e.classroom_id = $2
@@ -680,6 +796,7 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get class-based enrollments: {}", e)))?;
 
         Ok(rows.into_iter().map(|row| SchoolFormDetails {
+            enrollment_id: row.get("enrollment_id"),
             parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
@@ -692,6 +809,10 @@ impl EnrollmentDao {
             form_status: row.get("form_status"),
             forms: row.get("forms"),
             additional_parent_email: row.get("additional_parent_email"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            secondary_parent_first_name: row.get("secondary_parent_first_name"),
+            secondary_parent_last_name: row.get("secondary_parent_last_name"),
+            secondary_parent_email: row.get("secondary_parent_email"),
         }).collect())
     }
 
@@ -746,6 +867,8 @@ impl EnrollmentDao {
                 c.last_name as child_last_name,
                 c.birth_date as child_dob,
                 c.status as child_status,
+                c.parent_id as child_parent_id,
+                c.secondary_parent_id as child_secondary_parent_id,
                 e.id as enrollment_id,
                 cl.id as classroom_id,
                 cl.name as classroom_name,
@@ -753,6 +876,7 @@ impl EnrollmentDao {
                 ft.id as form_template_id,
                 ft.form_name,
                 ft.fillout_form_id,
+                ft.due_date,
                 sfa.status,
                 sfa.is_required,
                 sfa.recent_edit_link,
@@ -793,6 +917,8 @@ impl EnrollmentDao {
             child_last_name: row.get("child_last_name"),
             child_dob: row.get("child_dob"),
             child_status: row.get("child_status"),
+            child_parent_id: row.get("child_parent_id"),
+            child_secondary_parent_id: row.get("child_secondary_parent_id"),
             enrollment_id: row.get("enrollment_id"),
             classroom_id: row.get("classroom_id"),
             classroom_name: row.get("classroom_name"),
@@ -800,6 +926,7 @@ impl EnrollmentDao {
             form_template_id: row.get("form_template_id"),
             form_name: row.get("form_name"),
             fillout_form_id: row.get("fillout_form_id"),
+            due_date: row.get("due_date"),
             status: row.get("status"),
             is_required: row.get("is_required"),
             recent_edit_link: row.get("recent_edit_link"),
@@ -956,5 +1083,348 @@ impl EnrollmentDao {
                 message: "Child status updated successfully".to_string(),
             })
         }).await
+    }
+
+    // ==========================================
+    // CLASS TRANSITIONS DAO METHODS
+    // ==========================================
+
+    /// Get enrollment with classroom and child details
+    pub async fn get_enrollment_with_classroom(
+        &self,
+        enrollment_id: Uuid,
+        school_id: Uuid,
+    ) -> ApiResult<EnrollmentWithClassroom> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        // If school_id is nil (API key access with SuperAdmin), skip school check
+        let (query, params): (&str, Vec<&(dyn tokio_postgres::types::ToSql + Sync)>) = if school_id.is_nil() {
+            (
+                r#"
+                    SELECT
+                        e.id AS enrollment_id,
+                        e.child_id,
+                        e.classroom_id,
+                        c.first_name AS child_first_name,
+                        c.last_name AS child_last_name
+                    FROM enrollments e
+                    INNER JOIN children c ON e.child_id = c.id
+                    WHERE e.id = $1
+                        AND e.is_active = true
+                "#,
+                vec![&enrollment_id],
+            )
+        } else {
+            (
+                r#"
+                    SELECT
+                        e.id AS enrollment_id,
+                        e.child_id,
+                        e.classroom_id,
+                        c.first_name AS child_first_name,
+                        c.last_name AS child_last_name
+                    FROM enrollments e
+                    INNER JOIN children c ON e.child_id = c.id
+                    WHERE e.id = $1
+                        AND e.school_id = $2
+                        AND e.is_active = true
+                "#,
+                vec![&enrollment_id, &school_id],
+            )
+        };
+
+        let row = client
+            .query_one(query, &params[..])
+            .await
+            .map_err(|_| AppError::NotFound("Enrollment not found".to_string()))?;
+
+        Ok(EnrollmentWithClassroom {
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            classroom_id: row.get("classroom_id"),
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+        })
+    }
+
+    /// Get classroom by ID
+    pub async fn get_classroom_by_id(&self, classroom_id: Uuid) -> ApiResult<ClassroomInfo> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let query = r#"
+            SELECT id, name
+            FROM classrooms
+            WHERE id = $1 AND is_active = true
+        "#;
+
+        let row = client
+            .query_one(query, &[&classroom_id])
+            .await
+            .map_err(|_| AppError::NotFound("Classroom not found".to_string()))?;
+
+        Ok(ClassroomInfo {
+            id: row.get("id"),
+            name: row.get("name"),
+        })
+    }
+
+    /// Update enrollment classroom (trigger will create transition record)
+    pub async fn update_enrollment_classroom(
+        &self,
+        enrollment_id: Uuid,
+        new_classroom_id: Uuid,
+        effective_date: Option<chrono::NaiveDateTime>,
+    ) -> ApiResult<()> {
+        let query = "UPDATE enrollments
+                     SET classroom_id = $1, updated_at = COALESCE($2, NOW())
+                     WHERE id = $3";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&new_classroom_id, &effective_date, &enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update enrollment classroom: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Update enrollment classroom with user context in a single transaction
+    /// This ensures the database trigger can capture the changed_by user
+    pub async fn update_enrollment_classroom_with_user_context(
+        &self,
+        enrollment_id: Uuid,
+        new_classroom_id: Uuid,
+        _effective_date: Option<chrono::NaiveDateTime>,
+        changed_by_user_id: Uuid,
+    ) -> ApiResult<()> {
+        self.execute_with_connection(|mut client| async move {
+            // Start transaction
+            let transaction = client.transaction().await
+                .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+            // SET LOCAL - must use string formatting because PostgreSQL doesn't support $N in SET commands
+            // Safe: UUID is validated type, no SQL injection possible
+            let set_context_query = format!("SET LOCAL app.current_user_id = '{}'", changed_by_user_id);
+            transaction.execute(&set_context_query, &[]).await
+                .map_err(|e| AppError::Database(format!("Failed to set user context: {}", e)))?;
+
+            // UPDATE enrollments - trigger will fire and read app.current_user_id
+            // Note: updated_at always uses NOW() as it represents when the record was modified
+            let update_query = "UPDATE enrollments
+                               SET classroom_id = $1, updated_at = NOW()
+                               WHERE id = $2";
+
+            transaction.execute(update_query, &[&new_classroom_id, &enrollment_id]).await
+                .map_err(|e| AppError::Database(format!("Failed to update enrollment classroom: {}", e)))?;
+
+            // Commit transaction
+            transaction.commit().await
+                .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+            Ok(())
+        }).await
+    }
+
+    /// Get latest transition for enrollment
+    pub async fn get_latest_transition_for_enrollment(
+        &self,
+        enrollment_id: Uuid
+    ) -> ApiResult<crate::models::enrollment::ClassTransition> {
+        let query = "SELECT id, enrollment_id, child_id, school_id,
+                            from_classroom_id, to_classroom_id, changed_by, reason,
+                            transitioned_at, created_at
+                     FROM class_transitions
+                     WHERE enrollment_id = $1 AND is_active = true
+                     ORDER BY transitioned_at DESC, created_at DESC, id DESC
+                     LIMIT 1";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let rows = client.query(query, &[&enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to query transitions: {}", e)))?;
+
+        if rows.is_empty() {
+            return Err(AppError::NotFound(format!(
+                "No class transitions found for enrollment {}",
+                enrollment_id
+            )));
+        }
+
+        // If multiple rows exist, log warning but continue with first (most recent)
+        if rows.len() > 1 {
+            println!("[WARN] Found {} active transitions for enrollment {}. Using most recent.",
+                rows.len(), enrollment_id);
+        }
+
+        let row = &rows[0];
+
+        Ok(crate::models::enrollment::ClassTransition {
+            id: row.get("id"),
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            school_id: row.get("school_id"),
+            from_classroom_id: row.get("from_classroom_id"),
+            to_classroom_id: row.get("to_classroom_id"),
+            changed_by: row.get("changed_by"),
+            reason: row.get("reason"),
+            transitioned_at: row.get("transitioned_at"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    /// Check if any active transitions exist for an enrollment
+    /// Used to determine if we should allow promoting to the same classroom (backfilling scenario)
+    pub async fn has_any_transitions_for_enrollment(
+        &self,
+        enrollment_id: Uuid
+    ) -> ApiResult<bool> {
+        let query = "SELECT EXISTS(
+            SELECT 1 FROM class_transitions
+            WHERE enrollment_id = $1 AND is_active = true
+        ) as has_transitions";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_one(query, &[&enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to check transitions: {}", e)))?;
+
+        Ok(row.get("has_transitions"))
+    }
+
+    /// Update transition reason
+    pub async fn update_transition_reason(
+        &self,
+        transition_id: Uuid,
+        reason: &str
+    ) -> ApiResult<()> {
+        let query = "UPDATE class_transitions SET reason = $1 WHERE id = $2";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&reason, &transition_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update transition reason: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get transition by ID
+    pub async fn get_transition_by_id(
+        &self,
+        transition_id: Uuid,
+        school_id: Uuid
+    ) -> ApiResult<crate::models::enrollment::ClassTransition> {
+        let query = "SELECT id, enrollment_id, child_id, school_id,
+                            from_classroom_id, to_classroom_id, changed_by, reason,
+                            transitioned_at, created_at
+                     FROM class_transitions
+                     WHERE id = $1 AND school_id = $2 AND is_active = true";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_opt(query, &[&transition_id, &school_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get transition: {}", e)))?
+            .ok_or_else(|| AppError::NotFound("Transition record not found".to_string()))?;
+
+        Ok(crate::models::enrollment::ClassTransition {
+            id: row.get("id"),
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            school_id: row.get("school_id"),
+            from_classroom_id: row.get("from_classroom_id"),
+            to_classroom_id: row.get("to_classroom_id"),
+            changed_by: row.get("changed_by"),
+            reason: row.get("reason"),
+            transitioned_at: row.get("transitioned_at"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    /// Update transition record fields (NO trigger, direct UPDATE)
+    pub async fn update_transition_record(
+        &self,
+        transition_id: Uuid,
+        to_classroom_id: Option<Uuid>,
+        reason: Option<String>,
+        transitioned_at: Option<chrono::NaiveDateTime>,
+    ) -> ApiResult<crate::models::enrollment::ClassTransition> {
+        let query = "UPDATE class_transitions
+                     SET to_classroom_id = COALESCE($1, to_classroom_id),
+                         reason = COALESCE($2, reason),
+                         transitioned_at = COALESCE($3, transitioned_at)
+                     WHERE id = $4
+                     RETURNING id, enrollment_id, child_id, school_id,
+                               from_classroom_id, to_classroom_id, changed_by, reason,
+                               transitioned_at, created_at";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_one(query, &[&to_classroom_id, &reason, &transitioned_at, &transition_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update transition record: {}", e)))?;
+
+        Ok(crate::models::enrollment::ClassTransition {
+            id: row.get("id"),
+            enrollment_id: row.get("enrollment_id"),
+            child_id: row.get("child_id"),
+            school_id: row.get("school_id"),
+            from_classroom_id: row.get("from_classroom_id"),
+            to_classroom_id: row.get("to_classroom_id"),
+            changed_by: row.get("changed_by"),
+            reason: row.get("reason"),
+            transitioned_at: row.get("transitioned_at"),
+            created_at: row.get("created_at"),
+        })
+    }
+
+    /// Update enrollment classroom WITHOUT triggering transition (for sync)
+    pub async fn update_enrollment_classroom_direct(
+        &self,
+        enrollment_id: Uuid,
+        new_classroom_id: Uuid,
+    ) -> ApiResult<()> {
+        let query = "UPDATE enrollments
+                     SET classroom_id = $1, updated_at = NOW()
+                     WHERE id = $2";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        client.execute(query, &[&new_classroom_id, &enrollment_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to update enrollment classroom: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get child by ID
+    pub async fn get_child_by_id(&self, child_id: Uuid) -> ApiResult<crate::models::enrollment::ChildDetails> {
+        let query = "SELECT id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at
+                     FROM children
+                     WHERE id = $1 AND is_active = true";
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let row = client.query_opt(query, &[&child_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to get child: {}", e)))?
+            .ok_or_else(|| AppError::NotFound("Child not found".to_string()))?;
+
+        Ok(crate::models::enrollment::ChildDetails {
+            id: row.get("id"),
+            parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            school_id: row.get("school_id"),
+            first_name: row.get("first_name"),
+            last_name: row.get("last_name"),
+            birth_date: row.get("birth_date"),
+            gender: row.get("gender"),
+            status: row.get("status"),
+            created_at: row.get("created_at"),
+        })
     }
 }

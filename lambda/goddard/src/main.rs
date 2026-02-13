@@ -24,13 +24,17 @@ use controllers::{
         get_invitation_summary,
         create_invitation,
         create_invitation_enhanced,
+        create_superadmin,
         clear_auth_table,
         debug_auth_users,
         get_users_by_school_and_role,
-        get_current_user_profile
+        get_current_user_profile,
+        get_admins_by_school,
+        update_admin_user,
+        delete_admin_user
     },
     school_controller::{
-        create_school, get_all_schools, update_school, delete_school
+        create_school, get_all_schools, update_school, delete_school, create_school_with_owner, get_school_with_owner, get_all_schools_with_owners
     },
     classroom_controller::{
         create_classroom, get_classrooms_by_school, update_classroom, delete_classroom
@@ -42,7 +46,7 @@ use controllers::{
         create_class_form_override, delete_class_form_override
     },
     enrollment_controller::{
-        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, activate_parent, update_child_status
+        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, activate_parent, update_child_status, promote_enrollment, bulk_promote_enrollments, edit_class_transition
     },
     parent_details_controller::{
         get_parent_details_by_id
@@ -52,7 +56,7 @@ use controllers::{
         get_form_submission_by_id, update_form_submission_status
     },
     student_form_assignment_controller::{
-        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment
+        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students
     },
     student_form_assignment_review_controller::{
         review_student_form_assignment
@@ -65,6 +69,9 @@ use controllers::{
     admin_controller::{
         get_admin_dashboard_metrics
     },
+    email_controller::{
+        send_bulk_form_reminders
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
@@ -72,9 +79,9 @@ use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService
 };
-use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only};
+use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -142,12 +149,12 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     }
 
     // Initialize services
-    let auth_service = Arc::new(AuthService::new(auth_dao, supabase_client.clone()));
-    let school_service = Arc::new(SchoolService::new(school_dao));
+    let auth_service = Arc::new(AuthService::new(auth_dao.clone(), school_dao.clone(), supabase_client.clone()));
+    let school_service = Arc::new(SchoolService::new(school_dao.clone(), supabase_client.clone(), auth_dao.clone()));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao));
     let form_template_service = Arc::new(FormTemplateService::new(form_template_dao));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
-    let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, supabase_client.clone()));
+    let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, school_dao.clone(), supabase_client.clone()));
     let form_submission_service = Arc::new(
         if let Some(fillout) = fillout_service {
             FormSubmissionService::new_with_fillout(form_submission_dao, fillout)
@@ -158,6 +165,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
+    let email_service = Arc::new(EmailService::new());
 
     // Initialize tracing
     tracing_subscriber::fmt()
@@ -189,15 +197,24 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         // Authorization Verification Routes (Legacy)
         .route("/auth/verification-status", get(get_auth_verification_status))
         .route("/auth/invitation-summary", get(get_invitation_summary))
-        .route("/auth/invite-create", post(create_invitation))
-        .route("/auth/invite-create-enhanced", post(create_invitation_enhanced))
+        .route("/auth/invite-create", post(create_invitation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/auth/invite-create-enhanced", post(create_invitation_enhanced).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/auth/create-superadmin", post(create_superadmin).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/auth/clear-table", delete(clear_auth_table))
         .route("/auth/debug-users", get(debug_auth_users))
         .route("/auth/users/filter", get(get_users_by_school_and_role))
         .route("/users/me", get(get_current_user_profile))
+        .route("/users/admin",
+            get(get_admins_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only))
+            .merge(put(update_admin_user).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+            .merge(delete(delete_admin_user).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        )
         .with_state(auth_service)
 
         // School Management APIs (Admin JWT or API Key)
+        .route("/schools/with-owner", post(create_school_with_owner).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/schools/with-owners", get(get_all_schools_with_owners).layer(axum_middleware::from_fn(api_key_middleware)))
+        .route("/schools/:id/owner", get(get_school_with_owner).layer(axum_middleware::from_fn(api_key_middleware)))
         .route("/schools", post(create_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/schools", get(get_all_schools)) // Public
         .route("/schools", put(update_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
@@ -227,6 +244,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/admin/dashboard-metrics", get(get_admin_dashboard_metrics).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(admin_service)
 
+        // Email APIs (JWT or API Key protected - Admin/SuperAdmin only)
+        .route("/emails/bulk-form-reminders", post(send_bulk_form_reminders).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .with_state(email_service)
+
         // Enrollment Management APIs (Admin JWT or API Key)
         .route("/enrollments/parent-invite", post(create_parent_invite).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments/resend-confirmation", post(resend_parent_confirmation).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
@@ -241,6 +262,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/parent/:parent_id", delete(deactivate_parent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/parent/:parent_id/activate", patch(activate_parent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/children/:child_id/status", patch(update_child_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        // Class Transitions APIs (Admin JWT or API Key)
+        .route("/class-promotions/:enrollment_id", post(promote_enrollment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-promotions/bulk", post(bulk_promote_enrollments).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/class-transitions/:enrollment_id", patch(edit_class_transition).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(enrollment_service)
 
         // Form Submissions Management APIs (Admin JWT or API Key)
@@ -257,6 +282,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/student-form-assignments/assign", post(bulk_assign_forms_to_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/student-form-assignments/assign-to-school", post(assign_form_to_school_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(student_form_assignment_service)
 
         // Section 10 Portal APIs (JWT or API Key with parent isolation for JWT)

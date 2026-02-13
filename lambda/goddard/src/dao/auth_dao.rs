@@ -199,7 +199,11 @@ impl AuthDao {
             UPDATE users
             SET first_name = COALESCE($2, first_name),
                 last_name = COALESCE($3, last_name),
-                phone_number = COALESCE($4, phone_number),
+                metadata = CASE
+                    WHEN $4::text IS NOT NULL THEN
+                        COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('phone_number', $4::text)
+                    ELSE metadata
+                END,
                 updated_at = NOW()
             WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
             RETURNING id, school_id, first_name, last_name, email, role,

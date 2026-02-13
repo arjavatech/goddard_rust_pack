@@ -77,6 +77,12 @@ deploy-env: ## Deploy environment variables to Lambda
 	chmod +x scripts/deploy-env-auto.sh
 	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy-env-auto.sh
 
+deploy-flyio-dev: ## 🚀 Deploy to Fly.io Development
+	@./scripts/deploy-flyio-dev.sh
+
+deploy-flyio-prod: ## 🚀 Deploy to Fly.io Production
+	@./scripts/deploy-flyio-prod.sh
+
 synth: ## Synthesize CDK stack
 	cd infrastructure && AWS_PROFILE=$(AWS_PROFILE) npm run synth
 

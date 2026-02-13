@@ -1,0 +1,67 @@
+meta {
+  name: Get All Admins
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/users/admin?school_id={{school_id}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  school_id: {{school_id}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+vars:pre-request {
+  school_id:
+}
+
+assert {
+  res.status: eq 200
+  res.body.success: eq true
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("admin_count", res.body.data.length);
+    console.log("Total admins found:", res.body.data.length);
+  }
+}
+
+docs {
+  # Get All Admin Users
+
+  Retrieves a list of all admin users for a specific school.
+
+  **Authentication**: JWT Bearer Token (SuperAdmin role required)
+
+  **Query Parameters**:
+  - `school_id` (UUID, required) - School ID to filter admins
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": "uuid",
+        "school_id": "uuid",
+        "first_name": "Admin",
+        "last_name": "User",
+        "email": "admin@example.com",
+        "role": "admin",
+        "is_verified": true,
+        "created_at": "timestamp"
+      }
+    ]
+  }
+  ```
+
+  **Note**: Only returns active admin users (is_active = true)
+}

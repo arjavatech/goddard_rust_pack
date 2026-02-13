@@ -151,3 +151,74 @@ pub async fn update_child_status(
     let response = enrollment_service.update_child_status(child_id, payload).await?;
     Ok(ResponseUtils::success(response))
 }
+
+// ==========================================
+// CLASS TRANSITIONS CONTROLLER HANDLERS
+// ==========================================
+
+/// POST /class-promotions/:enrollment_id
+/// Promote student to next class (creates new transition record) (JWT protected - Admin/SuperAdmin)
+pub async fn promote_enrollment(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(enrollment_id): Path<Uuid>,
+    Json(payload): Json<crate::models::enrollment::PromoteEnrollmentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Promoting enrollment - User: {}, Role: {:?}, Enrollment ID: {}, Target Classroom: {}",
+        auth.email, auth.role, enrollment_id, payload.to_classroom_id);
+
+    let response = enrollment_service.promote_enrollment(
+        enrollment_id,
+        payload,
+        auth.user_id,
+        auth.school_id
+    ).await?;
+
+    Ok(ResponseUtils::success(response))
+}
+
+/// POST /class-promotions/bulk
+/// Bulk promote multiple students to new classrooms (JWT protected - Admin/SuperAdmin)
+pub async fn bulk_promote_enrollments(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Json(payload): Json<crate::models::enrollment::BulkPromoteEnrollmentsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Bulk promoting {} students - User: {}, Role: {:?}, School: {}",
+        payload.promotions.len(), auth.email, auth.role, payload.school_id);
+
+    let response = enrollment_service.bulk_promote_enrollments(
+        payload,
+        auth.user_id,
+        auth.school_id,
+    ).await?;
+
+    // Return 207 Multi-Status if any failures, 200 OK if all successful
+    let status_code = if response.failed.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::MULTI_STATUS
+    };
+
+    Ok((status_code, ResponseUtils::success(response)))
+}
+
+/// PATCH /class-transitions/:enrollment_id
+/// Edit latest class transition record for an enrollment (JWT protected - Admin/SuperAdmin)
+pub async fn edit_class_transition(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    Path(enrollment_id): Path<Uuid>,
+    Json(payload): Json<crate::models::enrollment::EditClassTransitionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Editing latest class transition for enrollment - User: {}, Role: {:?}, Enrollment ID: {}",
+        auth.email, auth.role, enrollment_id);
+
+    let response = enrollment_service.edit_class_transition(
+        enrollment_id,
+        payload,
+        auth.school_id
+    ).await?;
+
+    Ok(ResponseUtils::success(response))
+}

@@ -36,6 +36,20 @@ pub struct UserDetails {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone)]
+pub struct OwnerDetailsWithAuth {
+    pub id: uuid::Uuid,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub role: String,
+    pub is_verified: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_sign_in_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Clone)]
 pub struct AuthDao {
     pool: Pool,
 }
@@ -134,6 +148,106 @@ impl AuthDao {
         }
     }
 
+    /// Get all verified Admin users for a specific school
+    pub async fn get_admins_by_school(&self, school_id: uuid::Uuid) -> ApiResult<Vec<UserDetails>> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            SELECT id, school_id, first_name, last_name, email, role,
+                   COALESCE(is_verified, false) as is_verified, created_at
+            FROM users
+            WHERE school_id = $1 AND role = 'Admin' AND is_verified = true AND (is_active = true OR is_active IS NULL)
+            ORDER BY first_name, last_name
+        "#;
+
+        let rows = client.query(query, &[&school_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to query admins: {}", e)))?;
+
+        let mut admins = Vec::new();
+        for row in rows {
+            let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+            let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+
+            admins.push(UserDetails {
+                id: row.get("id"),
+                school_id: row.get("school_id"),
+                first_name: row.get("first_name"),
+                last_name: row.get("last_name"),
+                email: row.get("email"),
+                role: row.get("role"),
+                is_verified: row.get("is_verified"),
+                created_at,
+            });
+        }
+
+        Ok(admins)
+    }
+
+    /// Update admin user profile (first_name, last_name, phone_number)
+    pub async fn update_admin_user(
+        &self,
+        user_id: uuid::Uuid,
+        first_name: Option<String>,
+        last_name: Option<String>,
+        phone_number: Option<String>,
+    ) -> ApiResult<UserDetails> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE users
+            SET first_name = COALESCE($2, first_name),
+                last_name = COALESCE($3, last_name),
+                phone_number = COALESCE($4, phone_number),
+                updated_at = NOW()
+            WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
+            RETURNING id, school_id, first_name, last_name, email, role,
+                      COALESCE(is_verified, false) as is_verified, created_at
+        "#;
+
+        match client.query_opt(query, &[&user_id, &first_name, &last_name, &phone_number]).await {
+            Ok(Some(row)) => {
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+
+                Ok(UserDetails {
+                    id: row.get("id"),
+                    school_id: row.get("school_id"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    email: row.get("email"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    created_at,
+                })
+            },
+            Ok(None) => Err(AppError::NotFound("Admin user not found or already deleted".to_string())),
+            Err(e) => Err(AppError::Database(format!("Failed to update admin: {}", e))),
+        }
+    }
+
+    /// Soft delete admin user (set is_active = false)
+    pub async fn soft_delete_admin_user(&self, user_id: uuid::Uuid) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE users
+            SET is_active = false, updated_at = NOW()
+            WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
+        "#;
+
+        let result = client.execute(query, &[&user_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to delete admin: {}", e)))?;
+
+        if result == 0 {
+            return Err(AppError::NotFound("Admin user not found or already deleted".to_string()));
+        }
+
+        Ok(())
+    }
+
     pub async fn get_user_by_id(&self, user_id: uuid::Uuid) -> ApiResult<UserDetails> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -158,6 +272,85 @@ impl AuthDao {
             },
             Ok(None) => Err(AppError::NotFound("User not found".to_string())),
             Err(e) => Err(AppError::Database(format!("Failed to query user: {}", e))),
+        }
+    }
+
+    pub async fn get_superadmin_with_login_status_by_school(
+        &self,
+        school_id: &uuid::Uuid
+    ) -> ApiResult<Option<OwnerDetailsWithAuth>> {
+        println!("[AuthDao] Getting SuperAdmin with login status for school_id: {}", school_id);
+
+        let client = match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.pool.get()
+        ).await {
+            Ok(Ok(client)) => client,
+            Ok(Err(e)) => return Err(AppError::Database(format!("Failed to get connection: {}", e))),
+            Err(_) => return Err(AppError::Database("Connection timeout".to_string())),
+        };
+
+        let query = r#"
+            SELECT
+                u.id,
+                u.email,
+                u.first_name,
+                u.last_name,
+                u.metadata->>'phone_number' as phone_number,
+                u.role,
+                u.is_verified,
+                u.created_at,
+                au.last_sign_in_at::timestamp as last_sign_in_at
+            FROM public.users u
+            LEFT JOIN auth.users au ON u.id::text = au.id::text
+            WHERE u.school_id = $1
+              AND u.role = 'SuperAdmin'
+              AND (u.is_active = true OR u.is_active IS NULL)
+            ORDER BY u.created_at ASC
+            LIMIT 1
+        "#;
+
+        println!("[AuthDao] Executing query to join public.users with auth.users");
+
+        match client.query_opt(query, &[&school_id]).await {
+            Ok(Some(row)) => {
+                println!("[AuthDao] SuperAdmin found for school");
+
+                // Parse created_at
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::from_naive_utc_and_offset(
+                    created_at_naive,
+                    chrono::Utc
+                );
+
+                // Parse last_sign_in_at (can be null)
+                let last_sign_in_at: Option<chrono::NaiveDateTime> = row.get("last_sign_in_at");
+                let last_sign_in_at_utc = last_sign_in_at.map(|dt| {
+                    chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc)
+                });
+
+                println!("[AuthDao] Last sign in status: has_logged_in={}", last_sign_in_at_utc.is_some());
+
+                Ok(Some(OwnerDetailsWithAuth {
+                    id: row.get("id"),
+                    email: row.get("email"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    phone_number: row.get("phone_number"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    created_at,
+                    last_sign_in_at: last_sign_in_at_utc,
+                }))
+            },
+            Ok(None) => {
+                println!("[AuthDao] No SuperAdmin found for school");
+                Ok(None)
+            },
+            Err(e) => {
+                println!("[AuthDao] Database error: {:?}", e);
+                Err(AppError::Database(format!("Failed to query SuperAdmin: {}", e)))
+            }
         }
     }
 }

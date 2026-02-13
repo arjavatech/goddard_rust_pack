@@ -86,8 +86,12 @@ impl EmailService {
     async fn send_form_reminder_email(&self, reminder: &ParentFormReminder) -> Result<(), AppError> {
         println!("[EmailService] Sending email to: {}", reminder.parent_email);
 
-        // Convert date format
-        let formatted_due_date = Self::convert_date_format(&reminder.due_date)?;
+        // Convert date format, fallback for empty due_date
+        let formatted_due_date = if reminder.due_date.trim().is_empty() {
+            "at your earliest convenience".to_string()
+        } else {
+            Self::convert_date_format(&reminder.due_date)?
+        };
         println!("[EmailService] Converted date: {} → {}", reminder.due_date, formatted_due_date);
 
         // Generate email body
@@ -99,16 +103,24 @@ impl EmailService {
             &formatted_due_date,
         );
 
-        // Generate subject
-        let subject = format!(
-            "Reminder: {} for {} - Due {}",
-            reminder.form_name, reminder.student_name, formatted_due_date
-        );
+        // Generate subject — omit "Due" when no due_date provided
+        let subject = if reminder.due_date.trim().is_empty() {
+            format!("Reminder: {} for {}", reminder.form_name, reminder.student_name)
+        } else {
+            format!("Reminder: {} for {} - Due {}", reminder.form_name, reminder.student_name, formatted_due_date)
+        };
+
+        // Split comma-separated emails and trim whitespace
+        let emails: Vec<String> = reminder.parent_email
+            .split(',')
+            .map(|e| e.trim().to_lowercase())
+            .filter(|e| !e.is_empty())
+            .collect();
 
         // Prepare Resend API request
         let request_body = json!({
             "from": self.from_email,
-            "to": [reminder.parent_email.to_lowercase()],
+            "to": emails,
             "subject": subject,
             "html": html_body
         });

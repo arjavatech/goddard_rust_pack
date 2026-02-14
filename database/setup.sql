@@ -145,11 +145,18 @@ CREATE TABLE form_submissions (
     fillout_submission_id VARCHAR(255) UNIQUE NOT NULL,
     form_data JSONB,
     metadata JSONB,
+    status VARCHAR(50) DEFAULT 'pending',
+    revision_number INTEGER DEFAULT 1,
+    revision_reason VARCHAR(500),
+    edit_link TEXT,
+    pdf_link TEXT,
     submitted_at TIMESTAMP,
     processed_at TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP
+    updated_at TIMESTAMP,
+    CONSTRAINT check_form_submission_status
+        CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'requires_review', 'approved', 'rejected'))
 );
 
 -- 10. DOCUMENTS Table

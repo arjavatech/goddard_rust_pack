@@ -81,8 +81,8 @@ impl FormSubmissionService {
                  school_id, enrollment_id, student_form_assignment_id, form_template_id);
         println!("[DEBUG] Service: About to create form submission");
 
-        // Create form submission with version control
-        let submission = match self.dao
+        // Create form submission with version control (returns tuple: (submission, is_insert))
+        let (submission, is_insert) = match self.dao
             .create_form_submission_from_payload(
                 actual_payload.clone(),
                 school_id,
@@ -92,9 +92,10 @@ impl FormSubmissionService {
             )
             .await
         {
-            Ok(sub) => {
-                println!("[DEBUG] Service: Form submission created successfully with ID: {}", sub.id);
-                sub
+            Ok((sub, is_insert)) => {
+                println!("[DEBUG] Service: Form submission {} successfully with ID: {} (is_insert: {})",
+                         if is_insert { "created" } else { "updated" }, sub.id, is_insert);
+                (sub, is_insert)
             }
             Err(e) => {
                 println!("[ERROR] Service: Failed to create form submission: {:?}", e);

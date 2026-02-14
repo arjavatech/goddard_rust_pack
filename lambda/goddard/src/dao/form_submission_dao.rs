@@ -25,6 +25,55 @@ impl FormSubmissionDao {
         Err(AppError::Validation("This method is deprecated. Use create_form_submission_from_payload instead".to_string()))
     }
 
+    // Helper method to check if submission exists by fillout_submission_id
+    async fn get_submission_by_fillout_id(
+        &self,
+        fillout_submission_id: &str,
+    ) -> Result<Option<FormSubmission>, AppError> {
+        println!("[DEBUG] DAO: Checking if submission exists with fillout_submission_id: {}", fillout_submission_id);
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let query = format!(
+            r#"SELECT * FROM form_submissions WHERE fillout_submission_id = '{}' LIMIT 1"#,
+            fillout_submission_id.replace("'", "''")
+        );
+
+        let rows = match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            client.simple_query(&query)
+        ).await {
+            Ok(Ok(rows)) => rows,
+            Ok(Err(e)) => {
+                println!("[ERROR] DAO: Failed to query existing submission: {}", e);
+                return Err(AppError::Database(e.to_string()));
+            }
+            Err(_) => {
+                println!("[ERROR] DAO: Query timeout");
+                return Err(AppError::Database("Query timeout".to_string()));
+            }
+        };
+
+        for message in rows {
+            if let tokio_postgres::SimpleQueryMessage::Row(_row) = message {
+                println!("[DEBUG] DAO: Found existing submission");
+                // Re-query using proper method to get typed row
+                let row = client.query_one(
+                    "SELECT * FROM form_submissions WHERE fillout_submission_id = $1",
+                    &[&fillout_submission_id],
+                )
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?;
+
+                return Ok(Some(self.row_to_form_submission(row)?));
+            }
+        }
+
+        println!("[DEBUG] DAO: No existing submission found");
+        Ok(None)
+    }
+
     pub async fn create_form_submission_from_payload(
         &self,
         payload: JsonValue,
@@ -32,10 +81,9 @@ impl FormSubmissionDao {
         enrollment_id: Uuid,
         student_form_assignment_id: Uuid,
         form_template_id: Uuid,
-    ) -> Result<FormSubmission, AppError> {
-        println!("[DEBUG] DAO: Starting form submission creation from payload");
+    ) -> Result<(FormSubmission, bool), AppError> {
+        println!("[DEBUG] DAO: Starting form submission creation/update from payload using UPSERT");
 
-        // ALTERNATIVE APPROACH: Skip transactions entirely, use direct client operations
         let client = match self.pool.get().await {
             Ok(c) => {
                 println!("[DEBUG] DAO: Database connection acquired");
@@ -47,13 +95,10 @@ impl FormSubmissionDao {
             }
         };
 
-        println!("[DEBUG] DAO: Using direct client operations (no transaction)");
-
         let now = Utc::now().naive_utc();
         println!("[DEBUG] DAO: Generated timestamp: {}", now);
 
-        // Extract fillout_submission_id from payload, or generate a default
-        // Check for both fillout_submission_id and form_submission_id (different naming conventions)
+        // Extract fillout_submission_id from payload
         let fillout_submission_id = payload
             .get("fillout_submission_id")
             .or_else(|| payload.get("form_submission_id"))
@@ -62,97 +107,86 @@ impl FormSubmissionDao {
             .unwrap_or_else(|| format!("webhook_{}", Uuid::new_v4()));
         println!("[DEBUG] DAO: Fillout submission ID: {}", fillout_submission_id);
 
-        // The entire payload becomes form_data (after removing only the IDs that might be present)
+        // Prepare form_data and metadata
         let mut form_data = payload.clone();
-        // Remove only the student_form_assignment_id and fillout_submission_id if present
-        // Other IDs are not passed in the payload anymore
         if let Some(obj) = form_data.as_object_mut() {
             obj.remove("student_form_assignment_id");
             obj.remove("fillout_submission_id");
         }
 
-        // Create metadata from the payload context
         let metadata = json!({
             "source": "webhook",
             "received_at": now.to_string(),
             "webhook_payload_keys": payload.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()
         });
 
-        println!("[DEBUG] DAO: Executing INSERT query");
-        println!("[DEBUG] DAO: Full INSERT query with parameters:");
-        println!("INSERT INTO form_submissions (");
-        println!("    school_id, enrollment_id, student_form_assignment_id,");
-        println!("    form_template_id, fillout_submission_id, form_data, metadata,");
-        println!("    submitted_at, processed_at, is_active, created_at, updated_at");
-        println!(") VALUES (");
-        println!("    '{}', -- school_id", school_id);
-        println!("    '{}', -- enrollment_id", enrollment_id);
-        println!("    '{}', -- student_form_assignment_id", student_form_assignment_id);
-        println!("    '{}', -- form_template_id", form_template_id);
-        println!("    '{}', -- fillout_submission_id", fillout_submission_id);
-        println!("    '{}', -- form_data", form_data);
-        println!("    '{}', -- metadata", metadata);
-        println!("    '{}', -- submitted_at", now);
-        println!("    '{}', -- processed_at", now);
-        println!("    {}, -- is_active", true);
-        println!("    '{}', -- created_at", now);
-        println!("    '{}', -- updated_at", now);
-        println!(");");
-
-        // SOLUTION: Use simple_query to avoid prepared statement conflicts
-        println!("[DEBUG] DAO: Using simple_query approach to avoid prepared statements");
-
-        let submission_id = uuid::Uuid::new_v4();
+        let submission_id = Uuid::new_v4();
         println!("[DEBUG] DAO: Generated submission ID: {}", submission_id);
 
-        // Build the INSERT query using simple_query to avoid prepared statements
-        let insert_query = format!(
+        // UPSERT query using ON CONFLICT
+        // xmax = 0 indicates INSERT, xmax != 0 indicates UPDATE
+        let upsert_query = format!(
             r#"
             INSERT INTO form_submissions (
                 id, school_id, enrollment_id, student_form_assignment_id,
                 form_template_id, fillout_submission_id, form_data, metadata,
+                status, revision_number, revision_reason,
                 submitted_at, processed_at, is_active, created_at, updated_at
             )
             VALUES (
                 '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}',
-                '{}', '{}', true, '{}', '{}'
+                'pending', 1, 'Initial submission',
+                '{}', '{}', true, NOW(), NOW()
             )
+            ON CONFLICT (fillout_submission_id)
+            DO UPDATE SET
+                form_data = EXCLUDED.form_data,
+                metadata = EXCLUDED.metadata,
+                revision_number = form_submissions.revision_number + 1,
+                revision_reason = 'Webhook update',
+                processed_at = NOW(),
+                updated_at = NOW()
+            RETURNING *, (xmax = 0) AS is_insert
             "#,
             submission_id,
             school_id,
             enrollment_id,
             student_form_assignment_id,
             form_template_id,
-            fillout_submission_id,
-            form_data.to_string().replace("'", "''"), // Escape single quotes
-            metadata.to_string().replace("'", "''"),  // Escape single quotes
-            now,
-            now,
+            fillout_submission_id.replace("'", "''"),
+            form_data.to_string().replace("'", "''"),
+            metadata.to_string().replace("'", "''"),
             now,
             now
         );
 
-        println!("[DEBUG] DAO: Executing INSERT with direct client execute method");
-        let insert_future = client.execute(&insert_query, &[]);
+        println!("[DEBUG] DAO: Executing UPSERT query with ON CONFLICT");
 
-        let _insert_result = match tokio::time::timeout(std::time::Duration::from_secs(10), insert_future).await {
-            Ok(insert_result) => match insert_result {
-                Ok(result) => {
-                    println!("[DEBUG] DAO: INSERT executed successfully: {} rows affected", result);
-                    result
-                }
-                Err(e) => {
-                    println!("[ERROR] DAO: INSERT execution failed: {}", e);
-                    return Err(AppError::Database(format!("INSERT execution failed: {}", e)));
-                }
-            },
-            Err(_timeout_err) => {
-                println!("[ERROR] DAO: INSERT execution timed out after 10 seconds");
-                return Err(AppError::Database("INSERT execution timed out".to_string()));
+        let row = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client.query_one(&upsert_query, &[])
+        ).await {
+            Ok(Ok(row)) => {
+                println!("[DEBUG] DAO: UPSERT executed successfully");
+                row
+            }
+            Ok(Err(e)) => {
+                println!("[ERROR] DAO: UPSERT execution failed: {}", e);
+                return Err(AppError::Database(format!("UPSERT execution failed: {}", e)));
+            }
+            Err(_) => {
+                println!("[ERROR] DAO: UPSERT execution timed out");
+                return Err(AppError::Database("UPSERT execution timed out".to_string()));
             }
         };
 
-        // Step 2: Update student_form_assignments table with submission status
+        // Check if this was an INSERT or UPDATE
+        let is_insert: bool = row.get("is_insert");
+        println!("[DEBUG] DAO: Operation type - is_insert: {}", is_insert);
+
+        // Always update student_form_assignments on webhook
+        // - On INSERT (first submission): Set to 'in_progress'
+        // - On UPDATE (resubmission): Change from 'rejected'/'approved' back to 'in_progress'
         println!("[DEBUG] DAO: Updating student_form_assignments status to 'in_progress' for assignment_id: {}", student_form_assignment_id);
 
         let update_query = r#"
@@ -164,64 +198,36 @@ impl FormSubmissionDao {
             WHERE id = $2
         "#;
 
-        let submission_id_param: &(dyn tokio_postgres::types::ToSql + Sync) = &submission_id;
+        let submission_id_from_row: Uuid = row.get("id");
+        let submission_id_param: &(dyn tokio_postgres::types::ToSql + Sync) = &submission_id_from_row;
         let assignment_id_param: &(dyn tokio_postgres::types::ToSql + Sync) = &student_form_assignment_id;
         let update_params = vec![submission_id_param, assignment_id_param];
-        let update_future = client.execute(
-            update_query,
-            &update_params
-        );
+        let update_future = client.execute(update_query, &update_params);
 
-        let _update_result = match tokio::time::timeout(std::time::Duration::from_secs(5), update_future).await {
-            Ok(update_result) => match update_result {
-                Ok(result) => {
-                    println!("[DEBUG] DAO: UPDATE student_form_assignments executed successfully: {} rows affected", result);
-                    result
+        match tokio::time::timeout(std::time::Duration::from_secs(5), update_future).await {
+            Ok(Ok(result)) => {
+                println!("[DEBUG] DAO: UPDATE student_form_assignments executed successfully: {} rows affected", result);
+                if is_insert {
+                    println!("[DEBUG] DAO: First submission - status set to 'in_progress'");
+                } else {
+                    println!("[DEBUG] DAO: Resubmission detected - status changed back to 'in_progress'");
                 }
-                Err(e) => {
-                    println!("[ERROR] DAO: UPDATE student_form_assignments failed: {}", e);
-                    // Log error but continue - submission is already saved
-                    0
-                }
-            },
-            Err(_timeout_err) => {
-                println!("[ERROR] DAO: UPDATE student_form_assignments timed out after 5 seconds");
-                // Log timeout but continue - submission is already saved
-                0
+            }
+            Ok(Err(e)) => {
+                println!("[WARN] DAO: UPDATE student_form_assignments failed: {}", e);
+            }
+            Err(_) => {
+                println!("[WARN] DAO: UPDATE student_form_assignments timed out");
             }
         };
 
-        println!("[DEBUG] DAO: Constructing FormSubmission directly (school controller pattern - single DB operation)");
+        // Convert row to FormSubmission
+        let submission = self.row_to_form_submission(row)?;
 
-        // Create current timestamp for record creation
-        let now = chrono::Utc::now();
+        println!("[DEBUG] DAO: Form submission {} completed successfully (is_insert: {})",
+                 if is_insert { "created" } else { "updated" }, is_insert);
 
-        // Create FormSubmission with all required fields - using data we already have
-        let submission = FormSubmission {
-            id: submission_id,
-            school_id,
-            enrollment_id,
-            student_form_assignment_id,
-            form_template_id,
-            fillout_submission_id,
-            form_data: payload.clone(),
-            metadata: serde_json::json!({}), // Default empty metadata
-            status: FormSubmissionStatus::Pending, // Default status
-            revision_number: 1, // First revision
-            revision_reason: None, // No revision reason for initial creation
-            submitted_at: now,
-            processed_at: None, // Not processed yet
-            edit_link: None, // No edit link initially
-            pdf_link: None, // No PDF link initially
-            created_at: now,
-            updated_at: now,
-        };
-
-        println!("[DEBUG] DAO: Form submission object constructed successfully with direct approach");
-
-        println!("[DEBUG] DAO: Single-operation webhook processing completed (school controller pattern)");
-
-        Ok(submission)
+        Ok((submission, is_insert))
     }
 
     pub async fn get_latest_form_submission(

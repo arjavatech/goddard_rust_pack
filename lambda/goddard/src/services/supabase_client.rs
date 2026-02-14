@@ -139,19 +139,73 @@ impl SupabaseClient {
     }
 
     pub async fn resend_invitation(&self, email: &str) -> Result<(), AppError> {
-        // For existing users, resend signup confirmation email
+        tracing::info!("Resending invitation/confirmation to: {}", email);
+
+        // Step 1: Get user by email to check confirmation status
+        let user_result = self.get_user_by_email(email).await;
+
+        // Step 2: Determine email type based on user confirmation status
+        let (endpoint, body, email_type) = match user_result {
+            Ok(user) => {
+                // Check if email is confirmed
+                let is_confirmed = user
+                    .get("email_confirmed_at")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+
+                if is_confirmed {
+                    // For confirmed users, send magic link for one-time passwordless sign-in
+                    tracing::info!("User already confirmed, sending magic link email");
+                    (
+                        format!("{}/auth/v1/magiclink", self.project_url),
+                        json!({
+                            "email": email,
+                            "options": {
+                                "emailRedirectTo": format!("{}/auth/callback", self.frontend_url)
+                            }
+                        }),
+                        "magic_link"
+                    )
+                } else {
+                    // For unconfirmed users, resend signup confirmation
+                    tracing::info!("User not confirmed, sending signup confirmation email");
+                    (
+                        format!("{}/auth/v1/resend", self.project_url),
+                        json!({
+                            "type": "signup",
+                            "email": email
+                        }),
+                        "signup_confirmation"
+                    )
+                }
+            }
+            Err(_) => {
+                // User not found - send signup confirmation as fallback
+                tracing::warn!("User not found, sending signup confirmation email");
+                (
+                    format!("{}/auth/v1/resend", self.project_url),
+                    json!({
+                        "type": "signup",
+                        "email": email
+                    }),
+                    "signup_confirmation"
+                )
+            }
+        };
+
+        tracing::info!("Sending {} email to {}", email_type, email);
+
+        // Step 3: Send email
         let invite_response = self.client
-            .post(&format!("{}/auth/v1/resend", self.project_url))
+            .post(&endpoint)
             .header("Authorization", format!("Bearer {}", self.service_role_key))
             .header("apikey", &self.service_role_key)
             .header("Content-Type", "application/json")
-            .json(&json!({
-                "type": "signup",
-                "email": email
-            }))
+            .json(&body)
             .send()
             .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send invitation: {}", e)))?;
+            .map_err(|e| AppError::ExternalService(format!("Failed to send {}: {}", email_type, e)))?;
 
         if !invite_response.status().is_success() {
             let status_code = invite_response.status();
@@ -164,10 +218,51 @@ impl SupabaseClient {
                 ));
             }
 
-            return Err(AppError::ExternalService(format!("Failed to send invitation: {}", error_text)));
+            return Err(AppError::ExternalService(format!("Failed to send {}: {}", email_type, error_text)));
         }
 
+        tracing::info!("✅ {} email sent successfully to {}", email_type, email);
         Ok(())
+    }
+
+    /// Get user by email address
+    async fn get_user_by_email(&self, email: &str) -> Result<serde_json::Value, AppError> {
+        // List all users and filter by email (Supabase doesn't support direct email lookup)
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to list users: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("Failed to list users: {}", error_text)));
+        }
+
+        let users_response: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse users list: {}", e)))?;
+
+        let empty_vec = vec![];
+        let users = users_response
+            .get("users")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty_vec);
+
+        // Find user with matching email
+        users
+            .iter()
+            .find(|user| {
+                user.get("email")
+                    .and_then(|e| e.as_str())
+                    .map(|e| e.eq_ignore_ascii_case(email))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("User with email {} not found", email)))
     }
 
     /// Creates a new user and sends "Confirm Sign Up" email template

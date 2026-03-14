@@ -1,11 +1,13 @@
 use axum::{
-    extract::{Query, State},
-    http::{HeaderMap, StatusCode},
-    response::Json,
+    extract::{Extension, Path, Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{Json, IntoResponse, Response},
 };
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::middleware::auth::{AuthContext, validate_parent_access};
 use crate::models::student_form_assignment::{
     CreateStudentFormAssignmentRequest, UpdateStudentFormAssignmentRequest,
     StudentFormAssignmentResponse, GetStudentFormAssignmentsQuery,
@@ -218,4 +220,33 @@ pub async fn assign_form_to_school_students(
             Err(e)
         }
     }
+}
+
+// Download ZIP of completed enrollment form PDFs
+pub async fn download_enrollment_forms_zip(
+    Extension(auth): Extension<AuthContext>,
+    State(service): State<Arc<StudentFormAssignmentService>>,
+    Path(enrollment_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    println!("[DEBUG] DOWNLOAD ZIP: Starting for enrollment: {}", enrollment_id);
+    println!("[DEBUG] DOWNLOAD ZIP: Auth context - User: {}, Role: {:?}", auth.user_id, auth.role);
+
+    // Lookup parent_id for this enrollment and validate access
+    let parent_id = service.get_enrollment_parent_id(enrollment_id).await?;
+    validate_parent_access(&auth, &parent_id)?;
+    println!("[DEBUG] DOWNLOAD ZIP: Access validation passed");
+
+    // Download and create ZIP
+    let (zip_bytes, filename) = service.download_enrollment_forms_zip(enrollment_id).await?;
+
+    println!("[DEBUG] DOWNLOAD ZIP: Returning ZIP file: {} ({} bytes)", filename, zip_bytes.len());
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/zip".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename)),
+        ],
+        zip_bytes,
+    ).into_response())
 }

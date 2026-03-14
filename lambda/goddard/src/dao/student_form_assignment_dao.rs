@@ -11,6 +11,12 @@ use chrono::{Utc, NaiveDateTime, DateTime};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
 
+pub struct CompletedFormForZip {
+    pub assignment_id: Uuid,
+    pub form_name: String,
+    pub recent_pdf_link: String,
+}
+
 pub struct StudentFormAssignmentDao {
     pool: Pool,
 }
@@ -418,6 +424,68 @@ impl StudentFormAssignmentDao {
 
         println!("[DEBUG] StudentFormAssignmentDAO: Row conversion completed successfully");
         Ok(assignment)
+    }
+
+    pub async fn get_completed_assignments_for_zip(
+        &self,
+        enrollment_id: Uuid,
+    ) -> Result<Vec<CompletedFormForZip>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let rows = client.query(
+            r#"
+            SELECT sfa.id, ft.form_name, sfa.recent_pdf_link
+            FROM student_form_assignments sfa
+            JOIN form_templates ft ON sfa.form_template_id = ft.id
+            WHERE sfa.enrollment_id = $1
+              AND sfa.status IN ('completed', 'approved')
+              AND sfa.recent_pdf_link IS NOT NULL
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+            ORDER BY ft.form_name
+            "#,
+            &[&enrollment_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let forms = rows.into_iter().map(|row| {
+            CompletedFormForZip {
+                assignment_id: row.get("id"),
+                form_name: row.get("form_name"),
+                recent_pdf_link: row.get("recent_pdf_link"),
+            }
+        }).collect();
+
+        Ok(forms)
+    }
+
+    pub async fn get_enrollment_parent_id(
+        &self,
+        enrollment_id: Uuid,
+    ) -> Result<Uuid, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let row = client.query_opt(
+            r#"
+            SELECT c.parent_id
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.id = $1
+            "#,
+            &[&enrollment_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        match row {
+            Some(row) => {
+                let parent_id: Uuid = row.get("parent_id");
+                Ok(parent_id)
+            }
+            None => Err(AppError::NotFound("Enrollment".to_string())),
+        }
     }
 
     // Validate that all form templates are active

@@ -1,0 +1,19 @@
+meta {
+  name: Download Forms ZIP
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/enrollments/{{enrollment_id}}/forms/download-zip
+  body: none
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+settings {
+  encodeUrl: true
+}

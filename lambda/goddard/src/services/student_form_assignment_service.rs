@@ -9,6 +9,9 @@ use crate::models::student_form_assignment_review::{
 };
 use crate::error::AppError;
 use uuid::Uuid;
+use std::collections::HashMap;
+use std::io::{Write, Cursor};
+use zip::write::{SimpleFileOptions, ZipWriter};
 
 pub struct StudentFormAssignmentService {
     dao: StudentFormAssignmentDao,
@@ -197,6 +200,93 @@ impl StudentFormAssignmentService {
                 Err(e)
             }
         }
+    }
+
+    pub async fn get_enrollment_parent_id(&self, enrollment_id: Uuid) -> Result<Uuid, AppError> {
+        self.dao.get_enrollment_parent_id(enrollment_id).await
+    }
+
+    pub async fn download_enrollment_forms_zip(
+        &self,
+        enrollment_id: Uuid,
+    ) -> Result<(Vec<u8>, String), AppError> {
+        println!("[DEBUG] StudentFormAssignmentService: Downloading forms ZIP for enrollment: {}", enrollment_id);
+
+        let forms = self.dao.get_completed_assignments_for_zip(enrollment_id).await?;
+
+        if forms.is_empty() {
+            return Err(AppError::NotFound("No completed forms with PDF links found for this enrollment".to_string()));
+        }
+
+        println!("[DEBUG] StudentFormAssignmentService: Found {} forms to download", forms.len());
+
+        let client = reqwest::Client::new();
+        let mut buffer = Cursor::new(Vec::new());
+        let mut zip = ZipWriter::new(&mut buffer);
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        let mut name_counts: HashMap<String, u32> = HashMap::new();
+        let mut success_count = 0u32;
+
+        for form in &forms {
+            let sanitized = Self::sanitize_filename(&form.form_name);
+            let count = name_counts.entry(sanitized.clone()).or_insert(0);
+            *count += 1;
+            let file_name = if *count == 1 {
+                format!("{}.pdf", sanitized)
+            } else {
+                format!("{}_{}.pdf", sanitized, count)
+            };
+
+            match client.get(&form.recent_pdf_link).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        match resp.bytes().await {
+                            Ok(bytes) => {
+                                if let Err(e) = zip.start_file(&file_name, options) {
+                                    println!("[WARN] Failed to start ZIP entry for {}: {}", file_name, e);
+                                    continue;
+                                }
+                                if let Err(e) = zip.write_all(&bytes) {
+                                    println!("[WARN] Failed to write ZIP entry for {}: {}", file_name, e);
+                                    continue;
+                                }
+                                success_count += 1;
+                                println!("[DEBUG] Added to ZIP: {}", file_name);
+                            }
+                            Err(e) => {
+                                println!("[WARN] Failed to read PDF bytes for {}: {}", form.form_name, e);
+                            }
+                        }
+                    } else {
+                        println!("[WARN] PDF download returned status {} for {}", resp.status(), form.form_name);
+                    }
+                }
+                Err(e) => {
+                    println!("[WARN] Failed to download PDF for {}: {}", form.form_name, e);
+                }
+            }
+        }
+
+        if success_count == 0 {
+            return Err(AppError::ExternalService("All PDF downloads failed".to_string()));
+        }
+
+        zip.finish().map_err(|e| AppError::Internal(format!("Failed to finalize ZIP: {}", e)))?;
+
+        let zip_bytes = buffer.into_inner();
+        let filename = format!("enrollment_{}_forms.zip", enrollment_id);
+
+        println!("[DEBUG] StudentFormAssignmentService: ZIP created with {} of {} forms", success_count, forms.len());
+        Ok((zip_bytes, filename))
+    }
+
+    fn sanitize_filename(name: &str) -> String {
+        name.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
+            .collect::<String>()
+            .trim()
+            .replace(' ', "_")
     }
 
     /// Assign a form template to all active students in a school

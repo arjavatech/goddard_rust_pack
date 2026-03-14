@@ -463,13 +463,13 @@ impl StudentFormAssignmentDao {
     pub async fn get_enrollment_parent_id(
         &self,
         enrollment_id: Uuid,
-    ) -> Result<Uuid, AppError> {
+    ) -> Result<(Uuid, String, String), AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         let row = client.query_opt(
             r#"
-            SELECT c.parent_id
+            SELECT c.parent_id, c.first_name, c.last_name
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             WHERE e.id = $1
@@ -482,7 +482,9 @@ impl StudentFormAssignmentDao {
         match row {
             Some(row) => {
                 let parent_id: Uuid = row.get("parent_id");
-                Ok(parent_id)
+                let first_name: String = row.get("first_name");
+                let last_name: String = row.get("last_name");
+                Ok((parent_id, first_name, last_name))
             }
             None => Err(AppError::NotFound("Enrollment".to_string())),
         }

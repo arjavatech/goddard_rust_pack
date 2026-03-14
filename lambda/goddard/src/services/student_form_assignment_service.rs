@@ -202,13 +202,15 @@ impl StudentFormAssignmentService {
         }
     }
 
-    pub async fn get_enrollment_parent_id(&self, enrollment_id: Uuid) -> Result<Uuid, AppError> {
+    pub async fn get_enrollment_parent_id(&self, enrollment_id: Uuid) -> Result<(Uuid, String, String), AppError> {
         self.dao.get_enrollment_parent_id(enrollment_id).await
     }
 
     pub async fn download_enrollment_forms_zip(
         &self,
         enrollment_id: Uuid,
+        child_first_name: &str,
+        child_last_name: &str,
     ) -> Result<(Vec<u8>, String), AppError> {
         println!("[DEBUG] StudentFormAssignmentService: Downloading forms ZIP for enrollment: {}", enrollment_id);
 
@@ -275,7 +277,9 @@ impl StudentFormAssignmentService {
         zip.finish().map_err(|e| AppError::Internal(format!("Failed to finalize ZIP: {}", e)))?;
 
         let zip_bytes = buffer.into_inner();
-        let filename = format!("enrollment_{}_forms.zip", enrollment_id);
+        let sanitized_first = Self::sanitize_filename(child_first_name);
+        let sanitized_last = Self::sanitize_filename(child_last_name);
+        let filename = format!("{}_{}_{}.zip", sanitized_first, sanitized_last, "completed_forms");
 
         println!("[DEBUG] StudentFormAssignmentService: ZIP created with {} of {} forms", success_count, forms.len());
         Ok((zip_bytes, filename))

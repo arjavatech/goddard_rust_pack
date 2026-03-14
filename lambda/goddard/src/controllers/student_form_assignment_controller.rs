@@ -231,13 +231,13 @@ pub async fn download_enrollment_forms_zip(
     println!("[DEBUG] DOWNLOAD ZIP: Starting for enrollment: {}", enrollment_id);
     println!("[DEBUG] DOWNLOAD ZIP: Auth context - User: {}, Role: {:?}", auth.user_id, auth.role);
 
-    // Lookup parent_id for this enrollment and validate access
-    let parent_id = service.get_enrollment_parent_id(enrollment_id).await?;
+    // Lookup parent_id and child name for this enrollment and validate access
+    let (parent_id, child_first_name, child_last_name) = service.get_enrollment_parent_id(enrollment_id).await?;
     validate_parent_access(&auth, &parent_id)?;
     println!("[DEBUG] DOWNLOAD ZIP: Access validation passed");
 
     // Download and create ZIP
-    let (zip_bytes, filename) = service.download_enrollment_forms_zip(enrollment_id).await?;
+    let (zip_bytes, filename) = service.download_enrollment_forms_zip(enrollment_id, &child_first_name, &child_last_name).await?;
 
     println!("[DEBUG] DOWNLOAD ZIP: Returning ZIP file: {} ({} bytes)", filename, zip_bytes.len());
 

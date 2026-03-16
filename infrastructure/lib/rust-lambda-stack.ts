@@ -44,6 +44,7 @@ export class RustLambdaStack extends cdk.Stack {
     const api = new apigateway.RestApi(this, `Goddard${stageName}Api`, {
       restApiName: `Goddard ${stageName} API`,
       description: `${stageName} API Gateway for Goddard Backend Lambda function`,
+      binaryMediaTypes: ['*/*'],
       deployOptions: {
         stageName: stage,
         tracingEnabled: stage === 'prod',
@@ -53,6 +54,7 @@ export class RustLambdaStack extends cdk.Stack {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
         allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-school-id', 'x-api-key'],
+        exposeHeaders: ['Content-Disposition'],
       },
     });
 

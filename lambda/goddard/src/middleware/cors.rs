@@ -115,6 +115,11 @@ pub async fn add_cors_headers(
         HeaderValue::from_static("86400"),
     );
 
+    headers.insert(
+        "access-control-expose-headers",
+        HeaderValue::from_static("Content-Disposition"),
+    );
+
     response
 }
 
@@ -132,6 +137,7 @@ pub async fn handle_cors_preflight(origin: &str) -> Response {
         .header("access-control-allow-headers", "Content-Type, Authorization, x-request-id, x-school-id, x-api-key")
         .header("access-control-allow-credentials", "true")
         .header("access-control-max-age", "86400")
+        .header("access-control-expose-headers", "Content-Disposition")
         .body(axum::body::Body::empty())
         .unwrap()
 }

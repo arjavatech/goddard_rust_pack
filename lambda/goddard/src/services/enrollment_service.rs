@@ -107,7 +107,7 @@ impl EnrollmentService {
                     }
                 };
 
-                (Some(sec_auth_result.auth_user_id), Some(true), Some(sec_parent))
+                (Some(sec_auth_result.auth_user_id), Some(sec_auth_result.email_sent), Some(sec_parent))
             } else {
                 (None, None, None)
             };
@@ -210,13 +210,19 @@ impl EnrollmentService {
             enrollment_id: created_enrollment.id,
             assigned_forms_count,
             invite_id: auth_result.auth_user_id,
-            signup_email_sent: true,
+            signup_email_sent: auth_result.email_sent,
             secondary_parent_id,
             secondary_signup_email_sent,
             message: if secondary_parent_id.is_some() {
-                "Parent invite created successfully. Signup emails sent to both primary and secondary parents".to_string()
-            } else {
+                if auth_result.email_sent {
+                    "Parent invite created successfully. Signup emails sent to both primary and secondary parents".to_string()
+                } else {
+                    "Parent invite created successfully but signup email failed. Use resend-confirmation to retry.".to_string()
+                }
+            } else if auth_result.email_sent {
                 "Parent invite created successfully and signup email sent".to_string()
+            } else {
+                "Parent invite created successfully but signup email failed. Use resend-confirmation to retry.".to_string()
             },
             details: ParentInviteDetails {
                 parent,
@@ -268,7 +274,7 @@ impl EnrollmentService {
         .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
 
         // STEP 3: Create user with signup confirmation email
-        let auth_user_id_string = self.supabase_client.create_user_with_signup_confirmation(email, metadata).await?;
+        let (auth_user_id_string, email_sent) = self.supabase_client.create_user_with_signup_confirmation(email, metadata).await?;
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
@@ -276,6 +282,7 @@ impl EnrollmentService {
         Ok(AuthUserResult {
             auth_user_id,
             email: email.to_string(),
+            email_sent,
         })
     }
 

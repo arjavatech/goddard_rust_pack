@@ -276,7 +276,7 @@ impl SupabaseClient {
         &self,
         email: &str,
         metadata: UserMetadata,
-    ) -> Result<String, AppError> {
+    ) -> Result<(String, bool), AppError> {
         tracing::info!("Creating user with signup confirmation for {}", email);
 
         // Step 1: Create user via Admin API without email confirmation
@@ -333,11 +333,20 @@ impl SupabaseClient {
 
         tracing::info!("User created successfully with ID: {}", user_id);
 
-        // Step 2: Send "Confirm Sign Up" email via resend endpoint
+        // Step 2: Send "Confirm Sign Up" email via resend endpoint (non-fatal)
         tracing::info!("Sending confirmation email to {}", email);
-        self.resend_invitation(email).await?;
+        let email_sent = match self.resend_invitation(email).await {
+            Ok(()) => {
+                tracing::info!("Confirmation email sent to {}", email);
+                true
+            }
+            Err(e) => {
+                tracing::warn!("User created but confirmation email failed for {}: {}. Email can be resent later.", email, e);
+                false
+            }
+        };
 
-        Ok(user_id.to_string())
+        Ok((user_id.to_string(), email_sent))
     }
 
     pub async fn create_user_invitation_enhanced(&self, email: &str, metadata: UserMetadata) -> Result<String, AppError> {

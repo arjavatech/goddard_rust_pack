@@ -1,11 +1,9 @@
 use axum::{
-    http::Method,
     middleware as axum_middleware,
     routing::{get, post, put, delete, patch},
     Router,
 };
 use lambda_http::run;
-use tower_http::cors::{Any, CorsLayer};
 
 mod controllers;
 mod middleware;
@@ -177,16 +175,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .without_time()
         .init();
 
-    // Configure CORS
-    let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS])
-        .allow_origin(Any)
-        .allow_headers(vec![
-            axum::http::header::AUTHORIZATION,
-            axum::http::header::CONTENT_TYPE,
-            axum::http::HeaderName::from_static("x-api-key"),
-        ]);
-
     // Build the application router
     let app = Router::new()
         // Health and Info Routes
@@ -300,8 +288,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .with_state(portal_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
-        .layer(axum_middleware::from_fn(add_cors_headers))
-        .layer(cors);
+        .layer(axum_middleware::from_fn(add_cors_headers));
 
     Ok(app)
 }

@@ -96,6 +96,7 @@ pub struct AssignedFormDetails {
 pub struct AuthUserResult {
     pub auth_user_id: Uuid,
     pub email: String,
+    pub email_sent: bool,
 }
 
 #[derive(Debug, Clone)]

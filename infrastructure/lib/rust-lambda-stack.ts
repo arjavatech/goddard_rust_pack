@@ -50,12 +50,10 @@ export class RustLambdaStack extends cdk.Stack {
         tracingEnabled: stage === 'prod',
         metricsEnabled: true,
       },
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-school-id', 'x-api-key'],
-        exposeHeaders: ['Content-Disposition'],
-      },
+      // CORS is handled entirely by Lambda middleware (cors.rs).
+      // Do NOT use defaultCorsPreflightOptions here — it creates a MOCK
+      // integration for OPTIONS that conflicts with binaryMediaTypes: ['*/*'],
+      // causing API Gateway to corrupt/strip CORS headers from preflight responses.
     });
 
     // Lambda integration with proxy
@@ -65,10 +63,33 @@ export class RustLambdaStack extends cdk.Stack {
 
     // Handle root path
     api.root.addMethod('ANY', lambdaIntegration);
+    // Explicit OPTIONS on root — ANY does NOT forward OPTIONS in REST API
+    api.root.addMethod('OPTIONS', lambdaIntegration);
 
     // Create proxy resource for all other paths
     const proxyResource = api.root.addResource('{proxy+}');
     proxyResource.addMethod('ANY', lambdaIntegration);
+    // Explicit OPTIONS on proxy — forwarded to Lambda CORS middleware
+    proxyResource.addMethod('OPTIONS', lambdaIntegration);
+
+    // Add CORS headers to API Gateway's own error responses (4XX/5XX)
+    // so browsers can read error details instead of showing opaque CORS errors
+    api.addGatewayResponse('Default4XX', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: {
+        'method.response.header.Access-Control-Allow-Origin': "'*'",
+        'method.response.header.Access-Control-Allow-Headers': "'Content-Type,Authorization,x-request-id,x-school-id,x-api-key'",
+        'method.response.header.Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS,PATCH'",
+      },
+    });
+    api.addGatewayResponse('Default5XX', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: {
+        'method.response.header.Access-Control-Allow-Origin': "'*'",
+        'method.response.header.Access-Control-Allow-Headers': "'Content-Type,Authorization,x-request-id,x-school-id,x-api-key'",
+        'method.response.header.Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS,PATCH'",
+      },
+    });
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {

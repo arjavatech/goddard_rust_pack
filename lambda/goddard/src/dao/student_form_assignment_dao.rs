@@ -780,4 +780,146 @@ impl StudentFormAssignmentDao {
 
         Ok((created_assignments, total_active_students, students_already_assigned))
     }
+
+    /// Assign a form template to all active students in a specific class
+    /// Skips students who already have the form assigned
+    pub async fn assign_form_to_class_students(
+        &self,
+        school_id: Uuid,
+        class_id: Uuid,
+        form_template_id: Uuid,
+        is_required: bool,
+    ) -> Result<(Vec<StudentFormAssignment>, i64, i64), AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Assigning form {} to all active students in class {} of school {}", form_template_id, class_id, school_id);
+
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // Total active students in class
+        let total_count_query = r#"
+            SELECT COUNT(DISTINCT e.id) as total
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.school_id = $1 AND e.classroom_id = $2
+              AND (e.is_active = true OR e.is_active IS NULL)
+              AND (c.status = 'active' OR c.status IS NULL)
+        "#;
+
+        let total_row = transaction.query_one(total_count_query, &[&school_id, &class_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to count total students in class: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        let total_active_students: i64 = total_row.get("total");
+        println!("[DEBUG] StudentFormAssignmentDAO: Total active students in class: {}", total_active_students);
+
+        // Already assigned in class
+        let already_assigned_query = r#"
+            SELECT COUNT(DISTINCT sfa.child_id) as already_assigned
+            FROM student_form_assignments sfa
+            JOIN enrollments e ON sfa.enrollment_id = e.id
+            WHERE sfa.school_id = $1 AND e.classroom_id = $2
+              AND sfa.form_template_id = $3
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+        "#;
+
+        let already_assigned_row = transaction.query_one(already_assigned_query, &[&school_id, &class_id, &form_template_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to count already assigned in class: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        let students_already_assigned: i64 = already_assigned_row.get("already_assigned");
+        println!("[DEBUG] StudentFormAssignmentDAO: Students already assigned in class: {}", students_already_assigned);
+
+        // Eligible students (not yet assigned) in this class
+        let query = r#"
+            SELECT DISTINCT
+                e.id as enrollment_id,
+                e.child_id,
+                e.school_id
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.school_id = $1 AND e.classroom_id = $2
+              AND (e.is_active = true OR e.is_active IS NULL)
+              AND (c.status = 'active' OR c.status IS NULL)
+              AND NOT EXISTS (
+                SELECT 1 FROM student_form_assignments sfa
+                WHERE sfa.school_id = $1
+                  AND sfa.child_id = e.child_id
+                  AND sfa.form_template_id = $3
+                  AND (sfa.is_active = true OR sfa.is_active IS NULL)
+              )
+        "#;
+
+        let rows = transaction.query(query, &[&school_id, &class_id, &form_template_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to fetch eligible enrollments in class: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Found {} students to assign in class", rows.len());
+
+        let mut created_assignments = Vec::new();
+        let assignment_source = "class_assignment";
+        let status_str = "incomplete";
+        let now = Utc::now().naive_utc();
+
+        for row in rows {
+            let enrollment_id: Uuid = row.get("enrollment_id");
+            let child_id: Uuid = row.get("child_id");
+            let row_school_id: Uuid = row.get("school_id");
+
+            let id = Uuid::new_v4();
+
+            let insert_query = r#"
+                INSERT INTO student_form_assignments (
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at,
+                    updated_at
+            "#;
+
+            let created_row = transaction.query_one(
+                insert_query,
+                &[
+                    &id,
+                    &row_school_id,
+                    &enrollment_id,
+                    &child_id,
+                    &form_template_id,
+                    &assignment_source,
+                    &status_str,
+                    &is_required,
+                    &now,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to insert class assignment for child {}: {}", child_id, e);
+                AppError::Database(e.to_string())
+            })?;
+
+            let created = self.row_to_student_form_assignment(created_row)?;
+            created_assignments.push(created);
+        }
+
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} new class assignments", created_assignments.len());
+
+        Ok((created_assignments, total_active_students, students_already_assigned))
+    }
 }

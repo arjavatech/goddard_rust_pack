@@ -338,4 +338,52 @@ impl StudentFormAssignmentService {
             failed: Vec::new(),
         })
     }
+
+    /// Assign a form template to all active students in a specific class
+    pub async fn assign_form_to_class_students(
+        &self,
+        request: crate::models::student_form_assignment::AssignFormToClassStudentsRequest,
+    ) -> Result<crate::models::student_form_assignment::AssignFormToClassStudentsResponse, AppError> {
+        println!("[DEBUG] StudentFormAssignmentService: Assigning form {} to all active students in class {} of school {}",
+            request.form_template_id, request.class_id, request.school_id);
+
+        // Validate that the form template is active
+        let form_template_ids = vec![request.form_template_id];
+        self.dao.validate_form_templates_active(&form_template_ids).await?;
+        println!("[DEBUG] StudentFormAssignmentService: Form template validated");
+
+        // Call DAO to assign forms to all active students in the class
+        let is_required = false;
+        let (created_assignments, total_active_students, students_already_assigned) = self.dao
+            .assign_form_to_class_students(
+                request.school_id,
+                request.class_id,
+                request.form_template_id,
+                is_required,
+            )
+            .await?;
+
+        // Convert to response DTOs
+        let successful: Vec<crate::models::student_form_assignment::StudentFormAssignmentResponse> =
+            created_assignments.into_iter()
+                .map(|assignment| assignment.into())
+                .collect();
+
+        let newly_assigned = successful.len() as i64;
+
+        println!("[DEBUG] StudentFormAssignmentService: Class assignment complete. Total: {}, Already assigned: {}, Newly assigned: {}",
+            total_active_students, students_already_assigned, newly_assigned);
+
+        Ok(crate::models::student_form_assignment::AssignFormToClassStudentsResponse {
+            school_id: request.school_id,
+            class_id: request.class_id,
+            form_template_id: request.form_template_id,
+            total_active_students,
+            students_already_assigned,
+            newly_assigned,
+            failed_assignments: 0,
+            successful,
+            failed: Vec::new(),
+        })
+    }
 }

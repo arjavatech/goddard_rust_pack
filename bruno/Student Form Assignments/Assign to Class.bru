@@ -1,0 +1,27 @@
+meta {
+  name: Assign to Class
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/student-form-assignments/assign-to-class
+  body: json
+  auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+    "school_id": "{{school_id}}",
+    "class_id": "{{class_id}}",
+    "form_template_id": "654dab56-a910-4320-b6a0-1382d3b47194"
+  }
+}
+
+settings {
+  encodeUrl: true
+}

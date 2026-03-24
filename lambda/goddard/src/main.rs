@@ -54,7 +54,7 @@ use controllers::{
         get_form_submission_by_id, update_form_submission_status
     },
     student_form_assignment_controller::{
-        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students, download_enrollment_forms_zip
+        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students, assign_form_to_class_students, download_enrollment_forms_zip
     },
     student_form_assignment_review_controller::{
         review_student_form_assignment
@@ -272,6 +272,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/student-form-assignments/review", put(review_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments/assign", post(bulk_assign_forms_to_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments/assign-to-school", post(assign_form_to_school_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/student-form-assignments/assign-to-class", post(assign_form_to_class_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments/:enrollment_id/forms/download-zip", get(download_enrollment_forms_zip).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(student_form_assignment_service)
 

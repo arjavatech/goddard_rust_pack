@@ -868,7 +868,7 @@ impl StudentFormAssignmentDao {
         println!("[DEBUG] StudentFormAssignmentDAO: Found {} students to assign in class", rows.len());
 
         let mut created_assignments = Vec::new();
-        let assignment_source = "class_assignment";
+        let assignment_source = "class_override";
         let status_str = "incomplete";
         let now = Utc::now().naive_utc();
 

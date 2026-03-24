@@ -303,21 +303,21 @@ impl EnrollmentService {
         }
 
         // Apply classroom overrides
+        // A record in class_form_overrides means "this form belongs to this class"
+        // Only an explicit "remove" action should exclude a form
         for override_form in classroom_overrides {
             match override_form.action.as_deref() {
-                Some("add") => {
+                Some("remove") => {
+                    final_forms.remove(&override_form.form_template_id);
+                }
+                _ => {
+                    // NULL, "add", "include", or any other value → include the form
                     let form_template = FormTemplate {
                         id: override_form.form_template_id,
                         form_name: override_form.form_name.clone(),
                         is_required: override_form.is_required,
                     };
                     final_forms.insert(override_form.form_template_id, (form_template, "class_override".to_string()));
-                }
-                Some("remove") => {
-                    final_forms.remove(&override_form.form_template_id);
-                }
-                _ => {
-                    continue;
                 }
             }
         }

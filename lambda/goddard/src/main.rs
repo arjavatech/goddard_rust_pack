@@ -29,7 +29,8 @@ use controllers::{
         get_current_user_profile,
         get_admins_by_school,
         update_admin_user,
-        delete_admin_user
+        delete_admin_user,
+        forgot_password
     },
     school_controller::{
         create_school, get_all_schools, update_school, delete_school, create_school_with_owner, get_school_with_owner, get_all_schools_with_owners
@@ -191,6 +192,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/auth/clear-table", delete(clear_auth_table))
         .route("/auth/debug-users", get(debug_auth_users))
         .route("/auth/users/filter", get(get_users_by_school_and_role))
+        .route("/auth/forgot-password", post(forgot_password))
         .route("/users/me", get(get_current_user_profile))
         .route("/users/admin",
             get(get_admins_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only))

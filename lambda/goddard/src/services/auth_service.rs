@@ -124,6 +124,19 @@ pub struct DeleteAdminRequest {
     pub user_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+    pub school_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForgotPasswordResponse {
+    pub success: bool,
+    pub message: String,
+    pub email: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FilteredUserResponse {
     pub school_id: String,
@@ -570,6 +583,23 @@ impl AuthService {
             first_name: Some(user.first_name),
             last_name: Some(user.last_name),
             school_data,
+        })
+    }
+
+    pub async fn forgot_password(&self, request: ForgotPasswordRequest) -> ApiResult<ForgotPasswordResponse> {
+        let school_id = uuid::Uuid::parse_str(&request.school_id)
+            .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
+
+        // Verify user exists for this school — returns NotFound error if not
+        self.dao.get_user_by_email_and_school(&request.email, school_id).await?;
+
+        // User exists — trigger password reset email via Supabase
+        self.supabase_client.send_password_reset_email(&request.email).await?;
+
+        Ok(ForgotPasswordResponse {
+            success: true,
+            message: "Password reset email sent. Please check your inbox.".to_string(),
+            email: request.email,
         })
     }
 }

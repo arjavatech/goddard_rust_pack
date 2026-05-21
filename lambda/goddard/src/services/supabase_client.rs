@@ -738,4 +738,26 @@ impl SupabaseClient {
 
         Ok(user_data)
     }
+
+    pub async fn send_password_reset_email(&self, email: &str) -> Result<(), AppError> {
+        let endpoint = format!("{}/auth/v1/recover", self.project_url);
+        let body = json!({ "email": email });
+
+        let response = self.client
+            .post(&endpoint)
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to send password reset email: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("Failed to send password reset email: {}", error_text)));
+        }
+
+        Ok(())
+    }
 }

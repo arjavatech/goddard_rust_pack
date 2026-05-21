@@ -10,7 +10,7 @@ use serde_json::json;
 use axum::http::StatusCode;
 
 use crate::{
-    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest}},
+    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest, ForgotPasswordRequest}},
     utils::ResponseUtils,
     error::AppError,
     middleware::auth::AuthContext,
@@ -235,4 +235,13 @@ pub async fn delete_admin_user(
         ).into_response(),
         Err(e) => e.into_response(),
     }
+}
+
+/// POST /auth/forgot-password (public)
+pub async fn forgot_password(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<ForgotPasswordRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = auth_service.forgot_password(payload).await?;
+    Ok(ResponseUtils::success(response))
 }

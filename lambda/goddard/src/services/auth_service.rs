@@ -3,6 +3,7 @@ use crate::{
     error::{AppError, ApiResult},
     utils::ValidationUtils,
     services::{SupabaseClient, supabase_client::UserMetadata},
+    models::school::SchoolResponse,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -132,6 +133,7 @@ pub struct FilteredUserResponse {
     pub parent_id: Option<String>,
     pub last_name: Option<String>,
     pub first_name: Option<String>,
+    pub school_data: Option<SchoolResponse>,
 }
 
 pub struct AuthService {
@@ -444,6 +446,7 @@ impl AuthService {
                 parent_id,
                 first_name,
                 last_name,
+                school_data: None,
             });
         }
 
@@ -546,6 +549,18 @@ impl AuthService {
             None
         };
 
+        let school_data = match self.school_dao.get_school_by_id(&user.school_id).await {
+            Ok(Some(school)) => Some(SchoolResponse {
+                id: school.id,
+                name: school.name,
+                subdomain: school.subdomain,
+                settings: school.settings,
+                created_at: school.created_at,
+                updated_at: school.updated_at,
+            }),
+            _ => None,
+        };
+
         Ok(FilteredUserResponse {
             school_id: user.school_id.to_string(),
             role: user.role,
@@ -554,6 +569,7 @@ impl AuthService {
             parent_id,
             first_name: Some(user.first_name),
             last_name: Some(user.last_name),
+            school_data,
         })
     }
 }

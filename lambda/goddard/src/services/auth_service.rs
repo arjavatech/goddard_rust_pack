@@ -125,6 +125,19 @@ pub struct DeleteAdminRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ResendAdminInviteRequest {
+    pub user_id: uuid::Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResendAdminInviteResponse {
+    pub user_id: String,
+    pub email: String,
+    pub email_sent: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ForgotPasswordRequest {
     pub email: String,
     pub school_id: String,
@@ -602,6 +615,26 @@ impl AuthService {
             success: true,
             message: "Password reset email sent. Please check your inbox.".to_string(),
             email: request.email,
+        })
+    }
+
+    pub async fn resend_admin_invite(&self, request: ResendAdminInviteRequest) -> ApiResult<ResendAdminInviteResponse> {
+        // Look up admin in our users table by ID
+        let user = self.dao.get_user_by_id(request.user_id).await?;
+
+        // Ensure the user is an Admin role
+        if user.role.to_lowercase() != "admin" {
+            return Err(AppError::Validation("User is not an Admin".to_string()));
+        }
+
+        // Resend invitation email via Supabase
+        self.supabase_client.resend_invitation(&user.email).await?;
+
+        Ok(ResendAdminInviteResponse {
+            user_id: user.id.to_string(),
+            email: user.email,
+            email_sent: true,
+            message: "Admin invitation email resent successfully".to_string(),
         })
     }
 }

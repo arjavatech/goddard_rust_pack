@@ -353,24 +353,40 @@ impl AuthService {
         let school_uuid = uuid::Uuid::parse_str(&request.school_id)
             .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
-        // Check if user already exists in this school under any role
+        // Step 1: Active user exists → block with conflict error
         match self.dao.get_user_by_email_and_school(&request.email, school_uuid).await {
             Ok(_) => return Err(AppError::Conflict("Already registered with different role".to_string())),
-            Err(AppError::NotFound(_)) => {}, // User doesn't exist, proceed
+            Err(AppError::NotFound(_)) => {},
             Err(e) => return Err(e),
         }
 
-        // Build metadata with is_verified = true and role = "Admin"
+        // Step 2: Soft-deleted user exists → reactivate and resend invite
+        match self.dao.get_soft_deleted_user_by_email_and_school(&request.email, school_uuid).await {
+            Ok(user) => {
+                self.dao.reactivate_user(user.id, &request.first_name, &request.last_name).await?;
+                self.supabase_client.resend_invitation(&user.email).await?;
+                return Ok(CreateInvitationResponse {
+                    success: true,
+                    message: "User reactivated and invitation email resent successfully.".to_string(),
+                    email: user.email,
+                    user_id: user.id.to_string(),
+                    timestamp: Utc::now(),
+                });
+            },
+            Err(AppError::NotFound(_)) => {},
+            Err(e) => return Err(e),
+        }
+
+        // Step 3: New user — create in Supabase and send invite
         let metadata = UserMetadata::new(
             Some(school_uuid),
             Some(request.first_name.clone()),
             Some(request.last_name.clone()),
-            Some("Admin".to_string()),  // Default role = Admin
-            request.phone_number.clone(),  // Optional - can be None
-            Some(true),  // is_verified = true
+            Some("Admin".to_string()),
+            request.phone_number.clone(),
+            Some(true),
         );
 
-        // Create user invitation via Supabase with enhanced metadata
         let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
 
         Ok(CreateInvitationResponse {

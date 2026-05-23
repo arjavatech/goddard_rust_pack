@@ -154,11 +154,13 @@ impl AuthDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let query = r#"
-            SELECT id, school_id, first_name, last_name, email, role,
-                   COALESCE(is_verified, false) as is_verified, created_at
-            FROM users
-            WHERE school_id = $1 AND role = 'Admin' AND is_verified = true AND (is_active = true OR is_active IS NULL)
-            ORDER BY first_name, last_name
+            SELECT u.id, u.school_id, u.first_name, u.last_name, u.email, u.role,
+                   CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
+                   u.created_at
+            FROM users u
+            LEFT JOIN auth.users au ON au.email = u.email
+            WHERE u.school_id = $1 AND u.role = 'Admin' AND (u.is_active = true OR u.is_active IS NULL)
+            ORDER BY u.first_name, u.last_name
         "#;
 
         let rows = client.query(query, &[&school_id]).await

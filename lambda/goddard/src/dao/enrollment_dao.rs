@@ -824,17 +824,19 @@ impl EnrollmentDao {
                 cl.name as class_name,
                 COUNT(DISTINCT e.id) as count,
                 COALESCE(
-                    json_object_agg(
-                        cfo.form_template_id,
-                        ft.form_name
-                    ) FILTER (WHERE cfo.form_template_id IS NOT NULL),
+                    (
+                        SELECT json_object_agg(cfo.form_template_id, ft.form_name)
+                        FROM class_form_overrides cfo
+                        JOIN form_templates ft ON ft.id = cfo.form_template_id AND ft.is_active = true
+                        WHERE cfo.classroom_id = cl.id
+                          AND cfo.school_id = cl.school_id
+                          AND cfo.is_active = true
+                    ),
                     '{}'::json
                 ) as forms
-            FROM classrooms cl
-            LEFT JOIN enrollments e ON cl.id = e.classroom_id AND e.school_id = cl.school_id AND e.is_active = true 
-            LEFT JOIN class_form_overrides cfo ON cfo.classroom_id = cl.id AND cfo.school_id = cl.school_id AND cfo.is_active = true
-            LEFT JOIN form_templates ft ON ft.id = cfo.form_template_id AND ft.is_active = true
-            WHERE cl.school_id = $1 AND cl.is_active = true
+            FROM enrollments e
+            JOIN classrooms cl ON e.classroom_id = cl.id
+            WHERE e.school_id = $1
             GROUP BY cl.id, cl.name
             ORDER BY cl.name
         ";

@@ -307,6 +307,44 @@ impl AuthDao {
         }
     }
 
+    pub async fn get_soft_deleted_user_by_email_and_school(&self, email: &str, school_id: uuid::Uuid) -> ApiResult<UserDetails> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, created_at FROM users WHERE email = $1 AND school_id = $2 AND is_active = false LIMIT 1";
+
+        match client.query_opt(query, &[&email, &school_id]).await {
+            Ok(Some(row)) => {
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+                Ok(UserDetails {
+                    id: row.get("id"),
+                    school_id: row.get("school_id"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    email: row.get("email"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    created_at,
+                })
+            },
+            Ok(None) => Err(AppError::NotFound("Soft-deleted user not found".to_string())),
+            Err(e) => Err(AppError::Database(format!("Failed to query user: {}", e))),
+        }
+    }
+
+    pub async fn reactivate_user(&self, user_id: uuid::Uuid, first_name: &str, last_name: &str) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = "UPDATE users SET is_active = true, first_name = $2, last_name = $3, updated_at = NOW() WHERE id = $1";
+
+        client.execute(query, &[&user_id, &first_name, &last_name]).await
+            .map_err(|e| AppError::Database(format!("Failed to reactivate user: {}", e)))?;
+
+        Ok(())
+    }
+
     pub async fn get_superadmin_with_login_status_by_school(
         &self,
         school_id: &uuid::Uuid

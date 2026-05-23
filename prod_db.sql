@@ -521,3 +521,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
  -- Trigger on table: users                                                                                                                              
  CREATE TRIGGER set_is_verified_on_insert BEFORE INSERT ON users FOR EACH ROW EXECUTE FUNCTION set_is_verified_based_on_role();
 
+
+
+ALTER TABLE classrooms                                        
+  ADD CONSTRAINT classrooms_school_id_name_unique UNIQUE         
+  (school_id, name);
+  

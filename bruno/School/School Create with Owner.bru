@@ -5,11 +5,30 @@ meta {
 }
 
 post {
-  url: {{base_url}}/schools/with-owner    
-  body: none
+  url: {{base_url}}/schools/with-owner
+  body: json
   auth: inherit
+}
+
+headers {
+  X-API-Key: {{api_key}}
+}
+
+body:json {
+  {
+        "name": "Goddard Schools, Lynnwood",
+        "subdomain": "lynnwood",
+        "settings": {
+          "timezone": "America/New_York",
+          "enrollment_capacity": 200,
+          "age_groups": ["infants", "toddlers", "preschool", "pre-k"]},
+    "email":"tech.goddardschools@gmail.com",
+    "first_name": "Lynnwood",
+    "last_name":"Admin"
+  }
 }
 
 settings {
   encodeUrl: true
+  timeout: 0
 }

@@ -834,9 +834,9 @@ impl EnrollmentDao {
                     ),
                     '{}'::json
                 ) as forms
-            FROM enrollments e
-            JOIN classrooms cl ON e.classroom_id = cl.id
-            WHERE e.school_id = $1
+            FROM classrooms cl
+            LEFT JOIN enrollments e ON e.classroom_id = cl.id
+            WHERE cl.school_id = $1 AND (cl.is_active = true OR cl.is_active IS NULL)
             GROUP BY cl.id, cl.name
             ORDER BY cl.name
         ";

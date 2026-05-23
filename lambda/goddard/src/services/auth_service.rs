@@ -340,9 +340,11 @@ impl AuthService {
         let school_uuid = uuid::Uuid::parse_str(&request.school_id)
             .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
-        // Check if user already exists
-        if self.dao.user_exists_by_email(&request.email).await? {
-            return Err(AppError::Conflict("User already exists".to_string()));
+        // Check if user already exists in this school under any role
+        match self.dao.get_user_by_email_and_school(&request.email, school_uuid).await {
+            Ok(_) => return Err(AppError::Conflict("Already registered with different role".to_string())),
+            Err(AppError::NotFound(_)) => {}, // User doesn't exist, proceed
+            Err(e) => return Err(e),
         }
 
         // Build metadata with is_verified = true and role = "Admin"

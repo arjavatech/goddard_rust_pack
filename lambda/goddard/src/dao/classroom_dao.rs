@@ -115,6 +115,32 @@ impl ClassroomDao {
         Err(AppError::NotFound("Classroom not found".to_string()))
     }
 
+    pub async fn name_exists_for_school(&self, name: &str, school_id: &Uuid) -> Result<bool, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            "SELECT EXISTS(SELECT 1 FROM classrooms WHERE LOWER(name) = LOWER($1) AND school_id = $2 AND (is_active = true OR is_active IS NULL))",
+            &[&name, school_id],
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to check class name: {}", e)))?;
+
+        Ok(row.get(0))
+    }
+
+    pub async fn has_enrollments(&self, classroom_id: &Uuid) -> Result<bool, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            "SELECT EXISTS(SELECT 1 FROM enrollments WHERE classroom_id = $1)",
+            &[classroom_id],
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to check enrollments: {}", e)))?;
+
+        Ok(row.get(0))
+    }
+
     pub async fn delete_classroom(&self, classroom_id: &Uuid, school_id: &Uuid) -> Result<(), AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

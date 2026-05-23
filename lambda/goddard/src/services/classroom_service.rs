@@ -18,6 +18,13 @@ impl ClassroomService {
             return Err(AppError::Validation("Class name cannot be empty".to_string()));
         }
 
+        if self.dao.name_exists_for_school(&request.class_name, &request.school_id).await? {
+            return Err(AppError::Conflict(format!(
+                "A class named '{}' already exists for this school",
+                request.class_name
+            )));
+        }
+
         self.dao.create_classroom(&request).await
     }
 
@@ -34,6 +41,12 @@ impl ClassroomService {
     }
 
     pub async fn delete_classroom(&self, classroom_id: Uuid, school_id: Uuid) -> Result<(), AppError> {
+        if self.dao.has_enrollments(&classroom_id).await? {
+            return Err(AppError::Conflict(
+                "Cannot delete classroom: it has existing enrollments".to_string(),
+            ));
+        }
+
         self.dao.delete_classroom(&classroom_id, &school_id).await
     }
 }

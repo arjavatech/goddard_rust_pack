@@ -739,6 +739,54 @@ impl SupabaseClient {
         Ok(user_data)
     }
 
+    /// Check the delivery status of the most recently sent email to `email` via Resend.
+    /// Waits 2 seconds for Resend to process the send before querying.
+    /// Returns the `last_event` string: "delivered", "suppressed", "bounced", "clicked", etc.
+    pub async fn get_recent_email_status(&self, email: &str) -> String {
+        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
+        if resend_api_key.is_empty() {
+            return "unknown".to_string();
+        }
+
+        // Give Resend time to process the email before querying status
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let response = match self.client
+            .get("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", resend_api_key))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return "unknown".to_string(),
+        };
+
+        let data: serde_json::Value = match response.json().await {
+            Ok(d) => d,
+            Err(_) => return "unknown".to_string(),
+        };
+
+        if let Some(emails) = data.get("data").and_then(|d| d.as_array()) {
+            for item in emails {
+                let to_matches = item
+                    .get("to")
+                    .and_then(|t| t.as_array())
+                    .map(|arr| arr.iter().any(|t| t.as_str() == Some(email)))
+                    .unwrap_or(false);
+
+                if to_matches {
+                    return item
+                        .get("last_event")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                }
+            }
+        }
+
+        "unknown".to_string()
+    }
+
     pub async fn send_password_reset_email(&self, email: &str) -> Result<(), AppError> {
         let endpoint = format!("{}/auth/v1/recover", self.project_url);
         let body = json!({ "email": email });

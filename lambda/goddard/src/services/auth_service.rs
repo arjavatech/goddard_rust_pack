@@ -61,6 +61,7 @@ pub struct ResendInvitationResponse {
     pub success: bool,
     pub message: String,
     pub email: String,
+    pub email_status: String,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -97,6 +98,7 @@ pub struct CreateInvitationResponse {
     pub message: String,
     pub email: String,
     pub user_id: String,
+    pub email_status: String,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -135,6 +137,7 @@ pub struct ResendAdminInviteResponse {
     pub email: String,
     pub email_sent: bool,
     pub message: String,
+    pub email_status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -160,6 +163,15 @@ pub struct FilteredUserResponse {
     pub last_name: Option<String>,
     pub first_name: Option<String>,
     pub school_data: Option<SchoolResponse>,
+}
+
+fn email_status_message(status: &str, default_ok: &str) -> String {
+    match status {
+        "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
+        "bounced"    => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
+        "delivered"  => format!("{} Email delivered successfully.", default_ok),
+        _            => default_ok.to_string(),
+    }
 }
 
 pub struct AuthService {
@@ -265,21 +277,27 @@ impl AuthService {
         // Try to send email via Supabase, but handle rate limiting gracefully
         match self.supabase_client.resend_invitation(&request.email).await {
             Ok(_) => {
-                // Successfully sent email, update timestamp
                 self.dao.update_confirmation_sent_at(&request.email).await?;
             }
             Err(AppError::ExternalService(msg)) if msg.contains("rate limit") => {
-                // Rate limited - just update timestamp since user already exists
-                // and they know about the previous email
                 self.dao.update_confirmation_sent_at(&request.email).await?;
             }
             Err(e) => return Err(e),
         }
 
+        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
+
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+        }
+
+        let message = email_status_message(&email_status, "Invitation processed successfully. If no email was received, please check spam folder.");
+
         Ok(ResendInvitationResponse {
             success: true,
-            message: "Invitation processed successfully. If no email was received, please check spam folder or wait 60 seconds before requesting again.".to_string(),
+            message,
             email: request.email,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -334,12 +352,15 @@ impl AuthService {
 
         // STEP 4: Create user invitation via Supabase with enhanced metadata
         let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
+        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
+        let message = email_status_message(&email_status, "User invitation created successfully with custom fields. Please check email for confirmation link.");
 
         Ok(CreateInvitationResponse {
             success: true,
-            message: "User invitation created successfully with custom fields. Please check email for confirmation link.".to_string(),
+            message,
             email: request.email,
             user_id,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -365,11 +386,17 @@ impl AuthService {
             Ok(user) => {
                 self.dao.reactivate_user(user.id, &request.first_name, &request.last_name).await?;
                 self.supabase_client.resend_invitation(&user.email).await?;
+                let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+                if matches!(email_status.as_str(), "suppressed" | "bounced") {
+                    return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+                }
+                let message = email_status_message(&email_status, "User reactivated and invitation email resent successfully.");
                 return Ok(CreateInvitationResponse {
                     success: true,
-                    message: "User reactivated and invitation email resent successfully.".to_string(),
+                    message,
                     email: user.email,
                     user_id: user.id.to_string(),
+                    email_status,
                     timestamp: Utc::now(),
                 });
             },
@@ -388,12 +415,18 @@ impl AuthService {
         );
 
         let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
+        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+        }
+        let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link.");
 
         Ok(CreateInvitationResponse {
             success: true,
-            message: "User invitation created successfully. Please check email for confirmation link.".to_string(),
+            message,
             email: request.email,
             user_id,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -431,12 +464,15 @@ impl AuthService {
             .create_user_invitation_enhanced(&request.email, metadata)
             .await?;
 
-        // Step 6: Return success response
+        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
+        let message = email_status_message(&email_status, "SuperAdmin user created successfully. Please check email for confirmation link.");
+
         Ok(CreateInvitationResponse {
             success: true,
-            message: "SuperAdmin user created successfully. Please check email for confirmation link.".to_string(),
+            message,
             email: request.email,
             user_id,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -645,12 +681,20 @@ impl AuthService {
 
         // Resend invitation email via Supabase
         self.supabase_client.resend_invitation(&user.email).await?;
+        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+        }
+
+        let message = email_status_message(&email_status, "Admin invitation email resent successfully.");
 
         Ok(ResendAdminInviteResponse {
             user_id: user.id.to_string(),
             email: user.email,
             email_sent: true,
-            message: "Admin invitation email resent successfully".to_string(),
+            message,
+            email_status,
         })
     }
 }

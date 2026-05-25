@@ -203,7 +203,16 @@ impl EnrollmentService {
             is_required: form.is_required,
         }).collect();
 
-        // Step 9: Generate response
+        // Step 9: Check primary parent email delivery status via Resend
+        let primary_email_status = self.supabase_client.get_recent_email_status(&request.parent_email).await;
+        if matches!(primary_email_status.as_str(), "suppressed" | "bounced") {
+            return Err(crate::error::AppError::ExternalService(match primary_email_status.as_str() {
+                "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
+                _ => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
+            }));
+        }
+
+        // Step 10: Generate response
         let response = ParentInviteResponse {
             parent_id: auth_result.auth_user_id,
             child_id: created_child.id,
@@ -340,7 +349,16 @@ impl EnrollmentService {
         // Step 2: Resend confirmation email through Supabase
         self.supabase_client.resend_invitation(&parent_email).await?;
 
-        // Step 3: Generate response
+        // Step 3: Check delivery status via Resend
+        let email_status = self.supabase_client.get_recent_email_status(&parent_email).await;
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(crate::error::AppError::ExternalService(match email_status.as_str() {
+                "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
+                _ => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
+            }));
+        }
+
+        // Step 4: Generate response
         let response = ResendConfirmationResponse {
             parent_id: request.parent_id,
             email_sent: true,

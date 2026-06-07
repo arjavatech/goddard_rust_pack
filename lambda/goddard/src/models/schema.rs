@@ -50,7 +50,7 @@ pub struct Child {
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub birth_date: NaiveDate,
+    pub birth_date: Option<NaiveDate>,
     pub age_group: AgeGroup,
     pub medical_info: Option<MedicalInfo>,
     pub enrollment_status: EnrollmentStatus,
@@ -282,7 +282,7 @@ pub struct CreateUserRequest {
 pub struct CreateChildRequest {
     pub first_name: String,
     pub last_name: String,
-    pub birth_date: NaiveDate,
+    pub birth_date: Option<NaiveDate>,
     pub medical_info: Option<MedicalInfo>,
 }
 

@@ -161,7 +161,7 @@ impl EnrollmentDao {
     }
 
     // Single transaction method to create child with explicit parent verification
-    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: NaiveDate, gender: &str, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
+    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: Option<NaiveDate>, gender: &str, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
         println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}, secondary_parent_id: {:?}", parent_id, school_id, secondary_parent_id);
 
         use tokio::time::{timeout, Duration};

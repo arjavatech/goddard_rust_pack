@@ -96,6 +96,7 @@ pub struct SupabaseClient {
     service_role_key: String,
     anon_key: String,
     frontend_url: String,
+    api_base_url: String,
 }
 
 impl SupabaseClient {
@@ -129,12 +130,16 @@ impl SupabaseClient {
             .build()
             .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
 
+        let api_base_url = env::var("API_BASE_URL")
+            .unwrap_or_else(|_| "https://api.goddard-app.com".to_string());
+
         Ok(Self {
             client,
             project_url,
             service_role_key,
             anon_key,
             frontend_url,
+            api_base_url,
         })
     }
 
@@ -226,7 +231,7 @@ impl SupabaseClient {
     }
 
     /// Get user by email address
-    async fn get_user_by_email(&self, email: &str) -> Result<serde_json::Value, AppError> {
+    pub async fn get_user_by_email(&self, email: &str) -> Result<serde_json::Value, AppError> {
         // List all users and filter by email (Supabase doesn't support direct email lookup)
         let response = self.client
             .get(&format!("{}/auth/v1/admin/users", self.project_url))
@@ -807,5 +812,193 @@ impl SupabaseClient {
         }
 
         Ok(())
+    }
+
+    /// Call Supabase Admin generate_link to get a fresh one-time set-password URL for an existing user.
+    /// Uses type "recovery" because the user already exists (created via admin API).
+    /// "signup" fails with email_exists; "recovery" works for users with no password yet too.
+    pub async fn generate_signup_link(&self, email: &str) -> Result<String, AppError> {
+        let body = json!({
+            "type": "recovery",
+            "email": email,
+            "options": {
+                "redirectTo": format!("{}/set-password", self.frontend_url)
+            }
+        });
+
+        let response = self.client
+            .post(&format!("{}/auth/v1/admin/generate_link", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to call generate_link: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("generate_link failed: {}", error_text)));
+        }
+
+        let data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse generate_link response: {}", e)))?;
+
+        let action_link = data
+            .get("action_link")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::ExternalService("action_link not found in generate_link response".to_string()))?;
+
+        Ok(action_link.to_string())
+    }
+
+    /// Send parent invite email via Resend — replicates the Supabase parent invite template.
+    /// Subject: "Invitation to Create an Account for The Goddard School Admission"
+    pub async fn send_parent_invite_email(
+        &self,
+        email: &str,
+        invite_token: Uuid,
+        first_name: &str,
+        last_name: &str,
+    ) -> Result<bool, AppError> {
+        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
+        if resend_api_key.is_empty() {
+            tracing::warn!("RESEND_API_KEY not set; skipping parent invite email for {}", email);
+            return Ok(false);
+        }
+
+        let confirmation_url = format!("{}/enrollments/activate/{}", self.api_base_url, invite_token);
+        let html_body = super::email_templates::parent_invite_html(first_name, last_name, &confirmation_url);
+
+        let body = json!({
+            "from": "Goddard Schools <no-reply@arjavatech.com>",
+            "to": [email],
+            "subject": "Invitation to Create an Account for The Goddard School Admission",
+            "html": html_body,
+        });
+
+        let response = self.client
+            .post("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", resend_api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to send parent invite email: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::warn!("Parent invite email failed for {}: {}", email, error_text);
+            return Ok(false);
+        }
+
+        tracing::info!("✅ Parent invite email sent to {} (token: {})", email, invite_token);
+        Ok(true)
+    }
+
+    /// Send admin invite email via Resend — replicates the Supabase admin invite template.
+    /// Subject: "Welcome to {school_name} - Administrator Access"
+    pub async fn send_admin_invite_email(
+        &self,
+        email: &str,
+        invite_token: Uuid,
+        first_name: &str,
+        last_name: &str,
+        school_name: &str,
+    ) -> Result<bool, AppError> {
+        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
+        if resend_api_key.is_empty() {
+            tracing::warn!("RESEND_API_KEY not set; skipping admin invite email for {}", email);
+            return Ok(false);
+        }
+
+        let confirmation_url = format!("{}/enrollments/activate/{}", self.api_base_url, invite_token);
+        let subject = format!("Welcome to {} - Administrator Access", school_name);
+        let html_body = super::email_templates::admin_invite_html(
+            first_name,
+            last_name,
+            school_name,
+            &confirmation_url,
+            &invite_token.to_string(),
+        );
+
+        let body = json!({
+            "from": "Goddard Schools <no-reply@arjavatech.com>",
+            "to": [email],
+            "subject": subject,
+            "html": html_body,
+        });
+
+        let response = self.client
+            .post("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", resend_api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to send admin invite email: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::warn!("Admin invite email failed for {}: {}", email, error_text);
+            return Ok(false);
+        }
+
+        tracing::info!("✅ Admin invite email sent to {} (token: {})", email, invite_token);
+        Ok(true)
+    }
+
+    /// Create a Supabase user without sending any email (user creation only).
+    pub async fn create_user_only_in_supabase(
+        &self,
+        email: &str,
+        metadata: UserMetadata,
+    ) -> Result<String, AppError> {
+        let user_metadata_json = metadata.to_supabase_metadata();
+
+        let create_user_body = json!({
+            "email": email,
+            "email_confirm": false,
+            "user_metadata": user_metadata_json,
+            "app_metadata": {
+                "provider": "email",
+                "providers": ["email"]
+            }
+        });
+
+        let create_response = self.client
+            .post(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&create_user_body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to create user: {}", e)))?;
+
+        let status_code = create_response.status();
+
+        if !status_code.is_success() {
+            let error_body = create_response.text().await.unwrap_or_default();
+            if status_code == 422 && error_body.contains("already been registered") {
+                return Err(AppError::Conflict("User with this email already exists".to_string()));
+            }
+            return Err(AppError::ExternalService(format!("Failed to create user: {}", error_body)));
+        }
+
+        let user_data: serde_json::Value = create_response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user creation response: {}", e)))?;
+
+        let user_id = user_data
+            .get("id")
+            .and_then(|id| id.as_str())
+            .ok_or_else(|| AppError::ExternalService("User ID not found in response".to_string()))?;
+
+        tracing::info!("User created in Supabase: {}", user_id);
+        Ok(user_id.to_string())
     }
 }

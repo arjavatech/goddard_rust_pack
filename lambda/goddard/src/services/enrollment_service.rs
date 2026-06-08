@@ -280,19 +280,70 @@ impl EnrollmentService {
             None,  // phone_number - not provided in enrollment flow
             None,  // is_verified - will be set after email confirmation
         )
-        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
+        .with_school_name_option(Some(school_name.clone()));  // school_name is guaranteed to exist
 
-        // STEP 3: Create user with signup confirmation email
-        let (auth_user_id_string, email_sent) = self.supabase_client.create_user_with_signup_confirmation(email, metadata).await?;
+        // STEP 3: Create user in Supabase (no email sent here — we send our own branded email)
+        let auth_user_id_string = self.supabase_client.create_user_only_in_supabase(email, metadata).await?;
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
+
+        // STEP 4: Store a 7-day invite token in DB
+        let invite_token = self.enrollment_dao
+            .create_invite_token(email, role, school_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", email, e);
+                Uuid::nil()
+            });
+
+        // STEP 5: Send branded Resend email with 7-day activation link
+        let email_sent = if invite_token != Uuid::nil() {
+            self.supabase_client
+                .send_parent_invite_email(email, invite_token, first_name, last_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            // Fallback: use Supabase's built-in email if token creation failed
+            self.supabase_client.resend_invitation(email).await.is_ok()
+        };
 
         Ok(AuthUserResult {
             auth_user_id,
             email: email.to_string(),
             email_sent,
         })
+    }
+
+    /// Validate a 7-day invite token and return the URL to redirect the parent to.
+    /// - If token is valid and user not yet confirmed → fresh Supabase signup URL
+    /// - If token is valid and user already registered → login page URL
+    /// - If token is expired / not found → returns Err
+    pub async fn activate_invite(&self, token: Uuid) -> ApiResult<String> {
+        let result = self.enrollment_dao.get_invite_by_token(token).await?;
+
+        let frontend_url = std::env::var("FRONTEND_URL")
+            .unwrap_or_else(|_| "https://dev.goddard-app.pages.dev".to_string());
+
+        match result {
+            None => Err(AppError::NotFound("Invalid invite link".to_string())),
+
+            // used_at is set by a DB trigger when the user calls updateUser({ password })
+            // This is the only reliable signal — encrypted_password is non-empty for all users
+            Some((_, _, true)) => {
+                Ok(format!("{}/login?message=already_registered", frontend_url))
+            }
+
+            Some((_, false, false)) => Err(AppError::Validation(
+                "Invite link has expired (7-day limit). Please contact your school admin to resend the invitation.".to_string(),
+            )),
+
+            Some((email, true, false)) => {
+                // Valid, not yet used → generate a fresh Supabase set-password link
+                let action_link = self.supabase_client.generate_signup_link(&email).await?;
+                Ok(action_link)
+            }
+        }
     }
 
     // Process form assignments logic

@@ -1,6 +1,7 @@
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 use crate::error::{AppError, ApiResult};
 
 #[derive(Debug, Clone)]
@@ -422,5 +423,26 @@ impl AuthDao {
                 Err(AppError::Database(format!("Failed to query SuperAdmin: {}", e)))
             }
         }
+    }
+
+    /// Store a 7-day invite token for any user role (admin, teacher, superadmin, parent)
+    pub async fn create_invite_token(&self, email: &str, role: &str, school_id: Uuid) -> ApiResult<Uuid> {
+        use tokio::time::{timeout, Duration};
+
+        let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
+        let client = match client_result {
+            Ok(c) => c.map_err(|e| AppError::Database(format!("Failed to get db connection for invite token: {}", e)))?,
+            Err(_) => return Err(AppError::Database("Timeout getting db connection for invite token".to_string())),
+        };
+
+        let row = client
+            .query_one(
+                "INSERT INTO user_invitations (user_email, role, school_id) VALUES ($1, $2, $3) RETURNING token",
+                &[&email, &role, &school_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to create invite token: {}", e)))?;
+
+        Ok(row.get("token"))
     }
 }

@@ -348,12 +348,33 @@ impl AuthService {
             None,  // phone_number - not provided in enhanced endpoint
             Some(true),  // is_verified = true
         )
-        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
+        .with_school_name_option(Some(school_name.clone()));  // school_name is guaranteed to exist
 
-        // STEP 4: Create user invitation via Supabase with enhanced metadata
-        let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
-        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
-        let message = email_status_message(&email_status, "User invitation created successfully with custom fields. Please check email for confirmation link.");
+        // STEP 4: Create user in Supabase (no email) then send 7-day branded invite
+        let user_id = self.supabase_client.create_user_only_in_supabase(&request.email, metadata).await?;
+
+        let role_str = request.role.as_deref().unwrap_or("Admin");
+        let first_name_str = request.first_name.as_deref().unwrap_or("");
+        let last_name_str = request.last_name.as_deref().unwrap_or("");
+        let invite_token = self.dao
+            .create_invite_token(&request.email, role_str, school_uuid)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&request.email, invite_token, first_name_str, last_name_str, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
+        let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
 
         Ok(CreateInvitationResponse {
             success: true,
@@ -404,7 +425,10 @@ impl AuthService {
             Err(e) => return Err(e),
         }
 
-        // Step 3: New user — create in Supabase and send invite
+        // Step 3: New user — create in Supabase then send 7-day branded invite
+        let school_name = self.school_dao.get_school_name(&school_uuid).await
+            .unwrap_or_else(|_| "Goddard School".to_string());
+
         let metadata = UserMetadata::new(
             Some(school_uuid),
             Some(request.first_name.clone()),
@@ -412,14 +436,30 @@ impl AuthService {
             Some("Admin".to_string()),
             request.phone_number.clone(),
             Some(true),
-        );
+        )
+        .with_school_name(school_name.clone());
 
-        let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
-        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
-        if matches!(email_status.as_str(), "suppressed" | "bounced") {
-            return Err(AppError::ExternalService(email_status_message(&email_status, "")));
-        }
-        let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link.");
+        let user_id = self.supabase_client.create_user_only_in_supabase(&request.email, metadata).await?;
+
+        let invite_token = self.dao
+            .create_invite_token(&request.email, "Admin", school_uuid)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
+        let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
 
         Ok(CreateInvitationResponse {
             success: true,
@@ -449,7 +489,11 @@ impl AuthService {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
 
-        // Step 4: Build metadata with role = "SuperAdmin" and is_verified = true
+        // Step 4: Look up school name for invite email
+        let school_name = self.school_dao.get_school_name(&school_uuid).await
+            .unwrap_or_else(|_| "Goddard School".to_string());
+
+        // Step 5: Build metadata with role = "SuperAdmin" and is_verified = true
         let metadata = UserMetadata::new(
             Some(school_uuid),
             Some(request.first_name.clone()),
@@ -457,15 +501,33 @@ impl AuthService {
             Some("SuperAdmin".to_string()),  // ROLE = SuperAdmin
             request.phone_number.clone(),
             Some(true),  // is_verified = true
-        );
+        )
+        .with_school_name(school_name.clone());
 
-        // Step 5: Create user invitation via Supabase with enhanced metadata
+        // Step 6: Create user in Supabase then send 7-day branded invite
         let user_id = self.supabase_client
-            .create_user_invitation_enhanced(&request.email, metadata)
+            .create_user_only_in_supabase(&request.email, metadata)
             .await?;
 
-        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
-        let message = email_status_message(&email_status, "SuperAdmin user created successfully. Please check email for confirmation link.");
+        let invite_token = self.dao
+            .create_invite_token(&request.email, "SuperAdmin", school_uuid)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
+        let message = email_status_message(&email_status, "SuperAdmin user created successfully. Please check email for confirmation link (valid 7 days).");
 
         Ok(CreateInvitationResponse {
             success: true,

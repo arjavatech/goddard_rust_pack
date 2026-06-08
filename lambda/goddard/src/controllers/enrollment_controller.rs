@@ -1,6 +1,6 @@
 use axum::{
     extract::{State, Extension, Path},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect},
     Json,
     http::StatusCode,
 };
@@ -14,6 +14,7 @@ use crate::{
     utils::ResponseUtils,
     error::AppError,
 };
+use serde_json::json;
 
 /// POST /enrollments/parent-invite
 /// Create a parent invite for child enrollment (JWT protected - Admin/SuperAdmin)
@@ -221,4 +222,28 @@ pub async fn edit_class_transition(
     ).await?;
 
     Ok(ResponseUtils::success(response))
+}
+
+/// GET /enrollments/activate/:token
+/// Validates a 7-day invite token and 302-redirects the parent to a fresh Supabase signup URL.
+/// No authentication required — the token is the credential.
+pub async fn activate_invite(
+    Path(token): Path<Uuid>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+) -> axum::response::Response {
+    match enrollment_service.activate_invite(token).await {
+        Ok(redirect_url) => Redirect::temporary(&redirect_url).into_response(),
+        Err(AppError::NotFound(msg)) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": msg })),
+        ).into_response(),
+        Err(AppError::Validation(msg)) => (
+            StatusCode::GONE,
+            Json(json!({ "error": msg })),
+        ).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ).into_response(),
+    }
 }

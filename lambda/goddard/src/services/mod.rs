@@ -1,3 +1,4 @@
+pub mod email_templates;
 pub mod auth_service;
 pub mod supabase_client;
 pub mod school_service;

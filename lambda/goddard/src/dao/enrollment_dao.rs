@@ -1403,6 +1403,58 @@ impl EnrollmentDao {
         Ok(())
     }
 
+    /// Store a 7-day invite token for any user (parent, admin, teacher, superadmin)
+    pub async fn create_invite_token(&self, email: &str, role: &str, school_id: Uuid) -> ApiResult<Uuid> {
+        use tokio::time::{timeout, Duration};
+
+        let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
+        let client = match client_result {
+            Ok(c) => c.map_err(|e| AppError::Database(format!("Failed to get db connection for invite token: {}", e)))?,
+            Err(_) => return Err(AppError::Database("Timeout getting db connection for invite token".to_string())),
+        };
+
+        let row = client
+            .query_one(
+                "INSERT INTO user_invitations (user_email, role, school_id) VALUES ($1, $2, $3) RETURNING token",
+                &[&email, &role, &school_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to create invite token: {}", e)))?;
+
+        Ok(row.get("token"))
+    }
+
+    /// Look up an invite by its token.
+    /// Returns Some((email, is_valid)) where is_valid=true means within the 7-day window.
+    /// Returns None if the token does not exist.
+    /// Returns (user_email, is_valid, is_used).
+    /// is_valid = token not yet expired; is_used = user has set their password (trigger set used_at).
+    pub async fn get_invite_by_token(&self, token: Uuid) -> ApiResult<Option<(String, bool, bool)>> {
+        use tokio::time::{timeout, Duration};
+
+        let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
+        let client = match client_result {
+            Ok(c) => c.map_err(|e| AppError::Database(format!("Failed to get db connection for invite lookup: {}", e)))?,
+            Err(_) => return Err(AppError::Database("Timeout getting db connection for invite lookup".to_string())),
+        };
+
+        let row = client
+            .query_opt(
+                "SELECT user_email, \
+                        (expires_at > NOW()) AS is_valid, \
+                        (used_at IS NOT NULL) AS is_used \
+                 FROM user_invitations WHERE token = $1",
+                &[&token],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to look up invite token: {}", e)))?;
+
+        match row {
+            None => Ok(None),
+            Some(r) => Ok(Some((r.get("user_email"), r.get("is_valid"), r.get("is_used")))),
+        }
+    }
+
     /// Get child by ID
     pub async fn get_child_by_id(&self, child_id: Uuid) -> ApiResult<crate::models::enrollment::ChildDetails> {
         let query = "SELECT id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at

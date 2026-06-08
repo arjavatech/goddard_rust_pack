@@ -6,7 +6,7 @@ pub enum AppError {
     #[error("Database error: {0}")]
     Database(String),
 
-    #[error("Validation error: {0}")]
+    #[error("{0}")]
     Validation(String),
 
     #[error("Authentication error: {0}")]

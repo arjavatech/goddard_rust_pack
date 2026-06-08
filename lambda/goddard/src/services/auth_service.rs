@@ -334,7 +334,14 @@ impl AuthService {
             }
         };
 
-        // STEP 2: Now check if user exists (after school validation)
+        // STEP 2: Block if email already belongs to a parent in this school
+        if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
+            return Err(AppError::Conflict(
+                "This email is already registered as a parent. Cannot invite as an admin.".to_string()
+            ));
+        }
+
+        // Check if user exists (after school validation)
         if self.dao.user_exists_by_email(&request.email).await? {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
@@ -395,7 +402,14 @@ impl AuthService {
         let school_uuid = uuid::Uuid::parse_str(&request.school_id)
             .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
-        // Step 1: Active user exists → block with conflict error
+        // Step 1: Block if email already belongs to a parent in this school
+        if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
+            return Err(AppError::Conflict(
+                "This email is already registered as a parent. Cannot invite as an admin.".to_string()
+            ));
+        }
+
+        // Step 2: Active user exists → block with conflict error
         match self.dao.get_user_by_email_and_school(&request.email, school_uuid).await {
             Ok(_) => return Err(AppError::Conflict("Already registered with different role".to_string())),
             Err(AppError::NotFound(_)) => {},
@@ -484,7 +498,14 @@ impl AuthService {
         let school_uuid = uuid::Uuid::parse_str(&request.school_id)
             .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
-        // Step 3: Check if user already exists
+        // Step 3: Block if email already belongs to a parent in this school
+        if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
+            return Err(AppError::Conflict(
+                "This email is already registered as a parent. Cannot invite as an admin.".to_string()
+            ));
+        }
+
+        // Check if user already exists
         if self.dao.user_exists_by_email(&request.email).await? {
             return Err(AppError::Conflict("User already exists".to_string()));
         }

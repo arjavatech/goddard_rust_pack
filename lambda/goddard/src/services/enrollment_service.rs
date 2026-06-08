@@ -52,6 +52,15 @@ impl EnrollmentService {
             }
         }
 
+        // Step 1.2: Primary and secondary parent emails must differ
+        if let Some(ref secondary_email) = request.secondary_parent_email {
+            if secondary_email.to_lowercase() == request.parent_email.to_lowercase() {
+                return Err(AppError::Validation(
+                    "Primary and secondary parent cannot have the same email address.".to_string()
+                ));
+            }
+        }
+
         // Step 2: Create auth user via Supabase (primary parent)
         let auth_result = self.create_auth_user(
             &request.parent_email,

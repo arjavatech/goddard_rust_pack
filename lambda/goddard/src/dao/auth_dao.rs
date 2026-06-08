@@ -334,6 +334,18 @@ impl AuthDao {
         }
     }
 
+    pub async fn email_exists_as_parent(&self, email: &str, school_id: uuid::Uuid) -> ApiResult<bool> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = "SELECT COUNT(*) > 0 FROM users WHERE email = $1 AND school_id = $2 AND role IN ('Parent', 'primary-parent', 'secondary-parent')";
+
+        let row = client.query_one(query, &[&email, &school_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to check parent existence: {}", e)))?;
+
+        Ok(row.get(0))
+    }
+
     pub async fn reactivate_user(&self, user_id: uuid::Uuid, first_name: &str, last_name: &str) -> ApiResult<()> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

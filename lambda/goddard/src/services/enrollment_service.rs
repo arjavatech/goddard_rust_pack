@@ -340,7 +340,7 @@ impl EnrollmentService {
             // used_at is set by a DB trigger when the user calls updateUser({ password })
             // This is the only reliable signal — encrypted_password is non-empty for all users
             Some((_, _, true)) => {
-                Ok(format!("{}/login?message=already_registered", frontend_url))
+                Ok(format!("{}/", frontend_url))
             }
 
             Some((_, false, false)) => Err(AppError::Validation(

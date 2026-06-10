@@ -403,32 +403,45 @@ impl EnrollmentService {
     }
 
     pub async fn resend_parent_confirmation(&self, request: ResendConfirmationRequest) -> ApiResult<ResendConfirmationResponse> {
-        // Step 1: Get user email from Supabase auth using parent_id as auth user ID
-        let parent_email = self.supabase_client.get_user_email_by_id(request.parent_id).await?;
+        // Step 1: Look up user from users table to get first_name, last_name, school_id, email
+        let user = self.enrollment_dao.get_user_by_id(request.parent_id).await?;
 
-        // Step 2: Resend confirmation email through Supabase
-        self.supabase_client.resend_invitation(&parent_email).await?;
+        // Step 2: Create a fresh 7-day invite token
+        let invite_token = self.enrollment_dao
+            .create_invite_token(&user.email, &user.role, user.school_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", user.email, e);
+                uuid::Uuid::nil()
+            });
 
-        // Step 3: Check delivery status via Resend
-        let email_status = self.supabase_client.get_recent_email_status(&parent_email).await;
+        // Step 3: Send branded invite email via Resend
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_parent_invite_email(&user.email, invite_token, &user.first_name, &user.last_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        // Step 4: Check delivery status
+        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
         if matches!(email_status.as_str(), "suppressed" | "bounced") {
-            return Err(crate::error::AppError::ExternalService(match email_status.as_str() {
+            return Err(AppError::ExternalService(match email_status.as_str() {
                 "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
                 _ => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
             }));
         }
 
-        // Step 4: Generate response
-        let response = ResendConfirmationResponse {
+        Ok(ResendConfirmationResponse {
             parent_id: request.parent_id,
-            email_sent: true,
+            email_sent,
             message: "Confirmation email resent successfully".to_string(),
             parent_details: ResendConfirmationParentDetails {
-                email: parent_email,
+                email: user.email,
             },
-        };
-
-        Ok(response)
+        })
     }
 
     pub async fn add_child(&self, request: AddChildRequest) -> ApiResult<AddChildResponse> {

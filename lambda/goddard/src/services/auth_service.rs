@@ -754,18 +754,38 @@ impl AuthService {
     }
 
     pub async fn resend_admin_invite(&self, request: ResendAdminInviteRequest) -> ApiResult<ResendAdminInviteResponse> {
-        // Look up admin in our users table by ID
+        // Step 1: Look up admin in users table (has first_name, last_name, school_id)
         let user = self.dao.get_user_by_id(request.user_id).await?;
 
-        // Ensure the user is an Admin role
+        // Step 2: Role check
         if user.role.to_lowercase() != "admin" {
             return Err(AppError::Validation("User is not an Admin".to_string()));
         }
 
-        // Resend invitation email via Supabase
-        self.supabase_client.resend_invitation(&user.email).await?;
-        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+        // Step 3: Get school name for email template
+        let school_name = self.school_dao.get_school_name(&user.school_id).await
+            .unwrap_or_else(|_| "Goddard School".to_string());
 
+        // Step 4: Create a fresh 7-day invite token
+        let invite_token = self.dao
+            .create_invite_token(&user.email, &user.role, user.school_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", user.email, e);
+                uuid::Uuid::nil()
+            });
+
+        // Step 5: Send branded admin invite email via Resend
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&user.email, invite_token, &user.first_name, &user.last_name, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
         if matches!(email_status.as_str(), "suppressed" | "bounced") {
             return Err(AppError::ExternalService(email_status_message(&email_status, "")));
         }
@@ -775,7 +795,7 @@ impl AuthService {
         Ok(ResendAdminInviteResponse {
             user_id: user.id.to_string(),
             email: user.email,
-            email_sent: true,
+            email_sent,
             message,
             email_status,
         })

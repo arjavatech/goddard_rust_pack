@@ -139,6 +139,28 @@ impl EnrollmentDao {
         })
     }
 
+    pub async fn get_user_by_id(&self, user_id: Uuid) -> ApiResult<CreatedUser> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one(
+                "SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at FROM users WHERE id = $1",
+                &[&user_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to get user by id: {}", e)))?;
+        Ok(CreatedUser {
+            id: row.get("id"),
+            school_id: row.get("school_id"),
+            first_name: row.get("first_name"),
+            last_name: row.get("last_name"),
+            email: row.get("email"),
+            role: row.get("role"),
+            is_verified: row.get("is_verified"),
+            created_at: row.get("created_at"),
+        })
+    }
+
     // Create parent in users table
     pub async fn create_parent(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, email: &str, role: &str) -> ApiResult<CreatedUser> {
         let query = "INSERT INTO users (id, school_id, first_name, last_name, email, role) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, school_id, first_name, last_name, email, role, is_verified, created_at";

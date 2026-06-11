@@ -651,6 +651,40 @@ impl FormSubmissionDao {
         Ok(submission)
     }
 
+    pub async fn get_recent_edit_link_by_assignment(
+        &self,
+        assignment_id: Uuid,
+    ) -> Result<Option<String>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let row = client.query_opt(
+            "SELECT recent_edit_link FROM student_form_assignments WHERE id = $1",
+            &[&assignment_id],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(row.and_then(|r| r.get::<_, Option<String>>("recent_edit_link")))
+    }
+
+    pub async fn get_fillout_form_id_by_assignment(
+        &self,
+        assignment_id: Uuid,
+    ) -> Result<Option<String>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let row = client.query_opt(
+            r#"SELECT ft.fillout_form_id
+               FROM student_form_assignments sfa
+               JOIN form_templates ft ON ft.id = sfa.form_template_id
+               WHERE sfa.id = $1
+               LIMIT 1"#,
+            &[&assignment_id],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(row.and_then(|r| r.get::<_, Option<String>>("fillout_form_id")))
+    }
+
     pub async fn update_submission_links(
         &self,
         submission_id: Uuid,

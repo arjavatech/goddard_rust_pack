@@ -234,6 +234,64 @@ impl FormSubmissionService {
         Ok(submission.into())
     }
 
+    pub async fn get_form_resume_link(
+        &self,
+        assignment_id: Uuid,
+    ) -> Result<Option<String>, AppError> {
+        println!("[DEBUG] Service: Getting resume link for assignment: {}", assignment_id);
+
+        // Tier 1: check DB for already-stored recent_edit_link
+        if let Ok(Some(link)) = self.dao.get_recent_edit_link_by_assignment(assignment_id).await {
+            if !link.is_empty() {
+                println!("[DEBUG] Service: Found resume link in DB (fast path)");
+                return Ok(Some(link));
+            }
+        }
+
+        // Tier 2: poll Fillout API for in-progress submission
+        let fillout_service = match &self.fillout_service {
+            Some(s) => s,
+            None => {
+                println!("[WARN] Service: Fillout service not configured, cannot poll for resume link");
+                return Ok(None);
+            }
+        };
+
+        let raw_form_id = match self.dao.get_fillout_form_id_by_assignment(assignment_id).await? {
+            Some(id) if !id.is_empty() => id,
+            _ => {
+                return Err(AppError::NotFound("Form assignment not found or has no associated form".to_string()));
+            }
+        };
+
+        // fillout_form_id may be stored as a full URL (e.g. "https://goddard.fillout.com/t/weBcGoVzL3us")
+        // The Fillout API expects only the slug (e.g. "weBcGoVzL3us")
+        let form_id = if raw_form_id.starts_with("http") {
+            raw_form_id
+                .trim_end_matches('/')
+                .split('/')
+                .last()
+                .unwrap_or(&raw_form_id)
+                .to_string()
+        } else {
+            raw_form_id
+        };
+
+        println!("[DEBUG] Service: Polling Fillout API for in-progress submission (form: {})", form_id);
+        let edit_link = fillout_service
+            .get_inprogress_edit_link(&form_id, &assignment_id.to_string())
+            .await?;
+
+        if let Some(ref link) = edit_link {
+            println!("[DEBUG] Service: Found edit link from Fillout, storing in DB");
+            if let Err(e) = self.dao.update_assignment_links(assignment_id, Some(link.clone()), None).await {
+                println!("[WARN] Service: Failed to cache resume link in DB: {:?}", e);
+            }
+        }
+
+        Ok(edit_link)
+    }
+
     pub async fn validate_webhook_secret(&self, api_key: &str) -> Result<(), AppError> {
         println!("[DEBUG] Service: Validating webhook secret");
 

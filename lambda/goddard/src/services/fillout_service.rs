@@ -147,7 +147,8 @@ impl FilloutService {
 
         for submission in response.responses {
             let matches = submission.url_parameters.iter().any(|p| {
-                p.name == "student_form_assignment_id" && p.value == assignment_id
+                p.name == "student_form_assignment_id"
+                    && p.value.as_deref() == Some(assignment_id)
             });
             if matches {
                 println!("[DEBUG] FilloutService: Found matching submission: {}, editLink: {:?}", submission.submission_id, submission.edit_link);

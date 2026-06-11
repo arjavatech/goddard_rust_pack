@@ -10,7 +10,7 @@ pub struct FilloutSubmissionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FilloutSubmission {
     pub submission_id: String,
-    pub submission_time: DateTime<Utc>,
+    pub submission_time: Option<DateTime<Utc>>,
     pub last_updated_at: DateTime<Utc>,
     pub started_at: DateTime<Utc>,
     pub questions: Vec<FilloutQuestion>,
@@ -52,6 +52,14 @@ pub struct FilloutErrorResponse {
     pub error: String,
     pub message: Option<String>,
     pub status_code: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilloutSubmissionsListResponse {
+    pub responses: Vec<FilloutSubmission>,
+    pub total_responses: i64,
+    pub page_count: i64,
 }
 
 #[derive(Debug, Clone)]

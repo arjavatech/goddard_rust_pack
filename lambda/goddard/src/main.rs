@@ -53,7 +53,7 @@ use controllers::{
     },
     form_submission_controller::{
         create_form_submission_webhook, get_latest_form_submission, get_form_submission_versions,
-        get_form_submission_by_id, update_form_submission_status
+        get_form_submission_by_id, update_form_submission_status, get_form_resume_link
     },
     student_form_assignment_controller::{
         create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students, assign_form_to_class_students, download_enrollment_forms_zip
@@ -267,6 +267,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/form-submissions/versions", get(get_form_submission_versions).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/form-submissions/:submission_id", get(get_form_submission_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/form-submissions/:submission_id/status", put(update_form_submission_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/student-form-assignments/:assignment_id/resume-link", get(get_form_resume_link).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(form_submission_service)
 
         // Student Form Assignments Management APIs (Admin JWT or API Key)

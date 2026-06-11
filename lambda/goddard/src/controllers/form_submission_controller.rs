@@ -3,7 +3,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -154,6 +154,24 @@ pub async fn get_form_submission_by_id(
 
     println!("[DEBUG] GET ByID: Query completed successfully");
     Ok(Json(submission))
+}
+
+#[derive(Serialize)]
+pub struct ResumeLinkResponse {
+    pub edit_link: Option<String>,
+}
+
+// Get Resume Link for In-Progress Form (parent or admin)
+pub async fn get_form_resume_link(
+    State(service): State<Arc<FormSubmissionService>>,
+    Path(assignment_id): Path<Uuid>,
+) -> Result<Json<ResumeLinkResponse>, AppError> {
+    println!("[DEBUG] GET ResumeLink: assignment_id={}", assignment_id);
+
+    let edit_link = service.get_form_resume_link(assignment_id).await?;
+
+    println!("[DEBUG] GET ResumeLink: returning edit_link={:?}", edit_link);
+    Ok(Json(ResumeLinkResponse { edit_link }))
 }
 
 // Update Form Submission Status (Admin/SuperAdmin only)

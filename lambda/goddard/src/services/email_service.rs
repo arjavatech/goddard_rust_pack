@@ -345,6 +345,9 @@ impl EmailService {
 /// Resolve the parent dashboard base URL used in CTA buttons.
 /// Falls back to the dev URL when the env var is not set.
 pub fn parent_dashboard_url() -> String {
+    // Set PARENT_DASHBOARD_URL=https://goddardschool.org/ in prod.
+    // Default falls back to the dev frontend so emails sent from a misconfigured
+    // environment still link somewhere usable.
     std::env::var("PARENT_DASHBOARD_URL")
-        .unwrap_or_else(|_| "https://goddard-schools-dev.arjavatech.com/dashboard".to_string())
+        .unwrap_or_else(|_| "https://dev.goddard-app.pages.dev/".to_string())
 }

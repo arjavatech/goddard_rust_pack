@@ -1,11 +1,16 @@
 use uuid::Uuid;
 use std::collections::HashMap;
+use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
+use crate::services::email_service::{parent_dashboard_url, EmailService};
 use crate::models::parent_details::{
     ParentDetailsResponse, ParentChild, ParentChildForm
+};
+use crate::models::email::{
+    ChildAddedNotification, ChildArchivedNotification, ParentDeactivatedNotification,
 };
 use crate::models::enrollment::{
     ParentInviteRequest, ParentInviteResponse, ParentInviteDetails,
@@ -28,14 +33,21 @@ pub struct EnrollmentService {
     enrollment_dao: EnrollmentDao,
     school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
+    email_service: Arc<EmailService>,
 }
 
 impl EnrollmentService {
-    pub fn new(enrollment_dao: EnrollmentDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
+    pub fn new(
+        enrollment_dao: EnrollmentDao,
+        school_dao: crate::dao::school_dao::SchoolDao,
+        supabase_client: SupabaseClient,
+        email_service: Arc<EmailService>,
+    ) -> Self {
         Self {
             enrollment_dao,
             school_dao,
             supabase_client,
+            email_service,
         }
     }
 
@@ -535,6 +547,38 @@ impl EnrollmentService {
             },
         };
 
+        // Fire child-added notification (non-blocking).
+        let email_svc = self.email_service.clone();
+        let classroom_name = self
+            .enrollment_dao
+            .get_classroom_name(request.class_id)
+            .await
+            .unwrap_or_default();
+        let school_name = self
+            .enrollment_dao
+            .get_school_name(request.school_id)
+            .await
+            .unwrap_or_default();
+        let notification = ChildAddedNotification {
+            parent_email: response.details.parent.email.clone(),
+            parent_first_name: response.details.parent.first_name.clone(),
+            child_name: format!(
+                "{} {}",
+                response.details.child.first_name, response.details.child.last_name
+            ),
+            child_dob: response.details.child.birth_date,
+            classroom_name,
+            school_name,
+            added_on: Utc::now(),
+            form_count: response.assigned_forms_count,
+            dashboard_url: parent_dashboard_url(),
+        };
+        tokio::spawn(async move {
+            if let Err(e) = email_svc.send_child_added_email(notification).await {
+                eprintln!("[EmailService] child_added notification failed (non-fatal): {:?}", e);
+            }
+        });
+
         Ok(response)
     }
 
@@ -716,7 +760,39 @@ impl EnrollmentService {
     // Deactivate parent and all related children and enrollments
     pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
         println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
-        self.enrollment_dao.deactivate_parent(parent_id).await
+
+        // Capture parent email + school name BEFORE the DAO update so the
+        // notification has everything it needs even if the user record changes.
+        let parent_user = self.enrollment_dao.get_user_by_id(parent_id).await.ok();
+
+        let response = self.enrollment_dao.deactivate_parent(parent_id).await?;
+
+        if let Some(user) = parent_user {
+            let email_svc = self.email_service.clone();
+            let school_name = self
+                .enrollment_dao
+                .get_school_name(user.school_id)
+                .await
+                .unwrap_or_default();
+            let notification = ParentDeactivatedNotification {
+                parent_email: user.email.clone(),
+                parent_first_name: user.first_name.clone(),
+                parent_full_name: format!("{} {}", user.first_name, user.last_name),
+                school_name,
+                deactivated_on: Utc::now(),
+                children_count: response.deactivated_children_count,
+                enrollments_count: response.deactivated_enrollments_count,
+            };
+            tokio::spawn(async move {
+                if let Err(e) = email_svc.send_parent_deactivated_email(notification).await {
+                    eprintln!("[EmailService] parent_deactivated notification failed (non-fatal): {:?}", e);
+                }
+            });
+        } else {
+            println!("[EnrollmentService] Skipping deactivation email — could not load parent user");
+        }
+
+        Ok(response)
     }
 
     // Activate parent and all related children and enrollments
@@ -728,7 +804,47 @@ impl EnrollmentService {
     // Update child status (admin only - no validation, accepts any status value)
     pub async fn update_child_status(&self, child_id: Uuid, request: crate::models::enrollment::UpdateChildStatusRequest) -> ApiResult<crate::models::enrollment::UpdateChildStatusResponse> {
         println!("[DEBUG] EnrollmentService: Updating child {} status to: {}", child_id, request.status);
-        self.enrollment_dao.update_child_status(child_id, &request.status).await
+        let response = self.enrollment_dao.update_child_status(child_id, &request.status).await?;
+
+        // Fire child-archived notification (non-blocking) when the new status is
+        // "archive" or "archived" — the frontend sends "archive" today, but accept
+        // both spellings so any other caller works too.
+        let normalized_status = request.status.trim().to_ascii_lowercase();
+        if normalized_status == "archive" || normalized_status == "archived" {
+            match self.enrollment_dao.get_child_notification_context(child_id).await {
+                Ok(ctx) => {
+                    let school_name = self
+                        .enrollment_dao
+                        .get_school_name(ctx.school_id)
+                        .await
+                        .unwrap_or_default();
+                    let recipients = match ctx.secondary_parent_email.as_ref() {
+                        Some(sp) if !sp.trim().is_empty() => {
+                            format!("{},{}", ctx.parent_email, sp)
+                        }
+                        _ => ctx.parent_email.clone(),
+                    };
+                    let notification = ChildArchivedNotification {
+                        parent_email: recipients,
+                        parent_first_name: ctx.parent_first_name.clone(),
+                        child_name: format!("{} {}", ctx.child_first_name, ctx.child_last_name),
+                        school_name,
+                        archived_on: Utc::now(),
+                    };
+                    let email_svc = self.email_service.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = email_svc.send_child_archived_email(notification).await {
+                            eprintln!("[EmailService] child_archived notification failed (non-fatal): {:?}", e);
+                        }
+                    });
+                }
+                Err(e) => {
+                    println!("[EnrollmentService] Skipping archive email — could not load child context: {:?}", e);
+                }
+            }
+        }
+
+        Ok(response)
     }
 
     // ==========================================

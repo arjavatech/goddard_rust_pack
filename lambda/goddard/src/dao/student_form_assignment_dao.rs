@@ -5,6 +5,7 @@ use crate::models::student_form_assignment::{
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
 };
+use crate::dao::enrollment_dao::{AssignmentNotificationContext, ReviewNotificationContext};
 use crate::error::AppError;
 use uuid::Uuid;
 use chrono::{Utc, NaiveDateTime, DateTime};
@@ -921,5 +922,111 @@ impl StudentFormAssignmentDao {
         println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} new class assignments", created_assignments.len());
 
         Ok((created_assignments, total_active_students, students_already_assigned))
+    }
+
+    /// Returns the data needed to render a "Form Assigned" notification email
+    /// for a given freshly created assignment. See docs/EMAIL_NOTIFICATIONS.md.
+    pub async fn get_assignment_notification_context(
+        &self,
+        assignment_id: Uuid,
+    ) -> Result<AssignmentNotificationContext, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one(
+                r#"
+                SELECT
+                    p.first_name AS parent_first_name,
+                    p.email AS parent_email,
+                    sp.email AS secondary_parent_email,
+                    c.first_name AS child_first_name,
+                    c.last_name AS child_last_name,
+                    ft.form_name AS form_name,
+                    ft.due_date AS due_date,
+                    sfa.is_required AS is_required,
+                    s.name AS school_name
+                FROM student_form_assignments sfa
+                INNER JOIN children c ON c.id = sfa.child_id
+                INNER JOIN users p ON p.id = c.parent_id
+                LEFT JOIN users sp ON sp.id = c.secondary_parent_id
+                INNER JOIN form_templates ft ON ft.id = sfa.form_template_id
+                INNER JOIN schools s ON s.id = sfa.school_id
+                WHERE sfa.id = $1
+                "#,
+                &[&assignment_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch assignment context: {}", e)))?;
+
+        let child_first: String = row.get("child_first_name");
+        let child_last: String = row.get("child_last_name");
+
+        Ok(AssignmentNotificationContext {
+            parent_first_name: row.get("parent_first_name"),
+            parent_email: row.get("parent_email"),
+            secondary_parent_email: row.get("secondary_parent_email"),
+            child_full_name: format!("{} {}", child_first, child_last),
+            form_name: row.get("form_name"),
+            school_name: row.get("school_name"),
+            is_required: row.get("is_required"),
+            due_date: row.get("due_date"),
+        })
+    }
+
+    /// Returns the data needed to render a Form Approved / Form Rejected
+    /// notification email for a given assignment + reviewer. See
+    /// docs/EMAIL_NOTIFICATIONS.md.
+    pub async fn get_review_notification_context(
+        &self,
+        assignment_id: Uuid,
+        reviewer_id: Uuid,
+    ) -> Result<ReviewNotificationContext, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one(
+                r#"
+                SELECT
+                    p.first_name AS parent_first_name,
+                    p.email AS parent_email,
+                    sp.email AS secondary_parent_email,
+                    c.first_name AS child_first_name,
+                    c.last_name AS child_last_name,
+                    ft.form_name AS form_name,
+                    reviewer.first_name AS reviewer_first_name,
+                    reviewer.last_name AS reviewer_last_name
+                FROM student_form_assignments sfa
+                INNER JOIN children c ON c.id = sfa.child_id
+                INNER JOIN users p ON p.id = c.parent_id
+                LEFT JOIN users sp ON sp.id = c.secondary_parent_id
+                INNER JOIN form_templates ft ON ft.id = sfa.form_template_id
+                LEFT JOIN users reviewer ON reviewer.id = $2
+                WHERE sfa.id = $1
+                "#,
+                &[&assignment_id, &reviewer_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch review context: {}", e)))?;
+
+        let child_first: String = row.get("child_first_name");
+        let child_last: String = row.get("child_last_name");
+
+        Ok(ReviewNotificationContext {
+            parent_first_name: row.get("parent_first_name"),
+            parent_email: row.get("parent_email"),
+            secondary_parent_email: row.get("secondary_parent_email"),
+            child_full_name: format!("{} {}", child_first, child_last),
+            form_name: row.get("form_name"),
+            reviewer_first_name: row
+                .try_get::<_, Option<String>>("reviewer_first_name")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "Goddard School".to_string()),
+            reviewer_last_name: row
+                .try_get::<_, Option<String>>("reviewer_last_name")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "Admin".to_string()),
+        })
     }
 }

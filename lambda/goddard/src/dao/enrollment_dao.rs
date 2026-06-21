@@ -35,6 +35,40 @@ pub struct ClassroomInfo {
     pub name: String,
 }
 
+#[derive(Debug)]
+pub struct ChildNotificationContext {
+    pub child_first_name: String,
+    pub child_last_name: String,
+    pub school_id: Uuid,
+    pub parent_first_name: String,
+    pub parent_last_name: String,
+    pub parent_email: String,
+    pub secondary_parent_email: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct ReviewNotificationContext {
+    pub parent_first_name: String,
+    pub parent_email: String,
+    pub secondary_parent_email: Option<String>,
+    pub child_full_name: String,
+    pub form_name: String,
+    pub reviewer_first_name: String,
+    pub reviewer_last_name: String,
+}
+
+#[derive(Debug)]
+pub struct AssignmentNotificationContext {
+    pub parent_first_name: String,
+    pub parent_email: String,
+    pub secondary_parent_email: Option<String>,
+    pub child_full_name: String,
+    pub form_name: String,
+    pub school_name: String,
+    pub is_required: bool,
+    pub due_date: Option<NaiveDate>,
+}
+
 impl EnrollmentDao {
     pub fn new(pool: Pool) -> Self {
         Self { pool }
@@ -1107,6 +1141,74 @@ impl EnrollmentDao {
                 message: "Child status updated successfully".to_string(),
             })
         }).await
+    }
+
+    // ==========================================
+    // EMAIL NOTIFICATION CONTEXT HELPERS
+    // See docs/EMAIL_NOTIFICATIONS.md
+    // ==========================================
+
+    /// Returns the classroom's name for a given classroom_id. Used to enrich notification emails.
+    pub async fn get_classroom_name(&self, classroom_id: Uuid) -> ApiResult<String> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one("SELECT name FROM classrooms WHERE id = $1", &[&classroom_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch classroom name: {}", e)))?;
+        Ok(row.get("name"))
+    }
+
+    /// Returns the school's name for a given school_id. Used to enrich notification emails.
+    pub async fn get_school_name(&self, school_id: Uuid) -> ApiResult<String> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one("SELECT name FROM schools WHERE id = $1", &[&school_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch school name: {}", e)))?;
+        Ok(row.get("name"))
+    }
+
+    /// Returns (parent_first_name, parent_last_name, parent_email, secondary_email_opt,
+    /// child_first_name, child_last_name, school_id) for a child.
+    /// Used by the archive-child notification flow where the controller only has child_id.
+    pub async fn get_child_notification_context(
+        &self,
+        child_id: Uuid,
+    ) -> ApiResult<ChildNotificationContext> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one(
+                r#"
+                SELECT
+                    c.first_name AS child_first_name,
+                    c.last_name AS child_last_name,
+                    c.school_id AS school_id,
+                    p.first_name AS parent_first_name,
+                    p.last_name AS parent_last_name,
+                    p.email AS parent_email,
+                    sp.email AS secondary_parent_email
+                FROM children c
+                INNER JOIN users p ON p.id = c.parent_id
+                LEFT JOIN users sp ON sp.id = c.secondary_parent_id
+                WHERE c.id = $1
+                "#,
+                &[&child_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch child context: {}", e)))?;
+
+        Ok(ChildNotificationContext {
+            child_first_name: row.get("child_first_name"),
+            child_last_name: row.get("child_last_name"),
+            school_id: row.get("school_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
+            parent_email: row.get("parent_email"),
+            secondary_parent_email: row.get("secondary_parent_email"),
+        })
     }
 
     // ==========================================

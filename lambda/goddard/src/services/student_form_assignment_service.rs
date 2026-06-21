@@ -7,19 +7,24 @@ use crate::models::student_form_assignment::{
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
 };
+use crate::models::email::{FormApprovedNotification, FormAssignedNotification, FormRejectedNotification};
+use crate::services::email_service::{parent_dashboard_url, EmailService};
 use crate::error::AppError;
 use uuid::Uuid;
 use std::collections::HashMap;
 use std::io::{Write, Cursor};
+use std::sync::Arc;
+use chrono::Utc;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 pub struct StudentFormAssignmentService {
     dao: StudentFormAssignmentDao,
+    email_service: Arc<EmailService>,
 }
 
 impl StudentFormAssignmentService {
-    pub fn new(dao: StudentFormAssignmentDao) -> Self {
-        Self { dao }
+    pub fn new(dao: StudentFormAssignmentDao, email_service: Arc<EmailService>) -> Self {
+        Self { dao, email_service }
     }
 
     pub async fn create_student_form_assignment(
@@ -35,7 +40,50 @@ impl StudentFormAssignmentService {
             .await?;
 
         println!("[DEBUG] StudentFormAssignmentService: Assignment created successfully with ID: {}", assignment.id);
+
+        self.fire_form_assigned_email(assignment.id).await;
+
         Ok(assignment.into())
+    }
+
+    /// Look up the recipient + form context for a freshly created assignment and
+    /// dispatch the "new form assigned" email on a detached task. Errors are
+    /// logged but never propagated. See docs/EMAIL_NOTIFICATIONS.md.
+    async fn fire_form_assigned_email(&self, assignment_id: Uuid) {
+        let ctx = match self.dao.get_assignment_notification_context(assignment_id).await {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!(
+                    "[EmailService] form_assigned context lookup failed for {}: {:?}",
+                    assignment_id, e
+                );
+                return;
+            }
+        };
+        let recipients = match ctx.secondary_parent_email.as_ref() {
+            Some(sp) if !sp.trim().is_empty() => format!("{},{}", ctx.parent_email, sp),
+            _ => ctx.parent_email.clone(),
+        };
+        let notification = FormAssignedNotification {
+            parent_email: recipients,
+            parent_first_name: ctx.parent_first_name,
+            child_name: ctx.child_full_name,
+            form_name: ctx.form_name,
+            school_name: ctx.school_name,
+            is_required: ctx.is_required,
+            due_date: ctx.due_date,
+            assigned_on: Utc::now(),
+            dashboard_url: parent_dashboard_url(),
+        };
+        let email_svc = self.email_service.clone();
+        tokio::spawn(async move {
+            if let Err(e) = email_svc.send_form_assigned_email(notification).await {
+                eprintln!(
+                    "[EmailService] form_assigned notification failed (non-fatal): {:?}",
+                    e
+                );
+            }
+        });
     }
 
     pub async fn get_assignments_by_school(
@@ -111,6 +159,78 @@ impl StudentFormAssignmentService {
             .await?;
 
         println!("[DEBUG] StudentFormAssignmentService: Assignment reviewed successfully");
+
+        // Fire approval/rejection email (non-blocking). See docs/EMAIL_NOTIFICATIONS.md.
+        match self
+            .dao
+            .get_review_notification_context(request.assignment_id, request.approved_by)
+            .await
+        {
+            Ok(ctx) => {
+                let recipients = match ctx.secondary_parent_email.as_ref() {
+                    Some(sp) if !sp.trim().is_empty() => format!("{},{}", ctx.parent_email, sp),
+                    _ => ctx.parent_email.clone(),
+                };
+                let reviewer_name = format!(
+                    "{} {}",
+                    ctx.reviewer_first_name.trim(),
+                    ctx.reviewer_last_name.trim()
+                )
+                .trim()
+                .to_string();
+                let reviewer_name = if reviewer_name.is_empty() {
+                    "Goddard School Admin".to_string()
+                } else {
+                    reviewer_name
+                };
+                let email_svc = self.email_service.clone();
+
+                match request.status {
+                    crate::models::student_form_assignment::StudentFormAssignmentStatus::Approved => {
+                        let notification = FormApprovedNotification {
+                            parent_email: recipients,
+                            parent_first_name: ctx.parent_first_name,
+                            child_name: ctx.child_full_name,
+                            form_name: ctx.form_name,
+                            reviewer_name,
+                            reviewed_on: Utc::now(),
+                            notes: request.notes.clone(),
+                            dashboard_url: parent_dashboard_url(),
+                        };
+                        tokio::spawn(async move {
+                            if let Err(e) = email_svc.send_form_approved_email(notification).await {
+                                eprintln!("[EmailService] form_approved notification failed (non-fatal): {:?}", e);
+                            }
+                        });
+                    }
+                    crate::models::student_form_assignment::StudentFormAssignmentStatus::Rejected => {
+                        let notification = FormRejectedNotification {
+                            parent_email: recipients,
+                            parent_first_name: ctx.parent_first_name,
+                            child_name: ctx.child_full_name,
+                            form_name: ctx.form_name,
+                            reviewer_name,
+                            reviewed_on: Utc::now(),
+                            notes: request.notes.clone(),
+                            dashboard_url: parent_dashboard_url(),
+                        };
+                        tokio::spawn(async move {
+                            if let Err(e) = email_svc.send_form_rejected_email(notification).await {
+                                eprintln!("[EmailService] form_rejected notification failed (non-fatal): {:?}", e);
+                            }
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                println!(
+                    "[StudentFormAssignmentService] Skipping review email — context lookup failed: {:?}",
+                    e
+                );
+            }
+        }
+
         Ok(response)
     }
 
@@ -184,6 +304,10 @@ impl StudentFormAssignmentService {
         match self.dao.bulk_create_assignments(request.school_id, request.assignments).await {
             Ok(created_assignments) => {
                 println!("[DEBUG] StudentFormAssignmentService: Successfully created {} assignments", created_assignments.len());
+
+                for assignment in &created_assignments {
+                    self.fire_form_assigned_email(assignment.id).await;
+                }
 
                 let successful: Vec<StudentFormAssignmentResponse> = created_assignments
                     .into_iter()
@@ -316,6 +440,10 @@ impl StudentFormAssignmentService {
             )
             .await?;
 
+        for assignment in &created_assignments {
+            self.fire_form_assigned_email(assignment.id).await;
+        }
+
         // Convert to response DTOs
         let successful: Vec<crate::models::student_form_assignment::StudentFormAssignmentResponse> =
             created_assignments.into_iter()
@@ -362,6 +490,10 @@ impl StudentFormAssignmentService {
                 is_required,
             )
             .await?;
+
+        for assignment in &created_assignments {
+            self.fire_form_assigned_email(assignment.id).await;
+        }
 
         // Convert to response DTOs
         let successful: Vec<crate::models::student_form_assignment::StudentFormAssignmentResponse> =

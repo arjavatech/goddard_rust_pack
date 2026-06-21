@@ -1,6 +1,11 @@
 use crate::{
     error::{AppError, ApiResult},
-    models::email::{ParentFormReminder, BulkEmailResponse},
+    models::email::{
+        BulkEmailResponse, ChildAddedNotification, ChildArchivedNotification,
+        FormApprovedNotification, FormAssignedNotification, FormRejectedNotification,
+        ParentDeactivatedNotification, ParentFormReminder,
+    },
+    services::email_templates,
 };
 use chrono::NaiveDate;
 use serde_json::json;
@@ -194,4 +199,152 @@ impl EmailService {
             message,
         })
     }
+
+    // =====================================================
+    // Parent lifecycle notifications.
+    // Each method renders a template via email_templates and POSTs to Resend.
+    // Callers should dispatch via tokio::spawn — failures here are logged but
+    // never block the original API request. See docs/EMAIL_NOTIFICATIONS.md.
+    // =====================================================
+
+    pub async fn send_form_approved_email(
+        &self,
+        payload: FormApprovedNotification,
+    ) -> Result<(), AppError> {
+        let subject = format!(
+            "Good news! {} has been approved for {}",
+            payload.form_name, payload.child_name
+        );
+        let html = email_templates::form_approved_html(&payload);
+        self.dispatch_resend(&payload.parent_email, &subject, &html)
+            .await
+    }
+
+    pub async fn send_form_rejected_email(
+        &self,
+        payload: FormRejectedNotification,
+    ) -> Result<(), AppError> {
+        let subject = format!(
+            "Action needed: {} for {} requires updates",
+            payload.form_name, payload.child_name
+        );
+        let html = email_templates::form_rejected_html(&payload);
+        self.dispatch_resend(&payload.parent_email, &subject, &html)
+            .await
+    }
+
+    pub async fn send_child_added_email(
+        &self,
+        payload: ChildAddedNotification,
+    ) -> Result<(), AppError> {
+        let subject = format!(
+            "{} has been added to your Goddard School account",
+            payload.child_name
+        );
+        let html = email_templates::child_added_html(&payload);
+        self.dispatch_resend(&payload.parent_email, &subject, &html)
+            .await
+    }
+
+    pub async fn send_parent_deactivated_email(
+        &self,
+        payload: ParentDeactivatedNotification,
+    ) -> Result<(), AppError> {
+        let subject = "Your Goddard School parent account has been deactivated".to_string();
+        let html = email_templates::parent_deactivated_html(&payload);
+        self.dispatch_resend(&payload.parent_email, &subject, &html)
+            .await
+    }
+
+    pub async fn send_child_archived_email(
+        &self,
+        payload: ChildArchivedNotification,
+    ) -> Result<(), AppError> {
+        let subject = format!(
+            "{}'s record has been archived at {}",
+            payload.child_name, payload.school_name
+        );
+        let html = email_templates::child_archived_html(&payload);
+        self.dispatch_resend(&payload.parent_email, &subject, &html)
+            .await
+    }
+
+    pub async fn send_form_assigned_email(
+        &self,
+        payload: FormAssignedNotification,
+    ) -> Result<(), AppError> {
+        let subject = format!(
+            "New form for {}: please complete {}",
+            payload.child_name, payload.form_name
+        );
+        let html = email_templates::form_assigned_html(&payload);
+        self.dispatch_resend(&payload.parent_email, &subject, &html)
+            .await
+    }
+
+    /// Low-level Resend POST. Accepts a comma-separated `parent_email` field
+    /// (same convention `send_form_reminder_email` uses).
+    async fn dispatch_resend(
+        &self,
+        parent_email: &str,
+        subject: &str,
+        html: &str,
+    ) -> Result<(), AppError> {
+        let emails: Vec<String> = parent_email
+            .split(',')
+            .map(|e| e.trim().to_lowercase())
+            .filter(|e| !e.is_empty())
+            .collect();
+
+        if emails.is_empty() {
+            return Err(AppError::Validation(
+                "No recipient email addresses provided".to_string(),
+            ));
+        }
+
+        println!(
+            "[EmailService] Sending notification: subject={:?}, to={:?}",
+            subject, emails
+        );
+
+        let request_body = json!({
+            "from": self.from_email,
+            "to": emails,
+            "subject": subject,
+            "html": html,
+        });
+
+        let response = self
+            .client
+            .post("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to send email: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            println!(
+                "[EmailService] Notification send failed: {} - {}",
+                status, error_text
+            );
+            return Err(AppError::ExternalService(format!(
+                "Resend API error: {} - {}",
+                status, error_text
+            )));
+        }
+
+        println!("[EmailService] Notification sent successfully (subject={:?})", subject);
+        Ok(())
+    }
+}
+
+/// Resolve the parent dashboard base URL used in CTA buttons.
+/// Falls back to the dev URL when the env var is not set.
+pub fn parent_dashboard_url() -> String {
+    std::env::var("PARENT_DASHBOARD_URL")
+        .unwrap_or_else(|_| "https://goddard-schools-dev.arjavatech.com/dashboard".to_string())
 }

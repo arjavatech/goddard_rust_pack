@@ -128,6 +128,18 @@ impl ClassroomDao {
         Ok(row.get(0))
     }
 
+    /// Look up just the classroom name by id (used by notifications to render
+    /// "Classroom 'X' deleted" before the delete UPDATE runs).
+    pub async fn get_classroom_name(&self, classroom_id: &Uuid) -> Result<Option<String>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let row = client
+            .query_opt("SELECT name FROM classrooms WHERE id = $1", &[classroom_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch classroom name: {}", e)))?;
+        Ok(row.map(|r| r.get::<_, String>("name")))
+    }
+
     pub async fn has_enrollments(&self, classroom_id: &Uuid) -> Result<bool, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

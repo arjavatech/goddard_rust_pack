@@ -8,7 +8,9 @@ use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
 };
 use crate::models::email::{FormApprovedNotification, FormAssignedNotification, FormRejectedNotification};
+use crate::models::notification::{notification_type, CreateNotification};
 use crate::services::email_service::{parent_dashboard_url, EmailService};
+use crate::services::NotificationService;
 use crate::error::AppError;
 use uuid::Uuid;
 use std::collections::HashMap;
@@ -20,11 +22,20 @@ use zip::write::{SimpleFileOptions, ZipWriter};
 pub struct StudentFormAssignmentService {
     dao: StudentFormAssignmentDao,
     email_service: Arc<EmailService>,
+    notification_service: Arc<NotificationService>,
 }
 
 impl StudentFormAssignmentService {
-    pub fn new(dao: StudentFormAssignmentDao, email_service: Arc<EmailService>) -> Self {
-        Self { dao, email_service }
+    pub fn new(
+        dao: StudentFormAssignmentDao,
+        email_service: Arc<EmailService>,
+        notification_service: Arc<NotificationService>,
+    ) -> Self {
+        Self {
+            dao,
+            email_service,
+            notification_service,
+        }
     }
 
     pub async fn create_student_form_assignment(
@@ -47,14 +58,15 @@ impl StudentFormAssignmentService {
     }
 
     /// Look up the recipient + form context for a freshly created assignment and
-    /// dispatch the "new form assigned" email on a detached task. Errors are
-    /// logged but never propagated. See docs/EMAIL_NOTIFICATIONS.md.
+    /// dispatch the "new form assigned" email AND in-app notification on detached tasks.
+    /// Errors are logged but never propagated. See docs/EMAIL_NOTIFICATIONS.md and
+    /// docs/IN_APP_NOTIFICATIONS.md.
     async fn fire_form_assigned_email(&self, assignment_id: Uuid) {
         let ctx = match self.dao.get_assignment_notification_context(assignment_id).await {
             Ok(c) => c,
             Err(e) => {
                 eprintln!(
-                    "[EmailService] form_assigned context lookup failed for {}: {:?}",
+                    "[NotificationService] form_assigned context lookup failed for {}: {:?}",
                     assignment_id, e
                 );
                 return;
@@ -64,6 +76,43 @@ impl StudentFormAssignmentService {
             Some(sp) if !sp.trim().is_empty() => format!("{},{}", ctx.parent_email, sp),
             _ => ctx.parent_email.clone(),
         };
+
+        // In-app: parent + secondary parent.
+        let due_suffix = match ctx.due_date {
+            Some(d) => format!(" Due: {}.", d.format("%B %d, %Y")),
+            None => " Please complete it at your earliest convenience.".to_string(),
+        };
+        let body = format!(
+            "A new form \"{}\" has been added to {}'s profile at {}.{}",
+            ctx.form_name, ctx.child_full_name, ctx.school_name, due_suffix
+        );
+        self.notification_service.notify_user(
+            ctx.parent_id,
+            CreateNotification {
+                school_id: ctx.school_id,
+                notification_type: notification_type::FORM_ASSIGNED.to_string(),
+                title: "Form Added to Child".to_string(),
+                body: body.clone(),
+                related_entity_id: Some(assignment_id),
+                related_entity_type: Some("form_assignment".to_string()),
+                action_url: Some("/dashboard".to_string()),
+            },
+        ).await;
+        if let Some(sec_id) = ctx.secondary_parent_id {
+            self.notification_service.notify_user(
+                sec_id,
+                CreateNotification {
+                    school_id: ctx.school_id,
+                    notification_type: notification_type::FORM_ASSIGNED.to_string(),
+                    title: "Form Added to Child".to_string(),
+                    body,
+                    related_entity_id: Some(assignment_id),
+                    related_entity_type: Some("form_assignment".to_string()),
+                    action_url: Some("/dashboard".to_string()),
+                },
+            ).await;
+        }
+
         let notification = FormAssignedNotification {
             parent_email: recipients,
             parent_first_name: ctx.parent_first_name,
@@ -185,6 +234,17 @@ impl StudentFormAssignmentService {
                 };
                 let email_svc = self.email_service.clone();
 
+                // Capture identifiers we need for in-app dispatch BEFORE moving ctx fields
+                // into the email notification structs.
+                let parent_id = ctx.parent_id;
+                let secondary_parent_id = ctx.secondary_parent_id;
+                let school_id = ctx.school_id;
+                let child_id = ctx.child_id;
+                let child_name_for_inapp = ctx.child_full_name.clone();
+                let form_name_for_inapp = ctx.form_name.clone();
+                let notes_for_inapp = request.notes.clone();
+                let reviewer_name_for_inapp = reviewer_name.clone();
+
                 match request.status {
                     crate::models::student_form_assignment::StudentFormAssignmentStatus::Approved => {
                         let notification = FormApprovedNotification {
@@ -202,6 +262,45 @@ impl StudentFormAssignmentService {
                                 eprintln!("[EmailService] form_approved notification failed (non-fatal): {:?}", e);
                             }
                         });
+
+                        let note_suffix = match notes_for_inapp
+                            .as_ref()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                        {
+                            Some(n) => format!(" Notes: {}", n),
+                            None => String::new(),
+                        };
+                        let body = format!(
+                            "{} approved \"{}\" for {}.{}",
+                            reviewer_name_for_inapp, form_name_for_inapp, child_name_for_inapp, note_suffix
+                        );
+                        self.notification_service.notify_user(
+                            parent_id,
+                            CreateNotification {
+                                school_id,
+                                notification_type: notification_type::FORM_APPROVED.to_string(),
+                                title: "Form Approved".to_string(),
+                                body: body.clone(),
+                                related_entity_id: Some(request.assignment_id),
+                                related_entity_type: Some("form_assignment".to_string()),
+                                action_url: Some("/dashboard".to_string()),
+                            },
+                        ).await;
+                        if let Some(sec_id) = secondary_parent_id {
+                            self.notification_service.notify_user(
+                                sec_id,
+                                CreateNotification {
+                                    school_id,
+                                    notification_type: notification_type::FORM_APPROVED.to_string(),
+                                    title: "Form Approved".to_string(),
+                                    body,
+                                    related_entity_id: Some(request.assignment_id),
+                                    related_entity_type: Some("form_assignment".to_string()),
+                                    action_url: Some("/dashboard".to_string()),
+                                },
+                            ).await;
+                        }
                     }
                     crate::models::student_form_assignment::StudentFormAssignmentStatus::Rejected => {
                         let notification = FormRejectedNotification {
@@ -219,9 +318,46 @@ impl StudentFormAssignmentService {
                                 eprintln!("[EmailService] form_rejected notification failed (non-fatal): {:?}", e);
                             }
                         });
+
+                        let note_text = notes_for_inapp
+                            .as_ref()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| "Please contact your school administrator.".to_string());
+                        let body = format!(
+                            "{} rejected \"{}\" for {}. Notes: {}",
+                            reviewer_name_for_inapp, form_name_for_inapp, child_name_for_inapp, note_text
+                        );
+                        self.notification_service.notify_user(
+                            parent_id,
+                            CreateNotification {
+                                school_id,
+                                notification_type: notification_type::FORM_REJECTED.to_string(),
+                                title: "Form Rejected".to_string(),
+                                body: body.clone(),
+                                related_entity_id: Some(request.assignment_id),
+                                related_entity_type: Some("form_assignment".to_string()),
+                                action_url: Some("/dashboard".to_string()),
+                            },
+                        ).await;
+                        if let Some(sec_id) = secondary_parent_id {
+                            self.notification_service.notify_user(
+                                sec_id,
+                                CreateNotification {
+                                    school_id,
+                                    notification_type: notification_type::FORM_REJECTED.to_string(),
+                                    title: "Form Rejected".to_string(),
+                                    body,
+                                    related_entity_id: Some(request.assignment_id),
+                                    related_entity_type: Some("form_assignment".to_string()),
+                                    action_url: Some("/dashboard".to_string()),
+                                },
+                            ).await;
+                        }
                     }
                     _ => {}
                 }
+                let _ = child_id; // Reserved for future use (deep links per form).
             }
             Err(e) => {
                 println!(

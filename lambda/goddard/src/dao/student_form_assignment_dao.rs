@@ -936,21 +936,28 @@ impl StudentFormAssignmentDao {
             .query_one(
                 r#"
                 SELECT
+                    sfa.school_id AS school_id,
+                    p.id AS parent_id,
                     p.first_name AS parent_first_name,
+                    p.last_name AS parent_last_name,
                     p.email AS parent_email,
+                    sp.id AS secondary_parent_id,
                     sp.email AS secondary_parent_email,
                     c.first_name AS child_first_name,
                     c.last_name AS child_last_name,
                     ft.form_name AS form_name,
                     ft.due_date AS due_date,
                     sfa.is_required AS is_required,
-                    s.name AS school_name
+                    s.name AS school_name,
+                    cl.name AS classroom_name
                 FROM student_form_assignments sfa
                 INNER JOIN children c ON c.id = sfa.child_id
                 INNER JOIN users p ON p.id = c.parent_id
                 LEFT JOIN users sp ON sp.id = c.secondary_parent_id
                 INNER JOIN form_templates ft ON ft.id = sfa.form_template_id
                 INNER JOIN schools s ON s.id = sfa.school_id
+                LEFT JOIN enrollments e ON e.id = sfa.enrollment_id
+                LEFT JOIN classrooms cl ON cl.id = e.classroom_id
                 WHERE sfa.id = $1
                 "#,
                 &[&assignment_id],
@@ -962,12 +969,17 @@ impl StudentFormAssignmentDao {
         let child_last: String = row.get("child_last_name");
 
         Ok(AssignmentNotificationContext {
+            parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            school_id: row.get("school_id"),
             parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
             parent_email: row.get("parent_email"),
             secondary_parent_email: row.get("secondary_parent_email"),
             child_full_name: format!("{} {}", child_first, child_last),
             form_name: row.get("form_name"),
             school_name: row.get("school_name"),
+            classroom_name: row.get("classroom_name"),
             is_required: row.get("is_required"),
             due_date: row.get("due_date"),
         })
@@ -987,8 +999,12 @@ impl StudentFormAssignmentDao {
             .query_one(
                 r#"
                 SELECT
+                    sfa.school_id AS school_id,
+                    sfa.child_id AS child_id,
+                    p.id AS parent_id,
                     p.first_name AS parent_first_name,
                     p.email AS parent_email,
+                    sp.id AS secondary_parent_id,
                     sp.email AS secondary_parent_email,
                     c.first_name AS child_first_name,
                     c.last_name AS child_last_name,
@@ -1012,6 +1028,10 @@ impl StudentFormAssignmentDao {
         let child_last: String = row.get("child_last_name");
 
         Ok(ReviewNotificationContext {
+            parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            school_id: row.get("school_id"),
+            child_id: row.get("child_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_email: row.get("parent_email"),
             secondary_parent_email: row.get("secondary_parent_email"),

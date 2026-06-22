@@ -6,6 +6,8 @@ use chrono::{DateTime, Utc};
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
 use crate::services::email_service::{parent_dashboard_url, EmailService};
+use crate::services::NotificationService;
+use crate::models::notification::{notification_type, CreateNotification};
 use crate::models::parent_details::{
     ParentDetailsResponse, ParentChild, ParentChildForm
 };
@@ -34,6 +36,7 @@ pub struct EnrollmentService {
     school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
     email_service: Arc<EmailService>,
+    notification_service: Arc<NotificationService>,
 }
 
 impl EnrollmentService {
@@ -42,12 +45,14 @@ impl EnrollmentService {
         school_dao: crate::dao::school_dao::SchoolDao,
         supabase_client: SupabaseClient,
         email_service: Arc<EmailService>,
+        notification_service: Arc<NotificationService>,
     ) -> Self {
         Self {
             enrollment_dao,
             school_dao,
             supabase_client,
             email_service,
+            notification_service,
         }
     }
 
@@ -262,6 +267,35 @@ impl EnrollmentService {
                 assigned_forms: assigned_form_details,
             },
         };
+
+        // Notify school admins that a new parent was invited.
+        let parent_full_name = format!("{} {}", request.parent_first_name, request.parent_last_name);
+        let child_full_name = format!("{} {}", request.child_first_name, request.child_last_name);
+        let invite_classroom = self
+            .enrollment_dao
+            .get_classroom_name(request.class_id)
+            .await
+            .unwrap_or_default();
+        let invite_classroom_suffix = if invite_classroom.is_empty() {
+            String::new()
+        } else {
+            format!(" Classroom: {}.", invite_classroom)
+        };
+        self.notification_service.notify_school_admins(
+            CreateNotification {
+                school_id: request.school_id,
+                notification_type: notification_type::PARENT_INVITED.to_string(),
+                title: "New Parent Added".to_string(),
+                body: format!(
+                    "{} ({}) has been invited as parent for {}.{}",
+                    parent_full_name, request.parent_email, child_full_name, invite_classroom_suffix
+                ),
+                related_entity_id: Some(response.parent_id),
+                related_entity_type: Some("parent".to_string()),
+                action_url: None,
+            },
+            None,
+        ).await;
 
         Ok(response)
     }
@@ -559,6 +593,7 @@ impl EnrollmentService {
             .get_school_name(request.school_id)
             .await
             .unwrap_or_default();
+        let classroom_for_inapp = classroom_name.clone();
         let notification = ChildAddedNotification {
             parent_email: response.details.parent.email.clone(),
             parent_first_name: response.details.parent.first_name.clone(),
@@ -578,6 +613,60 @@ impl EnrollmentService {
                 eprintln!("[EmailService] child_added notification failed (non-fatal): {:?}", e);
             }
         });
+
+        // In-app notifications (parent + all school admins).
+        let child_full_name = format!(
+            "{} {}",
+            response.details.child.first_name, response.details.child.last_name
+        );
+        let parent_full_name = format!(
+            "{} {}",
+            response.details.parent.first_name, response.details.parent.last_name
+        );
+        let dob_suffix = match response.details.child.birth_date {
+            Some(d) => format!(" (DOB {})", d.format("%b %d, %Y")),
+            None => String::new(),
+        };
+        let classroom_suffix = if classroom_for_inapp.is_empty() {
+            String::new()
+        } else {
+            format!(" Classroom: {}.", classroom_for_inapp)
+        };
+
+        self.notification_service.notify_user(
+            response.details.parent.id,
+            CreateNotification {
+                school_id: request.school_id,
+                notification_type: notification_type::CHILD_ADDED.to_string(),
+                title: "New Child Added".to_string(),
+                body: format!(
+                    "{}{} has been added to your account.{}",
+                    child_full_name, dob_suffix, classroom_suffix
+                ),
+                related_entity_id: Some(response.details.child.id),
+                related_entity_type: Some("child".to_string()),
+                action_url: Some("/dashboard".to_string()),
+            },
+        ).await;
+        self.notification_service.notify_school_admins(
+            CreateNotification {
+                school_id: request.school_id,
+                notification_type: notification_type::CHILD_ADDED.to_string(),
+                title: "New Student Added".to_string(),
+                body: format!(
+                    "{}{} was added to {} ({})'s account.{}",
+                    child_full_name,
+                    dob_suffix,
+                    parent_full_name,
+                    response.details.parent.email,
+                    classroom_suffix
+                ),
+                related_entity_id: Some(response.details.child.id),
+                related_entity_type: Some("child".to_string()),
+                action_url: None,
+            },
+            None,
+        ).await;
 
         Ok(response)
     }
@@ -774,6 +863,7 @@ impl EnrollmentService {
                 .get_school_name(user.school_id)
                 .await
                 .unwrap_or_default();
+            let school_name_for_inapp = school_name.clone();
             let notification = ParentDeactivatedNotification {
                 parent_email: user.email.clone(),
                 parent_first_name: user.first_name.clone(),
@@ -788,6 +878,44 @@ impl EnrollmentService {
                     eprintln!("[EmailService] parent_deactivated notification failed (non-fatal): {:?}", e);
                 }
             });
+
+            // In-app: notify the parent themselves AND all admins of the school.
+            let parent_full = format!("{} {}", user.first_name, user.last_name);
+            self.notification_service.notify_user(
+                user.id,
+                CreateNotification {
+                    school_id: user.school_id,
+                    notification_type: notification_type::PARENT_DEACTIVATED.to_string(),
+                    title: "Account Deactivated".to_string(),
+                    body: format!(
+                        "Your account at {} has been deactivated. {} child(ren) and {} enrollment(s) affected. Contact your school administrator with questions.",
+                        school_name_for_inapp,
+                        response.deactivated_children_count,
+                        response.deactivated_enrollments_count
+                    ),
+                    related_entity_id: Some(user.id),
+                    related_entity_type: Some("parent".to_string()),
+                    action_url: None,
+                },
+            ).await;
+            self.notification_service.notify_school_admins(
+                CreateNotification {
+                    school_id: user.school_id,
+                    notification_type: notification_type::PARENT_DEACTIVATED.to_string(),
+                    title: "Parent Deactivated".to_string(),
+                    body: format!(
+                        "{} ({}) has been deactivated. {} child(ren), {} enrollment(s) paused.",
+                        parent_full,
+                        user.email,
+                        response.deactivated_children_count,
+                        response.deactivated_enrollments_count
+                    ),
+                    related_entity_id: Some(user.id),
+                    related_entity_type: Some("parent".to_string()),
+                    action_url: None,
+                },
+                None,
+            ).await;
         } else {
             println!("[EnrollmentService] Skipping deactivation email — could not load parent user");
         }
@@ -824,6 +952,7 @@ impl EnrollmentService {
                         }
                         _ => ctx.parent_email.clone(),
                     };
+                    let school_name_for_inapp = school_name.clone();
                     let notification = ChildArchivedNotification {
                         parent_email: recipients,
                         parent_first_name: ctx.parent_first_name.clone(),
@@ -837,6 +966,60 @@ impl EnrollmentService {
                             eprintln!("[EmailService] child_archived notification failed (non-fatal): {:?}", e);
                         }
                     });
+
+                    // In-app: parent + secondary parent + all school admins.
+                    let child_full = format!("{} {}", ctx.child_first_name, ctx.child_last_name);
+                    let parent_full = format!("{} {}", ctx.parent_first_name, ctx.parent_last_name);
+                    let classroom_text = ctx
+                        .classroom_name
+                        .as_deref()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("n/a");
+                    let parent_body = format!(
+                        "{}'s record at {} has been archived. Their enrollment is no longer active.",
+                        child_full, school_name_for_inapp
+                    );
+                    self.notification_service.notify_user(
+                        ctx.parent_id,
+                        CreateNotification {
+                            school_id: ctx.school_id,
+                            notification_type: notification_type::CHILD_ARCHIVED.to_string(),
+                            title: "Child Archived".to_string(),
+                            body: parent_body.clone(),
+                            related_entity_id: Some(child_id),
+                            related_entity_type: Some("child".to_string()),
+                            action_url: None,
+                        },
+                    ).await;
+                    if let Some(secondary_id) = ctx.secondary_parent_id {
+                        self.notification_service.notify_user(
+                            secondary_id,
+                            CreateNotification {
+                                school_id: ctx.school_id,
+                                notification_type: notification_type::CHILD_ARCHIVED.to_string(),
+                                title: "Child Archived".to_string(),
+                                body: parent_body,
+                                related_entity_id: Some(child_id),
+                                related_entity_type: Some("child".to_string()),
+                                action_url: None,
+                            },
+                        ).await;
+                    }
+                    self.notification_service.notify_school_admins(
+                        CreateNotification {
+                            school_id: ctx.school_id,
+                            notification_type: notification_type::CHILD_ARCHIVED.to_string(),
+                            title: "Student Archived".to_string(),
+                            body: format!(
+                                "{} (parent: {}) has been archived. Classroom: {}.",
+                                child_full, parent_full, classroom_text
+                            ),
+                            related_entity_id: Some(child_id),
+                            related_entity_type: Some("child".to_string()),
+                            action_url: None,
+                        },
+                        None,
+                    ).await;
                 }
                 Err(e) => {
                     println!("[EnrollmentService] Skipping archive email — could not load child context: {:?}", e);

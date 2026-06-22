@@ -101,6 +101,18 @@ impl FormTemplateDao {
         Ok(Self::row_to_form_template(&rows[0]))
     }
 
+    /// Look up just the template name by id (used by notifications to render
+    /// "Form 'X' deleted" before the delete UPDATE runs).
+    pub async fn get_form_template_name(&self, form_template_id: &Uuid) -> Result<Option<String>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let row = client
+            .query_opt("SELECT form_name FROM form_templates WHERE id = $1", &[form_template_id])
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch form template name: {}", e)))?;
+        Ok(row.map(|r| r.get::<_, String>("form_name")))
+    }
+
     pub async fn delete_form_template(&self, form_template_id: &Uuid, school_id: &Uuid) -> Result<(), AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

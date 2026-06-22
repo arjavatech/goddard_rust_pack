@@ -40,14 +40,21 @@ pub struct ChildNotificationContext {
     pub child_first_name: String,
     pub child_last_name: String,
     pub school_id: Uuid,
+    pub parent_id: Uuid,
     pub parent_first_name: String,
     pub parent_last_name: String,
     pub parent_email: String,
+    pub secondary_parent_id: Option<Uuid>,
     pub secondary_parent_email: Option<String>,
+    pub classroom_name: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct ReviewNotificationContext {
+    pub parent_id: Uuid,
+    pub secondary_parent_id: Option<Uuid>,
+    pub school_id: Uuid,
+    pub child_id: Uuid,
     pub parent_first_name: String,
     pub parent_email: String,
     pub secondary_parent_email: Option<String>,
@@ -59,12 +66,17 @@ pub struct ReviewNotificationContext {
 
 #[derive(Debug)]
 pub struct AssignmentNotificationContext {
+    pub parent_id: Uuid,
+    pub secondary_parent_id: Option<Uuid>,
+    pub school_id: Uuid,
     pub parent_first_name: String,
+    pub parent_last_name: String,
     pub parent_email: String,
     pub secondary_parent_email: Option<String>,
     pub child_full_name: String,
     pub form_name: String,
     pub school_name: String,
+    pub classroom_name: Option<String>,
     pub is_required: bool,
     pub due_date: Option<NaiveDate>,
 }
@@ -1186,14 +1198,20 @@ impl EnrollmentDao {
                     c.first_name AS child_first_name,
                     c.last_name AS child_last_name,
                     c.school_id AS school_id,
+                    p.id AS parent_id,
                     p.first_name AS parent_first_name,
                     p.last_name AS parent_last_name,
                     p.email AS parent_email,
-                    sp.email AS secondary_parent_email
+                    sp.id AS secondary_parent_id,
+                    sp.email AS secondary_parent_email,
+                    cl.name AS classroom_name
                 FROM children c
                 INNER JOIN users p ON p.id = c.parent_id
                 LEFT JOIN users sp ON sp.id = c.secondary_parent_id
+                LEFT JOIN enrollments e ON e.child_id = c.id AND COALESCE(e.is_active, true) = true
+                LEFT JOIN classrooms cl ON cl.id = e.classroom_id
                 WHERE c.id = $1
+                LIMIT 1
                 "#,
                 &[&child_id],
             )
@@ -1204,10 +1222,13 @@ impl EnrollmentDao {
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
             school_id: row.get("school_id"),
+            parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
             parent_email: row.get("parent_email"),
+            secondary_parent_id: row.get("secondary_parent_id"),
             secondary_parent_email: row.get("secondary_parent_email"),
+            classroom_name: row.get("classroom_name"),
         })
     }
 

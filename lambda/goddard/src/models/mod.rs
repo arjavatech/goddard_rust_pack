@@ -11,6 +11,7 @@ pub mod parent_details;
 pub mod fillout;
 pub mod admin;
 pub mod email;
+pub mod notification;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

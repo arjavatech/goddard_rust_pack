@@ -178,11 +178,22 @@ pub struct AuthService {
     dao: AuthDao,
     school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
+    notification_service: std::sync::Arc<crate::services::NotificationService>,
 }
 
 impl AuthService {
-    pub fn new(dao: AuthDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
-        Self { dao, school_dao, supabase_client }
+    pub fn new(
+        dao: AuthDao,
+        school_dao: crate::dao::school_dao::SchoolDao,
+        supabase_client: SupabaseClient,
+        notification_service: std::sync::Arc<crate::services::NotificationService>,
+    ) -> Self {
+        Self {
+            dao,
+            school_dao,
+            supabase_client,
+            notification_service,
+        }
     }
 
     pub async fn get_auth_verification_status(
@@ -382,6 +393,30 @@ impl AuthService {
 
         let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
         let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
+
+        // Notify other school admins that a new admin/owner was added. Suppress for parent
+        // invites because the existing parent-invite flow goes through a different path.
+        let is_admin_role = matches!(role_str, "Admin" | "SuperAdmin" | "Owner");
+        if is_admin_role {
+            self.notification_service.notify_school_admins(
+                crate::models::notification::CreateNotification {
+                    school_id: school_uuid,
+                    notification_type: crate::models::notification::notification_type::ADMIN_ADDED.to_string(),
+                    title: "New Admin Added".to_string(),
+                    body: format!(
+                        "{} {} has been added as {} for {}.",
+                        first_name_str.trim(),
+                        last_name_str.trim(),
+                        role_str,
+                        school_name
+                    ),
+                    related_entity_id: uuid::Uuid::parse_str(&user_id).ok(),
+                    related_entity_type: Some("user".to_string()),
+                    action_url: None,
+                },
+                uuid::Uuid::parse_str(&user_id).ok(),
+            ).await;
+        }
 
         Ok(CreateInvitationResponse {
             success: true,

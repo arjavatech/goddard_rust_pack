@@ -1,29 +1,47 @@
-use crate::dao::FormSubmissionDao;
+use crate::dao::{FormSubmissionDao, StudentFormAssignmentDao};
 use crate::models::form_submission::{
     CreateFormSubmissionWebhookRequest, FormSubmission, FormSubmissionResponse,
     FormSubmissionStatus, FormSubmissionVersionResponse, UpdateFormSubmissionStatusRequest,
 };
+use crate::models::notification::{notification_type, CreateNotification};
 use crate::services::fillout_service::FilloutService;
+use crate::services::NotificationService;
 use crate::error::AppError;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub struct FormSubmissionService {
     dao: FormSubmissionDao,
     fillout_service: Option<FilloutService>,
+    notification_service: Arc<NotificationService>,
+    assignment_dao: StudentFormAssignmentDao,
 }
 
 impl FormSubmissionService {
-    pub fn new(dao: FormSubmissionDao) -> Self {
+    pub fn new(
+        dao: FormSubmissionDao,
+        notification_service: Arc<NotificationService>,
+        assignment_dao: StudentFormAssignmentDao,
+    ) -> Self {
         Self {
             dao,
             fillout_service: None,
+            notification_service,
+            assignment_dao,
         }
     }
 
-    pub fn new_with_fillout(dao: FormSubmissionDao, fillout_service: FilloutService) -> Self {
+    pub fn new_with_fillout(
+        dao: FormSubmissionDao,
+        fillout_service: FilloutService,
+        notification_service: Arc<NotificationService>,
+        assignment_dao: StudentFormAssignmentDao,
+    ) -> Self {
         Self {
             dao,
             fillout_service: Some(fillout_service),
+            notification_service,
+            assignment_dao,
         }
     }
 
@@ -102,6 +120,61 @@ impl FormSubmissionService {
                 return Err(e);
             }
         };
+
+        // Notify admins every time a parent submits a form via Fillout — including
+        // re-submissions, since each one needs review. The webhook only fires on
+        // actual form submit (not on draft autosaves), so this won't spam admins.
+        let submitted_event = if is_insert { "submitted" } else { "re-submitted" };
+        let admin_body = match self
+            .assignment_dao
+            .get_assignment_notification_context(student_form_assignment_id)
+            .await
+        {
+            Ok(ctx) => {
+                let parent_full = format!(
+                    "{} {}",
+                    ctx.parent_first_name.trim(),
+                    ctx.parent_last_name.trim()
+                )
+                .trim()
+                .to_string();
+                let classroom_suffix = match ctx.classroom_name.as_deref().filter(|s| !s.is_empty()) {
+                    Some(c) => format!(" ({})", c),
+                    None => String::new(),
+                };
+                format!(
+                    "{} {} \"{}\" for {}{}. Please review and approve.",
+                    if parent_full.is_empty() { "A parent".to_string() } else { parent_full },
+                    submitted_event,
+                    ctx.form_name,
+                    ctx.child_full_name,
+                    classroom_suffix,
+                )
+            }
+            Err(e) => {
+                eprintln!(
+                    "[NotificationService] form_submitted context lookup failed for {}: {:?}",
+                    student_form_assignment_id, e
+                );
+                format!(
+                    "A parent {} a form. Please review and approve.",
+                    submitted_event
+                )
+            }
+        };
+
+        self.notification_service.notify_school_admins(
+            CreateNotification {
+                school_id,
+                notification_type: notification_type::FORM_SUBMITTED.to_string(),
+                title: "Pending Approval Form".to_string(),
+                body: admin_body,
+                related_entity_id: Some(student_form_assignment_id),
+                related_entity_type: Some("form_assignment".to_string()),
+                action_url: None,
+            },
+            None,
+        ).await;
 
         // Extract fillout_submission_id from the submission for Fillout API call
         let fillout_submission_id = &submission.fillout_submission_id;

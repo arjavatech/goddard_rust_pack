@@ -56,6 +56,7 @@ pub struct ReviewNotificationContext {
     pub school_id: Uuid,
     pub child_id: Uuid,
     pub parent_first_name: String,
+    pub parent_last_name: String,
     pub parent_email: String,
     pub secondary_parent_email: Option<String>,
     pub child_full_name: String,

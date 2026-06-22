@@ -378,7 +378,7 @@ impl EnrollmentService {
         let result = self.enrollment_dao.get_invite_by_token(token).await?;
 
         let frontend_url = std::env::var("FRONTEND_URL")
-            .unwrap_or_else(|_| "https://dev.goddard-app.pages.dev".to_string());
+            .unwrap_or_else(|_| "https://dev.goddard-web.pages.dev".to_string());
 
         match result {
             None => Err(AppError::NotFound("Invalid invite link".to_string())),

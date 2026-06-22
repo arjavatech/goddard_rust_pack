@@ -349,5 +349,5 @@ pub fn parent_dashboard_url() -> String {
     // Default falls back to the dev frontend so emails sent from a misconfigured
     // environment still link somewhere usable.
     std::env::var("PARENT_DASHBOARD_URL")
-        .unwrap_or_else(|_| "https://dev.goddard-app.pages.dev/".to_string())
+        .unwrap_or_else(|_| "https://dev.goddard-web.pages.dev/".to_string())
 }

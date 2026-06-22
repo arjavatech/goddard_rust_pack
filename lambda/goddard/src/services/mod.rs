@@ -13,6 +13,7 @@ pub mod fillout_service;
 pub mod admin_service;
 pub mod email_service;
 pub mod notification_service;
+pub mod fcm_service;
 
 pub use auth_service::AuthService;
 pub use supabase_client::SupabaseClient;
@@ -28,3 +29,4 @@ pub use fillout_service::FilloutService;
 pub use admin_service::AdminService;
 pub use email_service::EmailService;
 pub use notification_service::NotificationService;
+pub use fcm_service::FcmService;

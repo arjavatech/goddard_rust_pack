@@ -14,6 +14,7 @@ pub mod notification_type {
     pub const PARENT_INVITED: &str = "parent_invited";
     pub const PARENT_DEACTIVATED: &str = "parent_deactivated";
     pub const ADMIN_ADDED: &str = "admin_added";
+    pub const ADMIN_DEACTIVATED: &str = "admin_deactivated";
     pub const CLASSROOM_ADDED: &str = "classroom_added";
     pub const CLASSROOM_DELETED: &str = "classroom_deleted";
     pub const FORM_TEMPLATE_ADDED: &str = "form_template_added";

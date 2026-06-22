@@ -313,6 +313,39 @@ impl AuthService {
         })
     }
 
+    /// Fire the "New Admin Added" in-app notification to all other active admins
+    /// of the school. Called from both `create_invitation` and `create_invitation_enhanced`
+    /// so the wiring can't drift between the two routes.
+    async fn fire_admin_added_notification(
+        &self,
+        school_id: uuid::Uuid,
+        new_admin_user_id: &str,
+        first_name: &str,
+        last_name: &str,
+        role: &str,
+        school_name: &str,
+    ) {
+        let parsed_id = uuid::Uuid::parse_str(new_admin_user_id).ok();
+        self.notification_service.notify_school_admins(
+            crate::models::notification::CreateNotification {
+                school_id,
+                notification_type: crate::models::notification::notification_type::ADMIN_ADDED.to_string(),
+                title: "New Admin Added".to_string(),
+                body: format!(
+                    "{} {} has been added as {} for {}.",
+                    first_name.trim(),
+                    last_name.trim(),
+                    role,
+                    school_name
+                ),
+                related_entity_id: parsed_id,
+                related_entity_type: Some("user".to_string()),
+                action_url: None,
+            },
+            parsed_id,
+        ).await;
+    }
+
     pub async fn create_invitation_enhanced(&self, request: CreateInvitationRequestEnhanced) -> ApiResult<CreateInvitationResponse> {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
@@ -394,27 +427,16 @@ impl AuthService {
         let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
         let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
 
-        // Notify other school admins that a new admin/owner was added. Suppress for parent
-        // invites because the existing parent-invite flow goes through a different path.
-        let is_admin_role = matches!(role_str, "Admin" | "SuperAdmin" | "Owner");
-        if is_admin_role {
-            self.notification_service.notify_school_admins(
-                crate::models::notification::CreateNotification {
-                    school_id: school_uuid,
-                    notification_type: crate::models::notification::notification_type::ADMIN_ADDED.to_string(),
-                    title: "New Admin Added".to_string(),
-                    body: format!(
-                        "{} {} has been added as {} for {}.",
-                        first_name_str.trim(),
-                        last_name_str.trim(),
-                        role_str,
-                        school_name
-                    ),
-                    related_entity_id: uuid::Uuid::parse_str(&user_id).ok(),
-                    related_entity_type: Some("user".to_string()),
-                    action_url: None,
-                },
-                uuid::Uuid::parse_str(&user_id).ok(),
+        // Suppress for parent invites because the existing parent-invite flow goes
+        // through a different path.
+        if matches!(role_str, "Admin" | "SuperAdmin" | "Owner") {
+            self.fire_admin_added_notification(
+                school_uuid,
+                &user_id,
+                first_name_str,
+                last_name_str,
+                role_str,
+                &school_name,
             ).await;
         }
 
@@ -509,6 +531,17 @@ impl AuthService {
 
         let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
         let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
+
+        // create_invitation always creates an "Admin" (hardcoded above at create_invite_token),
+        // so unconditionally fire — no is_admin_role gate.
+        self.fire_admin_added_notification(
+            school_uuid,
+            &user_id,
+            &request.first_name,
+            &request.last_name,
+            "Admin",
+            &school_name,
+        ).await;
 
         Ok(CreateInvitationResponse {
             success: true,
@@ -698,7 +731,35 @@ impl AuthService {
         let user_uuid = uuid::Uuid::parse_str(&request.user_id)
             .map_err(|_| AppError::Validation("Invalid user_id format".to_string()))?;
 
-        self.dao.soft_delete_admin_user(user_uuid).await
+        // Capture identity BEFORE the soft delete — the post-delete row has
+        // is_active=false, and several lookups filter that out, so we'd lose
+        // the name/email needed to render a useful notification body.
+        let admin_details = self.dao.get_user_by_id(user_uuid).await.ok();
+
+        self.dao.soft_delete_admin_user(user_uuid).await?;
+
+        if let Some(d) = admin_details {
+            self.notification_service.notify_school_admins(
+                crate::models::notification::CreateNotification {
+                    school_id: d.school_id,
+                    notification_type: crate::models::notification::notification_type::ADMIN_DEACTIVATED.to_string(),
+                    title: "Admin Deactivated".to_string(),
+                    body: format!(
+                        "{} {} ({}) has been deactivated as {}.",
+                        d.first_name.trim(),
+                        d.last_name.trim(),
+                        d.email,
+                        d.role
+                    ),
+                    related_entity_id: Some(d.id),
+                    related_entity_type: Some("user".to_string()),
+                    action_url: None,
+                },
+                Some(user_uuid),
+            ).await;
+        }
+
+        Ok(())
     }
 
     /// Get all verified Admin users for a specific school (SuperAdmin only)

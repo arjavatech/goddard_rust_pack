@@ -59,21 +59,22 @@ impl NotificationDao {
     }
 
     /// Fan out one notification per active admin / superadmin of the given school in a
-    /// single INSERT … SELECT round-trip. Returns the number of rows inserted.
+    /// single INSERT … SELECT round-trip. Returns the recipient user_ids so callers can
+    /// drive a follow-up FCM dispatch against the same set.
     pub async fn insert_many_for_school_admins(
         &self,
         school_id: Uuid,
         payload: &CreateNotification,
         exclude_user_id: Option<Uuid>,
-    ) -> Result<u64, AppError> {
+    ) -> Result<Vec<Uuid>, AppError> {
         let client = self
             .pool
             .get()
             .await
             .map_err(|e| AppError::Database(format!("Failed to get db connection: {}", e)))?;
 
-        let inserted = client
-            .execute(
+        let rows = client
+            .query(
                 r#"
                 INSERT INTO notifications (
                     user_id, school_id, notification_type, title, body,
@@ -85,6 +86,7 @@ impl NotificationDao {
                   AND u.role IN ('Admin', 'SuperAdmin')
                   AND COALESCE(u.is_active, true) = true
                   AND ($8::uuid IS NULL OR u.id <> $8)
+                RETURNING user_id
                 "#,
                 &[
                     &school_id,
@@ -102,7 +104,7 @@ impl NotificationDao {
                 AppError::Database(format!("Failed to fan out admin notifications: {}", e))
             })?;
 
-        Ok(inserted)
+        Ok(rows.into_iter().map(|r| r.get::<_, Uuid>("user_id")).collect())
     }
 
     /// Page through a user's notifications. Returns items + total + unread_count in two

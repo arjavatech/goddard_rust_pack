@@ -56,7 +56,7 @@ Covers all roles: Parent, Admin, Teacher, SuperAdmin.
 | Variable | Purpose | Default |
 |---|---|---|
 | `API_BASE_URL` | Backend URL used in invite email links | `https://api.goddard-app.com` |
-| `FRONTEND_URL` | Frontend URL for post-signup redirect | `https://dev.goddard-app.pages.dev` |
+| `FRONTEND_URL` | Frontend URL for post-signup redirect | `https://dev.goddard-web.pages.dev` |
 | `RESEND_API_KEY` | Resend API key for sending invite emails | *(required)* |
 
 ---

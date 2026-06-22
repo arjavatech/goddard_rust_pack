@@ -75,14 +75,17 @@ use controllers::{
     notification_controller::{
         list_notifications, unread_count, mark_read, mark_all_read,
     },
+    device_token_controller::{
+        register_device_token, unregister_device_token,
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -134,6 +137,24 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let portal_dao = PortalDao::new(pool.clone());
     let admin_dao = AdminDao::new(pool.clone());
     let notification_dao = NotificationDao::new(pool.clone());
+    let device_token_dao = Arc::new(DeviceTokenDao::new(pool.clone()));
+
+    // Initialize FCM service. Live when all three env vars are present; otherwise a
+    // no-op stub that lets local dev / staging boot without Firebase configured.
+    let fcm_service = match (
+        std::env::var("FCM_PROJECT_ID").ok(),
+        std::env::var("FCM_CLIENT_EMAIL").ok(),
+        std::env::var("FCM_PRIVATE_KEY").ok(),
+    ) {
+        (Some(pid), Some(email), Some(key)) if !pid.is_empty() && !email.is_empty() && !key.is_empty() => {
+            println!("[DEBUG] FCM service initialized (project={})", pid);
+            Arc::new(FcmService::live(pid, email, key, device_token_dao.clone()))
+        }
+        _ => {
+            println!("[WARN] FCM service disabled - missing FCM_PROJECT_ID / FCM_CLIENT_EMAIL / FCM_PRIVATE_KEY");
+            Arc::new(FcmService::disabled())
+        }
+    };
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new()?;
@@ -154,7 +175,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
     // Initialize services
     let email_service = Arc::new(EmailService::new());
-    let notification_service = Arc::new(NotificationService::new(notification_dao));
+    let notification_service = Arc::new(NotificationService::new(notification_dao, fcm_service.clone()));
     let auth_service = Arc::new(AuthService::new(auth_dao.clone(), school_dao.clone(), supabase_client.clone(), notification_service.clone()));
     let school_service = Arc::new(SchoolService::new(school_dao.clone(), supabase_client.clone(), auth_dao.clone()));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao, school_dao.clone(), notification_service.clone()));
@@ -305,6 +326,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/parents/:parent_id", get(get_parent_profile).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/children/:child_id", get(get_child_demographics).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(portal_service)
+
+        // Push notification device token registration (JWT only - per-user)
+        .route("/device-tokens", post(register_device_token).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/device-tokens/:token", delete(unregister_device_token).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .with_state(device_token_dao)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers));

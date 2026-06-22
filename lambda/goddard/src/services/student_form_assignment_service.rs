@@ -244,6 +244,13 @@ impl StudentFormAssignmentService {
                 let form_name_for_inapp = ctx.form_name.clone();
                 let notes_for_inapp = request.notes.clone();
                 let reviewer_name_for_inapp = reviewer_name.clone();
+                let parent_full_for_inapp = format!(
+                    "{} {}",
+                    ctx.parent_first_name.trim(),
+                    ctx.parent_last_name.trim()
+                )
+                .trim()
+                .to_string();
 
                 match request.status {
                     crate::models::student_form_assignment::StudentFormAssignmentStatus::Approved => {
@@ -301,6 +308,26 @@ impl StudentFormAssignmentService {
                                 },
                             ).await;
                         }
+
+                        self.notification_service.notify_school_admins(
+                            CreateNotification {
+                                school_id,
+                                notification_type: notification_type::FORM_APPROVED.to_string(),
+                                title: "Form Approved".to_string(),
+                                body: format!(
+                                    "{} approved \"{}\" for {} (parent: {}).{}",
+                                    reviewer_name_for_inapp,
+                                    form_name_for_inapp,
+                                    child_name_for_inapp,
+                                    parent_full_for_inapp,
+                                    note_suffix
+                                ),
+                                related_entity_id: Some(request.assignment_id),
+                                related_entity_type: Some("form_assignment".to_string()),
+                                action_url: None,
+                            },
+                            None,
+                        ).await;
                     }
                     crate::models::student_form_assignment::StudentFormAssignmentStatus::Rejected => {
                         let notification = FormRejectedNotification {
@@ -354,6 +381,26 @@ impl StudentFormAssignmentService {
                                 },
                             ).await;
                         }
+
+                        self.notification_service.notify_school_admins(
+                            CreateNotification {
+                                school_id,
+                                notification_type: notification_type::FORM_REJECTED.to_string(),
+                                title: "Form Rejected".to_string(),
+                                body: format!(
+                                    "{} rejected \"{}\" for {} (parent: {}). Notes: {}",
+                                    reviewer_name_for_inapp,
+                                    form_name_for_inapp,
+                                    child_name_for_inapp,
+                                    parent_full_for_inapp,
+                                    note_text
+                                ),
+                                related_entity_id: Some(request.assignment_id),
+                                related_entity_type: Some("form_assignment".to_string()),
+                                action_url: None,
+                            },
+                            None,
+                        ).await;
                     }
                     _ => {}
                 }

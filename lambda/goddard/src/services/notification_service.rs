@@ -6,16 +6,21 @@ use crate::error::AppError;
 use crate::models::notification::{
     CreateNotification, NotificationFilter, NotificationListResponse,
 };
+use crate::services::FcmService;
 
 /// Wraps the NotificationDao and provides fire-and-forget helpers used by the rest of the
 /// service layer. See docs/IN_APP_NOTIFICATIONS.md.
 pub struct NotificationService {
     dao: Arc<NotificationDao>,
+    fcm: Arc<FcmService>,
 }
 
 impl NotificationService {
-    pub fn new(dao: NotificationDao) -> Self {
-        Self { dao: Arc::new(dao) }
+    pub fn new(dao: NotificationDao, fcm: Arc<FcmService>) -> Self {
+        Self {
+            dao: Arc::new(dao),
+            fcm,
+        }
     }
 
     // ---- Read APIs (used by controller) ----
@@ -54,14 +59,13 @@ impl NotificationService {
 
     // ---- Synchronous fire helpers (used by sibling services) ----
     //
-    // Callers `.await` these directly. The DB insert runs inline (single SQL round trip),
-    // so the notification row is guaranteed to exist before the API response is sent.
-    // Errors are logged but never propagated — the originating API call still succeeds.
+    // The DB insert runs inline (single SQL round trip), so the notification row is
+    // guaranteed to exist before the API response is sent. The HTTP-bound FCM dispatch
+    // is detached via `tokio::spawn` after the DB write — Lambda-safe because the row
+    // is already durable by the time the API handler returns; the OS push is best-effort.
     //
-    // Previously these used `tokio::spawn` for fire-and-forget. That broke under Lambda
-    // (the runtime kills the worker the instant the handler returns, so the detached
-    // task never gets to run) and could race even in local dev. The DB write is cheap
-    // enough to do inline. HTTP-bound side-effects like Resend still use spawn.
+    // Errors at either layer are logged but never propagated — the originating API call
+    // still succeeds.
 
     pub async fn notify_user(&self, user_id: Uuid, payload: CreateNotification) {
         match self.dao.insert_one(user_id, &payload).await {
@@ -70,6 +74,24 @@ impl NotificationService {
                     "[NotificationService] inserted notification (user={}, type={})",
                     user_id, payload.notification_type
                 );
+
+                let fcm = self.fcm.clone();
+                let title = payload.title.clone();
+                let body = payload.body.clone();
+                let action_url = payload.action_url.clone();
+                let related_id = payload.related_entity_id;
+                let ntype = payload.notification_type.clone();
+                tokio::spawn(async move {
+                    fcm.send_to_user(
+                        user_id,
+                        &title,
+                        &body,
+                        action_url.as_deref(),
+                        related_id,
+                        &ntype,
+                    )
+                    .await;
+                });
             }
             Err(e) => {
                 eprintln!("[NotificationService] notify_user failed (non-fatal): {:?}", e);
@@ -90,11 +112,35 @@ impl NotificationService {
             .insert_many_for_school_admins(payload.school_id, &payload, exclude_user_id)
             .await
         {
-            Ok(n) => {
+            Ok(recipients) => {
                 println!(
                     "[NotificationService] fanned out {} admin notifications (type={}, school={})",
-                    n, payload.notification_type, payload.school_id
+                    recipients.len(),
+                    payload.notification_type,
+                    payload.school_id
                 );
+
+                if recipients.is_empty() {
+                    return;
+                }
+
+                let fcm = self.fcm.clone();
+                let title = payload.title.clone();
+                let body = payload.body.clone();
+                let action_url = payload.action_url.clone();
+                let related_id = payload.related_entity_id;
+                let ntype = payload.notification_type.clone();
+                tokio::spawn(async move {
+                    fcm.send_to_users(
+                        &recipients,
+                        &title,
+                        &body,
+                        action_url.as_deref(),
+                        related_id,
+                        &ntype,
+                    )
+                    .await;
+                });
             }
             Err(e) => {
                 eprintln!(

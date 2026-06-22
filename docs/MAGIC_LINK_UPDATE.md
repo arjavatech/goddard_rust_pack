@@ -82,7 +82,7 @@ curl -X POST "https://goddard.fly.dev/enrollments/resend-confirmation" \
 **Expected Email**:
 - Subject: "Magic Link"
 - Content: "Click here to sign in"
-- Link: `https://dev.goddard-app.pages.dev/auth/callback?token=...`
+- Link: `https://dev.goddard-web.pages.dev/auth/callback?token=...`
 
 ### Check Email
 

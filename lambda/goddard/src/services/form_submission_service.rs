@@ -121,129 +121,115 @@ impl FormSubmissionService {
             }
         };
 
-        // Notify admins every time a parent submits a form via Fillout — including
-        // re-submissions, since each one needs review. The webhook only fires on
-        // actual form submit (not on draft autosaves), so this won't spam admins.
-        let submitted_event = if is_insert { "submitted" } else { "re-submitted" };
-        let admin_body = match self
-            .assignment_dao
-            .get_assignment_notification_context(student_form_assignment_id)
-            .await
-        {
-            Ok(ctx) => {
-                let parent_full = format!(
-                    "{} {}",
-                    ctx.parent_first_name.trim(),
-                    ctx.parent_last_name.trim()
-                )
-                .trim()
-                .to_string();
-                let classroom_suffix = match ctx.classroom_name.as_deref().filter(|s| !s.is_empty()) {
-                    Some(c) => format!(" ({})", c),
-                    None => String::new(),
-                };
-                format!(
-                    "{} {} \"{}\" for {}{}. Please review and approve.",
-                    if parent_full.is_empty() { "A parent".to_string() } else { parent_full },
-                    submitted_event,
-                    ctx.form_name,
-                    ctx.child_full_name,
-                    classroom_suffix,
-                )
+        // The self-hosted Fillout webhook delivers form_status, edit_link and pdf_link
+        // directly in the payload — no second API call needed to fetch them.
+        let form_status = actual_payload.get("form_status")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_uppercase());
+        let non_empty = |key: &str| actual_payload.get(key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let edit_link = non_empty("edit_link");
+        let pdf_link = non_empty("pdf_link");
+        let is_in_progress = form_status.as_deref() == Some("IN_PROGRESS");
+
+        println!("[DEBUG] Service: Payload details - form_status: {:?}, edit_link: {:?}, pdf_link: {:?}",
+                 form_status, edit_link, pdf_link);
+
+        // Store links from the payload in both tables whenever they are present
+        if edit_link.is_some() || pdf_link.is_some() {
+            if let Err(e) = self.dao.update_submission_links(
+                submission.id,
+                edit_link.clone(),
+                pdf_link.clone(),
+            ).await {
+                println!("[WARN] Service: Failed to update submission links: {:?}", e);
+                // Don't fail the webhook - just log the warning
+            } else {
+                println!("[DEBUG] Service: Successfully updated submission links");
             }
-            Err(e) => {
-                eprintln!(
-                    "[NotificationService] form_submitted context lookup failed for {}: {:?}",
-                    student_form_assignment_id, e
-                );
-                format!(
-                    "A parent {} a form. Please review and approve.",
-                    submitted_event
-                )
+
+            if let Err(e) = self.dao.update_assignment_links(
+                student_form_assignment_id,
+                edit_link.clone(),
+                pdf_link.clone(),
+            ).await {
+                println!("[WARN] Service: Failed to update assignment links: {:?}", e);
+                // Don't fail the webhook - just log the warning
+            } else {
+                println!("[DEBUG] Service: Successfully updated assignment links");
             }
-        };
+        }
 
-        self.notification_service.notify_school_admins(
-            CreateNotification {
-                school_id,
-                notification_type: notification_type::FORM_SUBMITTED.to_string(),
-                title: "Pending Approval Form".to_string(),
-                body: admin_body,
-                related_entity_id: Some(student_form_assignment_id),
-                related_entity_type: Some("form_assignment".to_string()),
-                action_url: None,
-            },
-            None,
-        ).await;
-
-        // Extract fillout_submission_id from the submission for Fillout API call
-        let fillout_submission_id = &submission.fillout_submission_id;
-        println!("[DEBUG] Service: Extracted fillout_submission_id: {}", fillout_submission_id);
-
-        // Extract form_id from the payload (optional for graceful degradation)
-        let form_id_opt = actual_payload.get("form_id")
-            .or_else(|| actual_payload.get("formId"))
-            .and_then(|v| v.as_str());
-
-        if let Some(form_id) = form_id_opt {
-            println!("[DEBUG] Service: Extracted form_id: {}", form_id);
-
-            // Fetch additional details from Fillout API if service is available
-            if let Some(ref fillout_service) = self.fillout_service {
-                println!("[DEBUG] Service: Fillout service available, fetching submission details");
-
-                match fillout_service.fetch_submission_details(form_id, fillout_submission_id).await {
-                Ok(fillout_details) => {
-                    println!("[DEBUG] Service: Successfully fetched Fillout details - edit_link: {:?}, pdf_link: {:?}",
-                             fillout_details.edit_link, fillout_details.pdf_link);
-
-                    // Update form_submissions table with links
-                    if let Err(e) = self.dao.update_submission_links(
-                        submission.id,
-                        fillout_details.edit_link.clone(),
-                        fillout_details.pdf_link.clone(),
-                    ).await {
-                        println!("[WARN] Service: Failed to update submission links: {:?}", e);
-                        // Don't fail the webhook - just log the warning
-                    } else {
-                        println!("[DEBUG] Service: Successfully updated submission links");
-                    }
-
-                    // Update student_form_assignments table with recent links
-                    if let Err(e) = self.dao.update_assignment_links(
-                        student_form_assignment_id,
-                        fillout_details.edit_link.clone(),
-                        fillout_details.pdf_link.clone(),
-                    ).await {
-                        println!("[WARN] Service: Failed to update assignment links: {:?}", e);
-                        // Don't fail the webhook - just log the warning
-                    } else {
-                        println!("[DEBUG] Service: Successfully updated assignment links");
-                    }
-
-                    // Create enhanced response with the fetched links
-                    let mut response = FormSubmissionResponse::from(submission);
-                    response.edit_link = fillout_details.edit_link;
-                    response.pdf_link = fillout_details.pdf_link;
-
-                    println!("[DEBUG] Service: Created enhanced response with Fillout links");
-                    Ok(response)
+        // Notify admins when a parent submits a form — including re-submissions,
+        // since each one needs review. Partial saves (form_status=IN_PROGRESS) are
+        // skipped; a missing/unknown form_status fails open and still notifies.
+        if is_in_progress {
+            println!("[DEBUG] Service: form_status=IN_PROGRESS, skipping admin notification");
+        } else {
+            let submitted_event = if is_insert { "submitted" } else { "re-submitted" };
+            let admin_body = match self
+                .assignment_dao
+                .get_assignment_notification_context(student_form_assignment_id)
+                .await
+            {
+                Ok(ctx) => {
+                    let parent_full = format!(
+                        "{} {}",
+                        ctx.parent_first_name.trim(),
+                        ctx.parent_last_name.trim()
+                    )
+                    .trim()
+                    .to_string();
+                    let classroom_suffix = match ctx.classroom_name.as_deref().filter(|s| !s.is_empty()) {
+                        Some(c) => format!(" ({})", c),
+                        None => String::new(),
+                    };
+                    format!(
+                        "{} {} \"{}\" for {}{}. Please review and approve.",
+                        if parent_full.is_empty() { "A parent".to_string() } else { parent_full },
+                        submitted_event,
+                        ctx.form_name,
+                        ctx.child_full_name,
+                        classroom_suffix,
+                    )
                 }
                 Err(e) => {
-                    println!("[WARN] Service: Failed to fetch Fillout details: {:?}", e);
-                    println!("[DEBUG] Service: Continuing with standard response (graceful degradation)");
-                    // Graceful degradation - return the submission without links
-                    Ok(submission.into())
+                    eprintln!(
+                        "[NotificationService] form_submitted context lookup failed for {}: {:?}",
+                        student_form_assignment_id, e
+                    );
+                    format!(
+                        "A parent {} a form. Please review and approve.",
+                        submitted_event
+                    )
                 }
-            }
-            } else {
-                println!("[DEBUG] Service: Fillout service not configured, skipping link fetching");
-                Ok(submission.into())
-            }
-        } else {
-            println!("[DEBUG] Service: form_id not provided in payload, skipping Fillout API integration");
-            Ok(submission.into())
+            };
+
+            self.notification_service.notify_school_admins(
+                CreateNotification {
+                    school_id,
+                    notification_type: notification_type::FORM_SUBMITTED.to_string(),
+                    title: "Pending Approval Form".to_string(),
+                    body: admin_body,
+                    related_entity_id: Some(student_form_assignment_id),
+                    related_entity_type: Some("form_assignment".to_string()),
+                    action_url: None,
+                },
+                None,
+            ).await;
         }
+
+        let mut response = FormSubmissionResponse::from(submission);
+        if edit_link.is_some() {
+            response.edit_link = edit_link;
+        }
+        if pdf_link.is_some() {
+            response.pdf_link = pdf_link;
+        }
+        Ok(response)
     }
 
     pub async fn get_latest_form_submission(

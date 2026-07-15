@@ -51,9 +51,15 @@ convert_env_to_lambda_json() {
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$key" ]] && continue
 
-        # Remove leading/trailing whitespace
-        key=$(echo "$key" | xargs)
-        value=$(echo "$value" | xargs)
+        # Trim leading/trailing whitespace WITHOUT shell-quote interpretation.
+        # Previously `xargs` was used here, but xargs parses input as quoted
+        # shell tokens — inside a "..." value (e.g. FCM_PRIVATE_KEY) it eats
+        # backslash escapes, collapsing every \n to a literal `n` and corrupting
+        # multi-line values on their way to the Lambda environment.
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        value="${value%"${value##*[![:space:]]}"}"
 
         # Skip if key is empty
         [[ -z "$key" ]] && continue

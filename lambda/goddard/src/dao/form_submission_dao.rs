@@ -98,25 +98,43 @@ impl FormSubmissionDao {
         let now = Utc::now().naive_utc();
         println!("[DEBUG] DAO: Generated timestamp: {}", now);
 
-        // Extract fillout_submission_id from payload
+        // Extract fillout_submission_id from payload — the self-hosted Fillout sends
+        // `submission_id`; older keys kept as fallbacks
         let fillout_submission_id = payload
-            .get("fillout_submission_id")
+            .get("submission_id")
+            .or_else(|| payload.get("fillout_submission_id"))
             .or_else(|| payload.get("form_submission_id"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("webhook_{}", Uuid::new_v4()));
         println!("[DEBUG] DAO: Fillout submission ID: {}", fillout_submission_id);
 
-        // Prepare form_data and metadata
+        let form_status = payload.get("form_status").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let form_id = payload.get("form_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+        // Prepare form_data (owner-mapped answers only) and metadata
         let mut form_data = payload.clone();
         if let Some(obj) = form_data.as_object_mut() {
-            obj.remove("student_form_assignment_id");
-            obj.remove("fillout_submission_id");
+            for key in [
+                "student_form_assignment_id",
+                "fillout_submission_id",
+                "submission_id",
+                "form_id",
+                "form_status",
+                "edit_link",
+                "pdf_link",
+            ] {
+                obj.remove(key);
+            }
         }
 
+        // metadata is rebuilt on every upsert, so form_status flips from
+        // IN_PROGRESS to COMPLETED when the completion webhook arrives
         let metadata = json!({
             "source": "webhook",
             "received_at": now.to_string(),
+            "form_status": form_status,
+            "form_id": form_id,
             "webhook_payload_keys": payload.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()
         });
 
@@ -696,9 +714,13 @@ impl FormSubmissionDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
+        // COALESCE keeps existing links when a webhook arrives without them
+        // (e.g. an in-progress event with no PDF yet)
         let query = r#"
             UPDATE form_submissions
-            SET edit_link = $2, pdf_link = $3, updated_at = NOW()
+            SET edit_link = COALESCE($2, edit_link),
+                pdf_link = COALESCE($3, pdf_link),
+                updated_at = NOW()
             WHERE id = $1
         "#;
 
@@ -726,9 +748,12 @@ impl FormSubmissionDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
+        // COALESCE keeps existing links when a webhook arrives without them
         let query = r#"
             UPDATE student_form_assignments
-            SET recent_edit_link = $2, recent_pdf_link = $3, updated_at = NOW()
+            SET recent_edit_link = COALESCE($2, recent_edit_link),
+                recent_pdf_link = COALESCE($3, recent_pdf_link),
+                updated_at = NOW()
             WHERE id = $1
         "#;
 

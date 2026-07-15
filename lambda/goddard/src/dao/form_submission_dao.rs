@@ -111,6 +111,10 @@ impl FormSubmissionDao {
 
         let form_status = payload.get("form_status").and_then(|v| v.as_str()).map(|s| s.to_string());
         let form_id = payload.get("form_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let is_in_progress = form_status
+            .as_deref()
+            .map(|s| s.trim().eq_ignore_ascii_case("IN_PROGRESS"))
+            .unwrap_or(false);
 
         // Prepare form_data (owner-mapped answers only) and metadata
         let mut form_data = payload.clone();
@@ -202,19 +206,30 @@ impl FormSubmissionDao {
         let is_insert: bool = row.get("is_insert");
         println!("[DEBUG] DAO: Operation type - is_insert: {}", is_insert);
 
-        // Always update student_form_assignments on webhook
-        // - On INSERT (first submission): Set to 'in_progress'
-        // - On UPDATE (resubmission): Change from 'rejected'/'approved' back to 'in_progress'
-        println!("[DEBUG] DAO: Updating student_form_assignments status to 'in_progress' for assignment_id: {}", student_form_assignment_id);
-
-        let update_query = r#"
+        // Update student_form_assignments on webhook:
+        // - COMPLETED (or missing status): set status to 'in_progress' (pending review),
+        //   including flipping 'rejected'/'approved' back on resubmission
+        // - IN_PROGRESS (partial save): only track the submission, leave status untouched
+        let update_query = if is_in_progress {
+            println!("[DEBUG] DAO: form_status=IN_PROGRESS — tracking submission without changing assignment status for {}", student_form_assignment_id);
+            r#"
+            UPDATE student_form_assignments
+            SET
+                recent_form_submission_id = $1,
+                updated_at = NOW()
+            WHERE id = $2
+        "#
+        } else {
+            println!("[DEBUG] DAO: Updating student_form_assignments status to 'in_progress' for assignment_id: {}", student_form_assignment_id);
+            r#"
             UPDATE student_form_assignments
             SET
                 status = 'in_progress',
                 recent_form_submission_id = $1,
                 updated_at = NOW()
             WHERE id = $2
-        "#;
+        "#
+        };
 
         let submission_id_from_row: Uuid = row.get("id");
         let submission_id_param: &(dyn tokio_postgres::types::ToSql + Sync) = &submission_id_from_row;

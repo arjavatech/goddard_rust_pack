@@ -6,20 +6,22 @@ use crate::error::AppError;
 use crate::models::notification::{
     CreateNotification, NotificationFilter, NotificationListResponse,
 };
-use crate::services::FcmService;
+use crate::services::{FcmService, ConnectionRegistry};
 
 /// Wraps the NotificationDao and provides fire-and-forget helpers used by the rest of the
 /// service layer. See docs/IN_APP_NOTIFICATIONS.md.
 pub struct NotificationService {
     dao: Arc<NotificationDao>,
     fcm: Arc<FcmService>,
+    registry: Arc<ConnectionRegistry>,
 }
 
 impl NotificationService {
-    pub fn new(dao: NotificationDao, fcm: Arc<FcmService>) -> Self {
+    pub fn new(dao: NotificationDao, fcm: Arc<FcmService>, registry: Arc<ConnectionRegistry>) -> Self {
         Self {
             dao: Arc::new(dao),
             fcm,
+            registry,
         }
     }
 
@@ -45,6 +47,11 @@ impl NotificationService {
         self.dao.count_unread(user_id).await
     }
 
+    /// Public method for WebSocket handler to fetch unread count
+    pub async fn count_unread_ws(&self, user_id: Uuid) -> Result<i64, AppError> {
+        self.count_unread(user_id).await
+    }
+
     pub async fn mark_read(
         &self,
         notification_id: Uuid,
@@ -67,13 +74,42 @@ impl NotificationService {
     // Errors at either layer are logged but never propagated — the originating API call
     // still succeeds.
 
+    /// Broadcast a notification to a user via WebSocket if they're connected
+    async fn broadcast_to_websocket(&self, user_id: Uuid, notification: &crate::models::notification::Notification) {
+        let msg = serde_json::json!({
+            "id": notification.id,
+            "notification_type": notification.notification_type,
+            "title": notification.title,
+            "body": notification.body,
+            "is_read": notification.is_read,
+            "created_at": notification.created_at,
+            "related_entity_id": notification.related_entity_id,
+            "related_entity_type": notification.related_entity_type,
+            "action_url": notification.action_url,
+        });
+
+        let server_msg = crate::models::websocket_message::ServerMessage::new_notification(msg);
+        let json_msg = serde_json::to_string(&server_msg).unwrap_or_default();
+
+        let sent = self.registry.send_to_user(user_id, json_msg).await;
+        if sent {
+            println!(
+                "[NotificationService] Broadcast to WebSocket for user: {} (type={})",
+                user_id, notification.notification_type
+            );
+        }
+    }
+
     pub async fn notify_user(&self, user_id: Uuid, payload: CreateNotification) {
         match self.dao.insert_one(user_id, &payload).await {
-            Ok(_) => {
+            Ok(notification) => {
                 println!(
                     "[NotificationService] inserted notification (user={}, type={})",
                     user_id, payload.notification_type
                 );
+
+                // ✅ NEW: Broadcast immediately via WebSocket
+                self.broadcast_to_websocket(user_id, &notification).await;
 
                 let fcm = self.fcm.clone();
                 let title = payload.title.clone();
@@ -122,6 +158,17 @@ impl NotificationService {
 
                 if recipients.is_empty() {
                     return;
+                }
+
+                // ✅ NEW: Broadcast to each admin's WebSocket
+                // Fetch the created notifications to broadcast
+                for recipient_id in &recipients {
+                    // For each recipient, we need to fetch their notification to broadcast
+                    if let Ok((notifications, _, _)) = self.dao.list_for_user(*recipient_id, NotificationFilter::All, 1, 0).await {
+                        if let Some(notif) = notifications.first() {
+                            self.broadcast_to_websocket(*recipient_id, notif).await;
+                        }
+                    }
                 }
 
                 let fcm = self.fcm.clone();

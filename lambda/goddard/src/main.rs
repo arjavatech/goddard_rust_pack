@@ -62,7 +62,7 @@ use controllers::{
         review_student_form_assignment
     },
     portal_controller::{
-        get_user_context, get_parent_children, get_child_profile, get_child_forms,
+        get_parent_children, get_child_profile, get_child_forms,
         get_classroom_details, get_classroom_forms, assign_classroom_form, remove_classroom_form,
         get_parent_profile, get_child_demographics
     },
@@ -78,6 +78,9 @@ use controllers::{
     device_token_controller::{
         register_device_token, unregister_device_token,
     },
+    websocket_controller::{
+        websocket_handler,
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
@@ -85,7 +88,7 @@ use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -175,7 +178,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
     // Initialize services
     let email_service = Arc::new(EmailService::new());
-    let notification_service = Arc::new(NotificationService::new(notification_dao, fcm_service.clone()));
+    
+    // ✅ NEW: Initialize connection registry for WebSocket
+    let connection_registry = Arc::new(ConnectionRegistry::new());
+    
+    let notification_service = Arc::new(NotificationService::new(notification_dao, fcm_service.clone(), connection_registry.clone()));
     let auth_service = Arc::new(AuthService::new(auth_dao.clone(), school_dao.clone(), supabase_client.clone(), notification_service.clone()));
     let school_service = Arc::new(SchoolService::new(school_dao.clone(), supabase_client.clone(), auth_dao.clone()));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao, school_dao.clone(), notification_service.clone()));
@@ -265,6 +272,14 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         // Email APIs (JWT or API Key protected - Admin/SuperAdmin only)
         .route("/emails/bulk-form-reminders", post(send_bulk_form_reminders).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(email_service)
+
+        // WebSocket endpoint for real-time notifications
+        .route(
+            "/notifications/ws",
+            get(websocket_handler)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_middleware))
+        )
+        .with_state((connection_registry.clone(), notification_service.clone()))
 
         // In-app Notifications (JWT protected - current user's own notifications)
         .route("/notifications", get(list_notifications).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))

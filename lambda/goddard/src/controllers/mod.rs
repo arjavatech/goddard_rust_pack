@@ -14,3 +14,4 @@ pub mod admin_controller;
 pub mod email_controller;
 pub mod notification_controller;
 pub mod device_token_controller;
+pub mod websocket_controller;

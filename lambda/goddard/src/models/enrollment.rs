@@ -246,6 +246,7 @@ pub struct ChildWithForms {
     pub child_full_name: String,
     pub child_dob: Option<NaiveDate>,
     pub child_status: String,
+    pub gender: Option<String>,
     pub enrollment_id: Uuid,
     pub classroom_id: Uuid,
     pub classroom_name: String,

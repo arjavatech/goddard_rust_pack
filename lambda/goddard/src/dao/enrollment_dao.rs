@@ -550,6 +550,7 @@ impl EnrollmentDao {
                     CONCAT(c.first_name, ' ', c.last_name) as child_full_name,
                     c.birth_date as child_dob,
                     c.status as child_status,
+                    c.gender as child_gender,
                     e.id as enrollment_id,
                     cl.id as classroom_id,
                     cl.name as classroom_name,
@@ -598,6 +599,7 @@ impl EnrollmentDao {
                 child_full_name,
                 child_dob,
                 child_status,
+                child_gender,
                 enrollment_id,
                 classroom_id,
                 classroom_name,
@@ -636,7 +638,7 @@ impl EnrollmentDao {
                 ) as forms
             FROM parent_children_forms
             GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_is_active, signed_status,
-                     child_id, child_full_name, child_dob, child_status, enrollment_id,
+                     child_id, child_full_name, child_dob, child_status, child_gender, enrollment_id,
                      classroom_id, classroom_name,
                      primary_parent_id, primary_parent_first_name, primary_parent_last_name, primary_parent_email,
                      secondary_parent_id, secondary_parent_first_name, secondary_parent_last_name, secondary_parent_email
@@ -666,6 +668,7 @@ impl EnrollmentDao {
                 child_full_name: row.get("child_full_name"),
                 child_dob: row.get("child_dob"),
                 child_status: row.get("child_status"),
+                gender: row.get("child_gender"),
                 enrollment_id: row.get("enrollment_id"),
                 classroom_id: row.get("classroom_id"),
                 classroom_name: row.get("classroom_name"),
@@ -938,6 +941,7 @@ impl EnrollmentDao {
                 c.last_name as child_last_name,
                 c.birth_date as child_dob,
                 c.status as child_status,
+                c.gender as child_gender,
                 c.parent_id as child_parent_id,
                 c.secondary_parent_id as child_secondary_parent_id,
                 e.id as enrollment_id,
@@ -988,6 +992,7 @@ impl EnrollmentDao {
             child_last_name: row.get("child_last_name"),
             child_dob: row.get("child_dob"),
             child_status: row.get("child_status"),
+            child_gender: row.get("child_gender"),
             child_parent_id: row.get("child_parent_id"),
             child_secondary_parent_id: row.get("child_secondary_parent_id"),
             enrollment_id: row.get("enrollment_id"),

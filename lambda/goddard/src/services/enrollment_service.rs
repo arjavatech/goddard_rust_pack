@@ -772,6 +772,7 @@ impl EnrollmentService {
                         child_full_name: format!("{} {}", child_first_name, child_last_name),
                         child_dob: row.child_dob,
                         child_status: row.child_status.clone(),
+                        gender: row.child_gender.clone(),
                         enrollment_id: row.enrollment_id.unwrap_or_default(),
                         classroom_id: row.classroom_id.unwrap_or_default(),
                         classroom_name: row.classroom_name.clone().unwrap_or_default(),

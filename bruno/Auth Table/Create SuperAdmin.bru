@@ -1,0 +1,65 @@
+meta {
+  name: Create SuperAdmin
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/auth/create-superadmin
+  body: json
+  auth: inherit
+}
+
+headers {
+  Authorization: Bearer {{admin_token}}
+}
+
+body:json {
+  {
+    "email": "superadmin@goddardschool.com",
+    "school_id": "{{school_id}}",
+    "first_name": "Super",
+    "last_name": "Admin",
+    "phone_number": "+1-555-0100"
+  }
+}
+
+settings {
+  encodeUrl: true
+}
+
+docs {
+  # Create SuperAdmin User
+
+  Creates a new SuperAdmin user for a specific school with pre-verified status.
+
+  **Authentication**: JWT Bearer Token (SuperAdmin role required)
+
+  **Request Body**:
+  - `email` (string, required) - SuperAdmin email address
+  - `school_id` (UUID, required) - School ID for the SuperAdmin
+  - `first_name` (string, required) - First name
+  - `last_name` (string, required) - Last name
+  - `phone_number` (string, optional) - Contact phone number
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "success": true,
+      "message": "SuperAdmin user created successfully. Please check email for confirmation link.",
+      "email": "superadmin@goddardschool.com",
+      "user_id": "uuid",
+      "timestamp": "2025-01-15T10:00:00Z"
+    }
+  }
+  ```
+
+  **Notes**:
+  - User is created in both auth.users and public.users
+  - is_verified is set to TRUE automatically
+  - is_active is set to TRUE automatically
+  - Confirmation email is sent to set password
+  - Only existing SuperAdmins can create new SuperAdmins
+}

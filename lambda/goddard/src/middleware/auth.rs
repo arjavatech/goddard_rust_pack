@@ -549,6 +549,61 @@ pub async fn jwt_or_api_key_admin_only(
     api_key_fallback(headers, request, next).await
 }
 
+/// SuperAdmin-only middleware - allows ONLY SuperAdmin role
+/// For endpoints that should be restricted to SuperAdmin only
+pub async fn jwt_or_api_key_superadmin_only(
+    headers: HeaderMap,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // First, try JWT authentication
+    let auth_header = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+
+    if let Some(auth_header) = auth_header {
+        if auth_header.starts_with("Bearer ") {
+            // Try JWT authentication using Supabase API
+            let token = &auth_header[7..];
+
+            match verify_jwt_with_supabase(token).await {
+                Ok(auth_context) => {
+                    // Check if user has SuperAdmin role ONLY
+                    match auth_context.role {
+                        UserRole::SuperAdmin => {
+                            println!("[DEBUG] Supabase API JWT SuperAdmin Auth Success - User: {}, Role: {:?}",
+                                auth_context.email, auth_context.role);
+                            request.extensions_mut().insert(auth_context);
+                            return Ok(next.run(request).await);
+                        }
+                        _ => {
+                            println!("[DEBUG] JWT Auth failed: User does not have SuperAdmin role");
+                            // User is authenticated but not authorized (not SuperAdmin) - return 403 Forbidden
+                            let error_response = ErrorResponse {
+                                success: false,
+                                message: "Access forbidden. SuperAdmin role required.".to_string(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                            };
+                            return Err((
+                                StatusCode::FORBIDDEN,
+                                Json(error_response),
+                            ).into_response());
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("[DEBUG] Supabase API JWT validation failed in SuperAdmin check: {:?}", e);
+                    // JWT validation failed, will try API key fallback
+                }
+            }
+        }
+    }
+
+    // JWT not present, invalid, or not SuperAdmin - try API key authentication
+    println!("[DEBUG] JWT SuperAdmin authentication failed or not present, trying API key fallback");
+    api_key_fallback(headers, request, next).await
+}
+
 /// Helper function to handle API key authentication fallback
 async fn api_key_fallback(
     headers: HeaderMap,

@@ -80,14 +80,12 @@ pub async fn add_cors_headers(
     let headers = response.headers_mut();
 
     // Set allowed origin based on the request origin
-    // For development, be more permissive
+    // Echo back the request origin to satisfy CORS when credentials are enabled
+    // (browsers reject Access-Control-Allow-Origin: * with credentials: true)
     let allowed_origin = if origin.is_empty() {
         HeaderValue::from_static("*")
-    } else if is_allowed_origin(&origin) {
-        HeaderValue::from_str(&origin).unwrap_or(HeaderValue::from_static("*"))
     } else {
-        // For Lambda/production, still allow all origins for now (can be restricted later)
-        HeaderValue::from_static("*")
+        HeaderValue::from_str(&origin).unwrap_or(HeaderValue::from_static("*"))
     };
 
     headers.insert(
@@ -115,14 +113,26 @@ pub async fn add_cors_headers(
         HeaderValue::from_static("86400"),
     );
 
+    headers.insert(
+        "access-control-expose-headers",
+        HeaderValue::from_static("Content-Disposition"),
+    );
+
+    // Vary by Origin so caches don't serve a response for one origin to another
+    headers.insert(
+        "vary",
+        HeaderValue::from_static("Origin"),
+    );
+
     response
 }
 
 pub async fn handle_cors_preflight(origin: &str) -> Response {
-    let allowed_origin = if is_allowed_origin(origin) {
-        origin
-    } else {
+    // Echo back the request origin to satisfy CORS when credentials are enabled
+    let allowed_origin = if origin.is_empty() {
         "*"
+    } else {
+        origin
     };
 
     Response::builder()
@@ -132,6 +142,8 @@ pub async fn handle_cors_preflight(origin: &str) -> Response {
         .header("access-control-allow-headers", "Content-Type, Authorization, x-request-id, x-school-id, x-api-key")
         .header("access-control-allow-credentials", "true")
         .header("access-control-max-age", "86400")
+        .header("access-control-expose-headers", "Content-Disposition")
+        .header("vary", "Origin")
         .body(axum::body::Body::empty())
         .unwrap()
 }

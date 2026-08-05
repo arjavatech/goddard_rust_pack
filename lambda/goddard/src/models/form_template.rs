@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, NaiveDate};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FormTemplate {
@@ -9,6 +9,7 @@ pub struct FormTemplate {
     pub form_name: String,
     pub form_type: Option<String>,
     pub fillout_form_id: Option<String>, // Stores the Fillout form ID/URL
+    pub due_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
@@ -22,6 +23,8 @@ pub struct CreateFormTemplateRequest {
     pub school_id: Uuid,
     pub form_name: String,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<NaiveDate>,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +34,7 @@ pub struct UpdateFormTemplateRequest {
     pub form_name: String,
     pub form_type: Option<String>,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
@@ -49,6 +53,7 @@ pub struct FormTemplateResponse {
     pub form_name: String,
     pub form_type: Option<String>,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
@@ -63,6 +68,7 @@ pub struct FormTemplateListResponse {
     pub form_name: String,
     pub form_type: Option<String>,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub display_order: Option<i32>,
@@ -84,6 +90,7 @@ impl From<FormTemplate> for FormTemplateResponse {
             form_name: form_template.form_name,
             form_type: form_template.form_type,
             fillout_form_id: form_template.fillout_form_id,
+            due_date: form_template.due_date,
             status: form_template.status,
             is_required: form_template.is_required,
             display_order: form_template.display_order,
@@ -101,6 +108,7 @@ impl From<FormTemplate> for FormTemplateListResponse {
             form_name: form_template.form_name,
             form_type: form_template.form_type,
             fillout_form_id: form_template.fillout_form_id,
+            due_date: form_template.due_date,
             status: form_template.status,
             is_required: form_template.is_required,
             display_order: form_template.display_order,

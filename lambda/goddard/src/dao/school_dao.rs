@@ -7,6 +7,7 @@ use crate::{
 };
 use std::time::Duration;
 
+#[derive(Clone)]
 pub struct SchoolDao {
     pool: Pool,
 }
@@ -284,6 +285,26 @@ impl SchoolDao {
 
             println!("[SchoolDao] Subdomain check completed: subdomain={}, count={}, exists={}", subdomain, count, count > 0);
             Ok(count > 0)
+        }).await
+    }
+
+    /// Get school name by ID for email personalization
+    pub async fn get_school_name(&self, school_id: &Uuid) -> ApiResult<String> {
+        tracing::info!("🔍 [SchoolDao] Fetching school name for school_id: {}", school_id);
+
+        self.execute_with_connection(|client| async move {
+            let query = "SELECT name FROM schools WHERE id = $1";
+            let row = client
+                .query_one(query, &[school_id])
+                .await
+                .map_err(|e| {
+                    tracing::error!("❌ [SchoolDao] Failed to fetch school name for {}: {}", school_id, e);
+                    AppError::Database(format!("Failed to fetch school name: {}", e))
+                })?;
+
+            let name: String = row.get("name");
+            tracing::info!("✅ [SchoolDao] Successfully fetched school name: '{}' for school_id: {}", name, school_id);
+            Ok(name)
         }).await
     }
 }

@@ -10,6 +10,9 @@ pub mod student_form_assignment_review;
 pub mod parent_details;
 pub mod fillout;
 pub mod admin;
+pub mod email;
+pub mod notification;
+pub mod websocket_message;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

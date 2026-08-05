@@ -1,3 +1,4 @@
+pub mod email_templates;
 pub mod auth_service;
 pub mod supabase_client;
 pub mod school_service;
@@ -10,6 +11,10 @@ pub mod student_form_assignment_service;
 pub mod portal_service;
 pub mod fillout_service;
 pub mod admin_service;
+pub mod email_service;
+pub mod notification_service;
+pub mod fcm_service;
+pub mod connection_registry;
 
 pub use auth_service::AuthService;
 pub use supabase_client::SupabaseClient;
@@ -23,3 +28,7 @@ pub use student_form_assignment_service::StudentFormAssignmentService;
 pub use portal_service::PortalService;
 pub use fillout_service::FilloutService;
 pub use admin_service::AdminService;
+pub use email_service::EmailService;
+pub use notification_service::NotificationService;
+pub use fcm_service::FcmService;
+pub use connection_registry::ConnectionRegistry;

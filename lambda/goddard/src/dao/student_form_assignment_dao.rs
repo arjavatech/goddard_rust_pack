@@ -1,15 +1,22 @@
 use crate::models::student_form_assignment::{
     StudentFormAssignment, StudentFormAssignmentStatus, CreateStudentFormAssignmentRequest,
-    UpdateStudentFormAssignmentRequest
+    UpdateStudentFormAssignmentRequest, FormAssignment
 };
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
 };
+use crate::dao::enrollment_dao::{AssignmentNotificationContext, ReviewNotificationContext};
 use crate::error::AppError;
 use uuid::Uuid;
 use chrono::{Utc, NaiveDateTime, DateTime};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
+
+pub struct CompletedFormForZip {
+    pub assignment_id: Uuid,
+    pub form_name: String,
+    pub recent_pdf_link: String,
+}
 
 pub struct StudentFormAssignmentDao {
     pool: Pool,
@@ -249,6 +256,7 @@ impl StudentFormAssignmentDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // Convert status enum to string for database
         let status_str = match request.status {
             StudentFormAssignmentStatus::Approved => "approved",
             StudentFormAssignmentStatus::Rejected => "rejected",
@@ -257,7 +265,7 @@ impl StudentFormAssignmentDao {
 
         let now = Utc::now().naive_utc();
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Executing review update query");
+        println!("[DEBUG] StudentFormAssignmentDAO: Executing review update query with status: {}", status_str);
         let row = client.query_one(
             r#"
             UPDATE student_form_assignments
@@ -289,14 +297,18 @@ impl StudentFormAssignmentDao {
 
         println!("[DEBUG] StudentFormAssignmentDAO: Review update completed successfully");
 
-        // Convert row to response
+        // Get the status from the returned row to confirm the update
         let status_str: String = row.try_get("status")
             .map_err(|e| AppError::Database(format!("Failed to extract status: {}", e)))?;
 
+        // Convert back to enum for response
         let status = match status_str.as_str() {
             "approved" => StudentFormAssignmentStatus::Approved,
             "rejected" => StudentFormAssignmentStatus::Rejected,
-            _ => return Err(AppError::Database(format!("Invalid status after update: {}", status_str))),
+            "incomplete" => StudentFormAssignmentStatus::Incomplete,
+            "in_progress" => StudentFormAssignmentStatus::InProgress,
+            "completed" => StudentFormAssignmentStatus::Completed,
+            _ => return Err(AppError::Database(format!("Unknown status value: {}", status_str))),
         };
 
         Ok(ReviewStudentFormAssignmentResponse {
@@ -413,5 +425,630 @@ impl StudentFormAssignmentDao {
 
         println!("[DEBUG] StudentFormAssignmentDAO: Row conversion completed successfully");
         Ok(assignment)
+    }
+
+    pub async fn get_completed_assignments_for_zip(
+        &self,
+        enrollment_id: Uuid,
+    ) -> Result<Vec<CompletedFormForZip>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let rows = client.query(
+            r#"
+            SELECT sfa.id, ft.form_name, sfa.recent_pdf_link
+            FROM student_form_assignments sfa
+            JOIN form_templates ft ON sfa.form_template_id = ft.id
+            WHERE sfa.enrollment_id = $1
+              AND sfa.status IN ('completed', 'approved')
+              AND sfa.recent_pdf_link IS NOT NULL
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+            ORDER BY ft.form_name
+            "#,
+            &[&enrollment_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let forms = rows.into_iter().map(|row| {
+            CompletedFormForZip {
+                assignment_id: row.get("id"),
+                form_name: row.get("form_name"),
+                recent_pdf_link: row.get("recent_pdf_link"),
+            }
+        }).collect();
+
+        Ok(forms)
+    }
+
+    pub async fn get_enrollment_parent_id(
+        &self,
+        enrollment_id: Uuid,
+    ) -> Result<(Uuid, String, String), AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let row = client.query_opt(
+            r#"
+            SELECT c.parent_id, c.first_name, c.last_name
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.id = $1
+            "#,
+            &[&enrollment_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        match row {
+            Some(row) => {
+                let parent_id: Uuid = row.get("parent_id");
+                let first_name: String = row.get("first_name");
+                let last_name: String = row.get("last_name");
+                Ok((parent_id, first_name, last_name))
+            }
+            None => Err(AppError::NotFound("Enrollment".to_string())),
+        }
+    }
+
+    // Validate that all form templates are active
+    pub async fn validate_form_templates_active(
+        &self,
+        form_template_ids: &[Uuid],
+    ) -> Result<(), AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Validating {} form templates are active", form_template_ids.len());
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        // Query to check if all form templates exist and are active
+        let query = r#"
+            SELECT id FROM form_templates
+            WHERE id = ANY($1) AND (is_active = true OR is_active IS NULL)
+        "#;
+
+        let rows = client.query(query, &[&form_template_ids])
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let active_ids: Vec<Uuid> = rows.iter()
+            .map(|row| row.get::<_, Uuid>(0))
+            .collect();
+
+        // Check if all requested IDs are active
+        for &template_id in form_template_ids {
+            if !active_ids.contains(&template_id) {
+                println!("[ERROR] StudentFormAssignmentDAO: Form template {} is not active or does not exist", template_id);
+                return Err(AppError::Validation(
+                    format!("Form template {} is not active or does not exist", template_id)
+                ));
+            }
+        }
+
+        println!("[DEBUG] StudentFormAssignmentDAO: All form templates validated successfully");
+        Ok(())
+    }
+
+    // Check for duplicate assignments (child_id + form_template_id combination)
+    pub async fn check_duplicate_assignments(
+        &self,
+        school_id: Uuid,
+        assignments: &[FormAssignment],
+    ) -> Result<(), AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Checking for duplicate assignments");
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        // For each assignment, check if active assignment already exists
+        for assignment in assignments {
+            let query = r#"
+                SELECT id FROM student_form_assignments
+                WHERE school_id = $1
+                  AND child_id = $2
+                  AND form_template_id = $3
+                  AND (is_active = true OR is_active IS NULL)
+            "#;
+
+            let rows = client.query(
+                query,
+                &[&school_id, &assignment.child_id, &assignment.form_template_id]
+            )
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+            if !rows.is_empty() {
+                println!("[ERROR] StudentFormAssignmentDAO: Duplicate assignment found for child {} and form {}",
+                         assignment.child_id, assignment.form_template_id);
+                return Err(AppError::Conflict(
+                    format!(
+                        "Student {} already has form {} assigned",
+                        assignment.child_id, assignment.form_template_id
+                    )
+                ));
+            }
+        }
+
+        println!("[DEBUG] StudentFormAssignmentDAO: No duplicate assignments found");
+        Ok(())
+    }
+
+    // Bulk create assignments in a transaction
+    pub async fn bulk_create_assignments(
+        &self,
+        school_id: Uuid,
+        assignments: Vec<FormAssignment>,
+    ) -> Result<Vec<StudentFormAssignment>, AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Starting bulk creation of {} assignments", assignments.len());
+
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        // Start transaction
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        let mut created_assignments = Vec::new();
+        let now = Utc::now().naive_utc();
+
+        for assignment in assignments {
+            let id = Uuid::new_v4();
+            let is_required = assignment.is_required.unwrap_or(false);
+            let status_str = "incomplete"; // Default status
+            let assignment_source = "manual"; // Manual assignment source
+
+            println!("[DEBUG] StudentFormAssignmentDAO: Inserting assignment for child {}, form {}",
+                     assignment.child_id, assignment.form_template_id);
+
+            let row = transaction.query_one(
+                r#"
+                INSERT INTO student_form_assignments (
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING *
+                "#,
+                &[
+                    &id,
+                    &school_id,
+                    &assignment.enrollment_id,
+                    &assignment.child_id,
+                    &assignment.form_template_id,
+                    &assignment_source,
+                    &status_str,
+                    &is_required,
+                    &now,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to insert assignment: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+            let created = self.row_to_student_form_assignment(row)?;
+            created_assignments.push(created);
+        }
+
+        // Commit transaction
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} assignments", created_assignments.len());
+        Ok(created_assignments)
+    }
+
+    /// Assign a form template to all active students in a school
+    /// Skips students who already have the form assigned
+    pub async fn assign_form_to_school_students(
+        &self,
+        school_id: Uuid,
+        form_template_id: Uuid,
+        is_required: bool,
+    ) -> Result<(Vec<StudentFormAssignment>, i64, i64), AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Assigning form {} to all active students in school {}", form_template_id, school_id);
+
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        // Start transaction
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // First, get count of total active students
+        let total_count_query = r#"
+            SELECT COUNT(DISTINCT e.id) as total
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.school_id = $1
+              AND (e.is_active = true OR e.is_active IS NULL)
+              AND (c.status = 'active' OR c.status IS NULL)
+        "#;
+
+        let total_row = transaction.query_one(total_count_query, &[&school_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to count total students: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        let total_active_students: i64 = total_row.get("total");
+        println!("[DEBUG] StudentFormAssignmentDAO: Total active students in school: {}", total_active_students);
+
+        // Get count of students already assigned
+        let already_assigned_query = r#"
+            SELECT COUNT(DISTINCT sfa.child_id) as already_assigned
+            FROM student_form_assignments sfa
+            WHERE sfa.school_id = $1
+              AND sfa.form_template_id = $2
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+        "#;
+
+        let already_assigned_row = transaction.query_one(already_assigned_query, &[&school_id, &form_template_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to count already assigned: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        let students_already_assigned: i64 = already_assigned_row.get("already_assigned");
+        println!("[DEBUG] StudentFormAssignmentDAO: Students already assigned: {}", students_already_assigned);
+
+        // Get all active enrollments that don't have this form assigned yet
+        let query = r#"
+            SELECT DISTINCT
+                e.id as enrollment_id,
+                e.child_id,
+                e.school_id
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.school_id = $1
+              AND (e.is_active = true OR e.is_active IS NULL)
+              AND (c.status = 'active' OR c.status IS NULL)
+              AND NOT EXISTS (
+                SELECT 1 FROM student_form_assignments sfa
+                WHERE sfa.school_id = $1
+                  AND sfa.child_id = e.child_id
+                  AND sfa.form_template_id = $2
+                  AND (sfa.is_active = true OR sfa.is_active IS NULL)
+              )
+        "#;
+
+        let rows = transaction.query(query, &[&school_id, &form_template_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to fetch active enrollments: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Found {} students to assign", rows.len());
+
+        // Create assignments for each student
+        let mut created_assignments = Vec::new();
+        let assignment_source = "school_default";
+        let status_str = "incomplete";
+        let now = Utc::now().naive_utc();
+
+        for row in rows {
+            let enrollment_id: Uuid = row.get("enrollment_id");
+            let child_id: Uuid = row.get("child_id");
+            let row_school_id: Uuid = row.get("school_id");
+
+            let id = Uuid::new_v4();
+
+            let insert_query = r#"
+                INSERT INTO student_form_assignments (
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at,
+                    updated_at
+            "#;
+
+            let created_row = transaction.query_one(
+                insert_query,
+                &[
+                    &id,
+                    &row_school_id,
+                    &enrollment_id,
+                    &child_id,
+                    &form_template_id,
+                    &assignment_source,
+                    &status_str,
+                    &is_required,
+                    &now,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to insert assignment for child {}: {}", child_id, e);
+                AppError::Database(e.to_string())
+            })?;
+
+            let created = self.row_to_student_form_assignment(created_row)?;
+            created_assignments.push(created);
+        }
+
+        // Commit transaction
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} new assignments", created_assignments.len());
+
+        Ok((created_assignments, total_active_students, students_already_assigned))
+    }
+
+    /// Assign a form template to all active students in a specific class
+    /// Skips students who already have the form assigned
+    pub async fn assign_form_to_class_students(
+        &self,
+        school_id: Uuid,
+        class_id: Uuid,
+        form_template_id: Uuid,
+        is_required: bool,
+    ) -> Result<(Vec<StudentFormAssignment>, i64, i64), AppError> {
+        println!("[DEBUG] StudentFormAssignmentDAO: Assigning form {} to all active students in class {} of school {}", form_template_id, class_id, school_id);
+
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        // Total active students in class
+        let total_count_query = r#"
+            SELECT COUNT(DISTINCT e.id) as total
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.school_id = $1 AND e.classroom_id = $2
+              AND (e.is_active = true OR e.is_active IS NULL)
+              AND (c.status = 'active' OR c.status IS NULL)
+        "#;
+
+        let total_row = transaction.query_one(total_count_query, &[&school_id, &class_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to count total students in class: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        let total_active_students: i64 = total_row.get("total");
+        println!("[DEBUG] StudentFormAssignmentDAO: Total active students in class: {}", total_active_students);
+
+        // Already assigned in class
+        let already_assigned_query = r#"
+            SELECT COUNT(DISTINCT sfa.child_id) as already_assigned
+            FROM student_form_assignments sfa
+            JOIN enrollments e ON sfa.enrollment_id = e.id
+            WHERE sfa.school_id = $1 AND e.classroom_id = $2
+              AND sfa.form_template_id = $3
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+        "#;
+
+        let already_assigned_row = transaction.query_one(already_assigned_query, &[&school_id, &class_id, &form_template_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to count already assigned in class: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        let students_already_assigned: i64 = already_assigned_row.get("already_assigned");
+        println!("[DEBUG] StudentFormAssignmentDAO: Students already assigned in class: {}", students_already_assigned);
+
+        // Eligible students (not yet assigned) in this class
+        let query = r#"
+            SELECT DISTINCT
+                e.id as enrollment_id,
+                e.child_id,
+                e.school_id
+            FROM enrollments e
+            JOIN children c ON e.child_id = c.id
+            WHERE e.school_id = $1 AND e.classroom_id = $2
+              AND (e.is_active = true OR e.is_active IS NULL)
+              AND (c.status = 'active' OR c.status IS NULL)
+              AND NOT EXISTS (
+                SELECT 1 FROM student_form_assignments sfa
+                WHERE sfa.school_id = $1
+                  AND sfa.child_id = e.child_id
+                  AND sfa.form_template_id = $3
+                  AND (sfa.is_active = true OR sfa.is_active IS NULL)
+              )
+        "#;
+
+        let rows = transaction.query(query, &[&school_id, &class_id, &form_template_id])
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to fetch eligible enrollments in class: {}", e);
+                AppError::Database(e.to_string())
+            })?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Found {} students to assign in class", rows.len());
+
+        let mut created_assignments = Vec::new();
+        let assignment_source = "class_override";
+        let status_str = "incomplete";
+        let now = Utc::now().naive_utc();
+
+        for row in rows {
+            let enrollment_id: Uuid = row.get("enrollment_id");
+            let child_id: Uuid = row.get("child_id");
+            let row_school_id: Uuid = row.get("school_id");
+
+            let id = Uuid::new_v4();
+
+            let insert_query = r#"
+                INSERT INTO student_form_assignments (
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING
+                    id, school_id, enrollment_id, child_id, form_template_id,
+                    assignment_source, status, is_required, assigned_at,
+                    updated_at
+            "#;
+
+            let created_row = transaction.query_one(
+                insert_query,
+                &[
+                    &id,
+                    &row_school_id,
+                    &enrollment_id,
+                    &child_id,
+                    &form_template_id,
+                    &assignment_source,
+                    &status_str,
+                    &is_required,
+                    &now,
+                ],
+            )
+            .await
+            .map_err(|e| {
+                println!("[ERROR] StudentFormAssignmentDAO: Failed to insert class assignment for child {}: {}", child_id, e);
+                AppError::Database(e.to_string())
+            })?;
+
+            let created = self.row_to_student_form_assignment(created_row)?;
+            created_assignments.push(created);
+        }
+
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
+
+        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} new class assignments", created_assignments.len());
+
+        Ok((created_assignments, total_active_students, students_already_assigned))
+    }
+
+    /// Returns the data needed to render a "Form Assigned" notification email
+    /// for a given freshly created assignment. See docs/EMAIL_NOTIFICATIONS.md.
+    pub async fn get_assignment_notification_context(
+        &self,
+        assignment_id: Uuid,
+    ) -> Result<AssignmentNotificationContext, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one(
+                r#"
+                SELECT
+                    sfa.school_id AS school_id,
+                    p.id AS parent_id,
+                    p.first_name AS parent_first_name,
+                    p.last_name AS parent_last_name,
+                    p.email AS parent_email,
+                    sp.id AS secondary_parent_id,
+                    sp.email AS secondary_parent_email,
+                    c.first_name AS child_first_name,
+                    c.last_name AS child_last_name,
+                    ft.form_name AS form_name,
+                    ft.due_date AS due_date,
+                    sfa.is_required AS is_required,
+                    s.name AS school_name,
+                    cl.name AS classroom_name
+                FROM student_form_assignments sfa
+                INNER JOIN children c ON c.id = sfa.child_id
+                INNER JOIN users p ON p.id = c.parent_id
+                LEFT JOIN users sp ON sp.id = c.secondary_parent_id
+                INNER JOIN form_templates ft ON ft.id = sfa.form_template_id
+                INNER JOIN schools s ON s.id = sfa.school_id
+                LEFT JOIN enrollments e ON e.id = sfa.enrollment_id
+                LEFT JOIN classrooms cl ON cl.id = e.classroom_id
+                WHERE sfa.id = $1
+                "#,
+                &[&assignment_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch assignment context: {}", e)))?;
+
+        let child_first: String = row.get("child_first_name");
+        let child_last: String = row.get("child_last_name");
+
+        Ok(AssignmentNotificationContext {
+            parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            school_id: row.get("school_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
+            parent_email: row.get("parent_email"),
+            secondary_parent_email: row.get("secondary_parent_email"),
+            child_full_name: format!("{} {}", child_first, child_last),
+            form_name: row.get("form_name"),
+            school_name: row.get("school_name"),
+            classroom_name: row.get("classroom_name"),
+            is_required: row.get("is_required"),
+            due_date: row.get("due_date"),
+        })
+    }
+
+    /// Returns the data needed to render a Form Approved / Form Rejected
+    /// notification email for a given assignment + reviewer. See
+    /// docs/EMAIL_NOTIFICATIONS.md.
+    pub async fn get_review_notification_context(
+        &self,
+        assignment_id: Uuid,
+        reviewer_id: Uuid,
+    ) -> Result<ReviewNotificationContext, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        let row = client
+            .query_one(
+                r#"
+                SELECT
+                    sfa.school_id AS school_id,
+                    sfa.child_id AS child_id,
+                    p.id AS parent_id,
+                    p.first_name AS parent_first_name,
+                    p.last_name AS parent_last_name,
+                    p.email AS parent_email,
+                    sp.id AS secondary_parent_id,
+                    sp.email AS secondary_parent_email,
+                    c.first_name AS child_first_name,
+                    c.last_name AS child_last_name,
+                    ft.form_name AS form_name,
+                    reviewer.first_name AS reviewer_first_name,
+                    reviewer.last_name AS reviewer_last_name
+                FROM student_form_assignments sfa
+                INNER JOIN children c ON c.id = sfa.child_id
+                INNER JOIN users p ON p.id = c.parent_id
+                LEFT JOIN users sp ON sp.id = c.secondary_parent_id
+                INNER JOIN form_templates ft ON ft.id = sfa.form_template_id
+                LEFT JOIN users reviewer ON reviewer.id = $2
+                WHERE sfa.id = $1
+                "#,
+                &[&assignment_id, &reviewer_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to fetch review context: {}", e)))?;
+
+        let child_first: String = row.get("child_first_name");
+        let child_last: String = row.get("child_last_name");
+
+        Ok(ReviewNotificationContext {
+            parent_id: row.get("parent_id"),
+            secondary_parent_id: row.get("secondary_parent_id"),
+            school_id: row.get("school_id"),
+            child_id: row.get("child_id"),
+            parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"),
+            parent_email: row.get("parent_email"),
+            secondary_parent_email: row.get("secondary_parent_email"),
+            child_full_name: format!("{} {}", child_first, child_last),
+            form_name: row.get("form_name"),
+            reviewer_first_name: row
+                .try_get::<_, Option<String>>("reviewer_first_name")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "Goddard School".to_string()),
+            reviewer_last_name: row
+                .try_get::<_, Option<String>>("reviewer_last_name")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "Admin".to_string()),
+        })
     }
 }

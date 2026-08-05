@@ -1,0 +1,179 @@
+meta {
+  name: Bulk Promote Students
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/class-promotions/bulk
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "school_id": "{{school_id}}",
+    "promotions": [
+      {
+        "enrollment_id": "{{enrollment_id_1}}",
+        "to_classroom_id": "{{target_classroom_id_1}}",
+        "reason": "Age progression to Pre-K",
+        "effective_date": "2025-01-15T10:00:00Z"
+      },
+      {
+        "enrollment_id": "{{enrollment_id_2}}",
+        "to_classroom_id": "{{target_classroom_id_2}}",
+        "reason": "Moving to Kindergarten class"
+      },
+      {
+        "enrollment_id": "{{enrollment_id_3}}",
+        "to_classroom_id": "{{target_classroom_id_3}}"
+      }
+    ]
+  }
+}
+
+vars:pre-request {
+  enrollment_id_1:
+  target_classroom_id_1:
+  enrollment_id_2:
+  target_classroom_id_2:
+  enrollment_id_3:
+  target_classroom_id_3:
+}
+
+assert {
+  res.status: in [200, 207]
+  res.body.success: eq true
+  res.body.data.summary: isDefined
+  res.body.data.summary.total_requested: gte 1
+  res.body.data.successful: isArray
+  res.body.data.failed: isArray
+}
+
+script:post-response {
+  if (res.status === 200 || res.status === 207) {
+    const summary = res.body.data.summary;
+    console.log("=== Bulk Promotion Summary ===");
+    console.log(`Total Requested: ${summary.total_requested}`);
+    console.log(`Successful: ${summary.successful_count}`);
+    console.log(`Failed: ${summary.failed_count}`);
+
+    if (res.body.data.successful.length > 0) {
+      console.log("\n✅ Successful Promotions:");
+      res.body.data.successful.forEach((promo, idx) => {
+        console.log(`  ${idx + 1}. ${promo.child_name}: ${promo.from_classroom.name} → ${promo.to_classroom.name}`);
+      });
+    }
+
+    if (res.body.data.failed.length > 0) {
+      console.log("\n❌ Failed Promotions:");
+      res.body.data.failed.forEach((fail, idx) => {
+        console.log(`  ${idx + 1}. Enrollment ${fail.enrollment_id}: ${fail.error}`);
+      });
+    }
+
+    // Store transition IDs from successful promotions for later use
+    if (res.body.data.successful.length > 0) {
+      bru.setVar("last_transition_id", res.body.data.successful[0].transition.id);
+    }
+  }
+}
+
+docs {
+  # Bulk Promote Students to New Classes
+
+  Promotes multiple students to new classrooms in a single API call. Supports partial success - some promotions can succeed while others fail.
+
+  **Authentication**: JWT Bearer Token or API Key (Admin/SuperAdmin role required)
+
+  **Request Body**:
+  - `school_id` (UUID, required) - School ID for all promotions (must match auth school)
+  - `promotions` (array, required) - Array of 1-100 promotion requests
+    - `enrollment_id` (UUID, required) - ID of the enrollment to promote
+    - `to_classroom_id` (UUID, required) - Target classroom ID
+    - `reason` (string, optional) - Reason for the promotion
+    - `effective_date` (ISO 8601, optional) - When the transition takes effect (defaults to now)
+
+  **Response 200 OK** (All Successful):
+  ```json
+  {
+    "success": true,
+    "data": {
+      "successful": [
+        {
+          "enrollment_id": "uuid",
+          "child_id": "uuid",
+          "child_name": "John Doe",
+          "from_classroom": {
+            "id": "uuid",
+            "name": "Toddlers Room A"
+          },
+          "to_classroom": {
+            "id": "uuid",
+            "name": "Pre-K Room B"
+          },
+          "transition": {
+            "id": "uuid",
+            "transitioned_at": "2025-01-15T10:00:00Z",
+            "changed_by": "admin-uuid",
+            "reason": "Age progression to Pre-K"
+          },
+          "message": "Student successfully promoted from Toddlers Room A to Pre-K Room B"
+        }
+      ],
+      "failed": [],
+      "summary": {
+        "total_requested": 3,
+        "successful_count": 3,
+        "failed_count": 0
+      }
+    }
+  }
+  ```
+
+  **Response 207 Multi-Status** (Partial Success):
+  ```json
+  {
+    "success": true,
+    "data": {
+      "successful": [ /* ... successful promotions ... */ ],
+      "failed": [
+        {
+          "enrollment_id": "uuid",
+          "child_name": "Jane Smith",
+          "to_classroom_id": "uuid",
+          "error": "Student is already in the target classroom"
+        }
+      ],
+      "summary": {
+        "total_requested": 3,
+        "successful_count": 2,
+        "failed_count": 1
+      }
+    }
+  }
+  ```
+
+  **Validation Errors (400 Bad Request)**:
+  - Empty promotions array
+  - School ID mismatch with auth school
+  - More than 100 promotions in one request
+  - Invalid classroom ID (doesn't belong to school)
+
+  **Common Failure Reasons** (in failed array):
+  - "Student is already in the target classroom"
+  - "Cannot promote inactive enrollment"
+  - "Enrollment does not belong to the specified school"
+
+  **Notes**:
+  - Each promotion is processed independently
+  - Successful promotions create class_transitions records
+  - Failed promotions don't rollback successful ones
+  - Pre-validates all classrooms before processing
+  - Maximum 100 promotions per request
+}

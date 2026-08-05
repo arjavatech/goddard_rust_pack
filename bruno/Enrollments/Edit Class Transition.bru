@@ -1,0 +1,94 @@
+meta {
+  name: Edit Class Transition
+  type: http
+  seq: 21
+}
+
+patch {
+  url: {{base_url}}/class-transitions/{{enrollment_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "to_classroom_id": "{{corrected_classroom_id}}",
+    "reason": "Corrected classroom assignment",
+    "transitioned_at": "2025-01-10T09:00:00Z",
+    "sync_enrollment": true
+  }
+}
+
+vars:pre-request {
+  enrollment_id:
+  corrected_classroom_id:
+}
+
+assert {
+  res.status: eq 200
+  res.body.success: eq true
+}
+
+script:post-response {
+  if (res.status === 200) {
+    console.log("Transition updated:", res.body.data.message);
+    console.log("Enrollment synced:", res.body.data.enrollment_synced);
+  }
+}
+
+docs {
+  # Edit Class Transition Record (Latest)
+
+  Updates the LATEST class transition record for a given enrollment with corrected information.
+
+  **Authentication**: JWT Bearer Token or API Key (Admin/SuperAdmin role required)
+
+  **Path Parameters**:
+  - `enrollment_id` (UUID, required) - ID of the enrollment whose latest transition to update
+
+  **Behavior**:
+  - Automatically finds and updates the most recent class transition for the enrollment
+  - If the enrollment has multiple transitions, only the latest one is modified
+  - If the enrollment has no transitions, returns 404 Not Found
+
+  **Request Body**:
+  - `to_classroom_id` (UUID, optional) - Corrected target classroom ID
+  - `reason` (string, optional) - Updated reason for the transition
+  - `transitioned_at` (ISO 8601, optional) - Corrected transition date/time
+  - `sync_enrollment` (boolean, optional) - Whether to update the enrollment's current classroom (default: false)
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "transition_id": "uuid",
+      "enrollment_id": "uuid",
+      "child_name": "Jane Smith",
+      "from_classroom": {
+        "id": "uuid",
+        "name": "Toddlers Room A"
+      },
+      "to_classroom": {
+        "id": "uuid",
+        "name": "Pre-K Room C"
+      },
+      "transitioned_at": "2025-01-10T09:00:00Z",
+      "reason": "Corrected classroom assignment",
+      "enrollment_synced": true,
+      "message": "Transition record updated successfully"
+    }
+  }
+  ```
+
+  **Error Responses**:
+  - `404 Not Found`: Enrollment not found or has no class transitions
+  - `403 Forbidden`: Enrollment belongs to a different school
+  - `400 Bad Request`: Invalid classroom ID or validation failure
+
+  **Note**: Use sync_enrollment=true to update the enrollment's current classroom to match the transition
+}

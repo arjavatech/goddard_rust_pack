@@ -143,7 +143,6 @@ pub struct ResendAdminInviteResponse {
 #[derive(Debug, Deserialize)]
 pub struct ForgotPasswordRequest {
     pub email: String,
-    pub school_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -833,11 +832,8 @@ impl AuthService {
     }
 
     pub async fn forgot_password(&self, request: ForgotPasswordRequest) -> ApiResult<ForgotPasswordResponse> {
-        let school_id = uuid::Uuid::parse_str(&request.school_id)
-            .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
-
-        // Verify user exists for this school — returns NotFound error if not
-        self.dao.get_user_by_email_and_school(&request.email, school_id).await?;
+        // Verify email exists in the system (no school filter)
+        self.dao.get_user_by_email(&request.email).await?;
 
         // User exists — trigger password reset email via Supabase
         self.supabase_client.send_password_reset_email(&request.email).await?;

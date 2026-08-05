@@ -25,7 +25,8 @@ use crate::models::enrollment::{
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
     GetClassWiseCountRequest, GetClassWiseCountResponse,
     GetSchoolFormsRequest, GetSchoolFormsResponse,
-    DeactivateParentResponse, ActivateParentResponse
+    DeactivateParentResponse, ActivateParentResponse,
+    BulkImportCsvRow, BulkImportRowError, BulkImportResponse,
 };
 use crate::error::AppError;
 
@@ -97,7 +98,8 @@ impl EnrollmentService {
                     &request.parent_first_name,
                     &request.parent_last_name,
                     &request.parent_email,
-                    "Parent"
+                    "Parent",
+                    None,
                 ).await?
             }
         };
@@ -128,7 +130,8 @@ impl EnrollmentService {
                             sec_first_name,
                             sec_last_name,
                             sec_email,
-                            "secondary-parent"
+                            "secondary-parent",
+                            None,
                         ).await?
                     }
                 };
@@ -145,7 +148,7 @@ impl EnrollmentService {
             &request.child_first_name,
             &request.child_last_name,
             request.child_birth_date,
-            &request.gender,
+            Some(&request.gender),
             secondary_parent_id,
         ).await?;
 
@@ -204,7 +207,7 @@ impl EnrollmentService {
             first_name: created_child.first_name.clone(),
             last_name: created_child.last_name.clone(),
             birth_date: created_child.birth_date,
-            gender: created_child.gender.clone(),
+            gender: created_child.gender.clone().unwrap_or_default(),
             status: created_child.status.clone(),
             created_at: created_child.created_at,
         };
@@ -506,7 +509,7 @@ impl EnrollmentService {
             &request.child_first_name,
             &request.child_last_name,
             request.child_birth_date,
-            &request.gender,
+            Some(&request.gender),
             None, // secondary_parent_id - not supported in add_child flow
         ).await?;
 
@@ -557,7 +560,7 @@ impl EnrollmentService {
                     first_name: created_child.first_name,
                     last_name: created_child.last_name,
                     birth_date: created_child.birth_date,
-                    gender: created_child.gender,
+                    gender: created_child.gender.unwrap_or_default(),
                     status: created_child.status,
                     created_at: created_child.created_at,
                 },
@@ -1392,4 +1395,413 @@ impl EnrollmentService {
             message,
         })
     }
+
+    // ==========================================
+    // BULK CSV IMPORT
+    // ==========================================
+
+    pub async fn bulk_import_families(
+        &self,
+        school_id: Uuid,
+        csv_bytes: Vec<u8>,
+    ) -> ApiResult<BulkImportResponse> {
+        // Step 1: Parse CSV
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .trim(csv::Trim::All)
+            .from_reader(csv_bytes.as_slice());
+
+        let mut rows: Vec<BulkImportCsvRow> = Vec::new();
+        let mut parse_errors: Vec<BulkImportRowError> = Vec::new();
+
+        for (idx, result) in reader.deserialize::<BulkImportCsvRow>().enumerate() {
+            let row_num = idx + 1;
+            match result {
+                Ok(row) => rows.push(row),
+                Err(e) => parse_errors.push(BulkImportRowError {
+                    row: row_num,
+                    errors: vec![format!("CSV parse error: {}", e)],
+                }),
+            }
+        }
+
+        // Step 2: Validate all rows (no DB calls)
+        let mut validation_errors: Vec<BulkImportRowError> = Vec::new();
+
+        for (idx, row) in rows.iter().enumerate() {
+            let row_num = idx + 1;
+            let mut errors: Vec<String> = Vec::new();
+
+            if row.primary_parent_first_name.trim().is_empty() {
+                errors.push("Primary parent first name is required".to_string());
+            }
+            if row.primary_parent_last_name.trim().is_empty() {
+                errors.push("Primary parent last name is required".to_string());
+            }
+            let email = row.primary_parent_email.trim();
+            if email.is_empty() {
+                errors.push("Primary parent email is required".to_string());
+            } else if !email.contains('@') || !email.contains('.') {
+                errors.push(format!("Primary parent email '{}' is invalid", email));
+            }
+            if row.child_first_name.trim().is_empty() {
+                errors.push("Child first name is required".to_string());
+            }
+            if row.child_last_name.trim().is_empty() {
+                errors.push("Child last name is required".to_string());
+            }
+            if row.classroom.trim().is_empty() {
+                errors.push("Classroom is required".to_string());
+            }
+
+            // Secondary parent: if email given, names are required
+            if row.secondary_parent_email.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+                if row.secondary_parent_first_name.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+                    errors.push("Secondary parent first name is required when secondary parent email is provided".to_string());
+                }
+                if row.secondary_parent_last_name.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+                    errors.push("Secondary parent last name is required when secondary parent email is provided".to_string());
+                }
+                // Primary and secondary emails must differ
+                if let Some(ref sec_email) = row.secondary_parent_email {
+                    if sec_email.trim().to_lowercase() == email.to_lowercase() {
+                        errors.push("Primary and secondary parent cannot have the same email address".to_string());
+                    }
+                }
+            }
+
+            if !errors.is_empty() {
+                validation_errors.push(BulkImportRowError { row: row_num, errors });
+            }
+        }
+
+        // Step 3: Batch-resolve classroom names → IDs (one DB query per unique name, never per row)
+        let mut classroom_map: HashMap<String, Uuid> = HashMap::new();
+        let mut missing_classrooms: Vec<String> = Vec::new();
+
+        let unique_classrooms: Vec<String> = {
+            let mut seen = std::collections::HashSet::new();
+            rows.iter()
+                .map(|r| r.classroom.trim().to_string())
+                .filter(|name| !name.is_empty() && seen.insert(name.clone()))
+                .collect()
+        };
+
+        for name in &unique_classrooms {
+            match self.enrollment_dao.get_classroom_id_by_name(name, school_id).await {
+                Ok(Some(id)) => { classroom_map.insert(name.clone(), id); }
+                Ok(None) => { missing_classrooms.push(name.clone()); }
+                Err(e) => {
+                    tracing::warn!("Failed to resolve classroom '{}': {}", name, e);
+                    for (idx, row) in rows.iter().enumerate() {
+                        if row.classroom.trim() == name.as_str() {
+                            let row_num = idx + 1;
+                            if let Some(existing) = validation_errors.iter_mut().find(|e| e.row == row_num) {
+                                existing.errors.push(format!("Classroom '{}' lookup failed", name));
+                            } else {
+                                validation_errors.push(BulkImportRowError {
+                                    row: row_num,
+                                    errors: vec![format!("Classroom '{}' lookup failed", name)],
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 4: Combine all errors and early exit before any DB writes
+        let mut all_errors = parse_errors;
+        all_errors.extend(validation_errors);
+        all_errors.sort_by_key(|e| e.row);
+
+        if !all_errors.is_empty() {
+            return Ok(BulkImportResponse {
+                created_families: 0,
+                created_children: 0,
+                row_errors: all_errors,
+            });
+        }
+
+        // Step 4b: Create missing classrooms (one insert per unique name, reused via classroom_map)
+        for name in &missing_classrooms {
+            match self.enrollment_dao.create_classroom_for_school(name, school_id).await {
+                Ok(new_id) => { classroom_map.insert(name.clone(), new_id); }
+                Err(e) => {
+                    return Err(AppError::Database(
+                        format!("Failed to create classroom '{}': {}", name, e)
+                    ));
+                }
+            }
+        }
+
+        // Step 5: Fetch school name for emails
+        let school_name = self.school_dao.get_school_name(&school_id).await
+            .unwrap_or_else(|_| "The Goddard School".to_string());
+
+        // Step 6: Group rows by primary parent email (case-insensitive), preserving order
+        let mut parent_groups: Vec<(String, Vec<usize>)> = Vec::new(); // (lowercase email, row indices)
+        let mut email_index: HashMap<String, usize> = HashMap::new();
+
+        for (idx, row) in rows.iter().enumerate() {
+            let key = row.primary_parent_email.trim().to_lowercase();
+            if let Some(&group_idx) = email_index.get(&key) {
+                parent_groups[group_idx].1.push(idx);
+            } else {
+                let group_idx = parent_groups.len();
+                email_index.insert(key.clone(), group_idx);
+                parent_groups.push((key, vec![idx]));
+            }
+        }
+
+        // Step 7: Process each parent group
+        let mut created_families: usize = 0;
+        let mut created_children: usize = 0;
+        let mut runtime_errors: Vec<BulkImportRowError> = Vec::new();
+
+        for (_email_key, row_indices) in &parent_groups {
+            let first_row = &rows[row_indices[0]];
+            let first_row_num = row_indices[0] + 1;
+
+            // Derive password: first 4 chars of email (first letter uppercased) + "@" + child DOB year
+            let first_child_dob = first_row.child_dob.as_deref()
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                    .or_else(|| chrono::NaiveDate::parse_from_str(s, "%d/%m/%Y").ok())
+                    .or_else(|| chrono::NaiveDate::parse_from_str(s, "%m/%d/%Y").ok()));
+
+            let password = generate_parent_password(&first_row.primary_parent_email, first_child_dob);
+
+            // Build metadata
+            let metadata = crate::services::supabase_client::UserMetadata::new(
+                Some(school_id),
+                Some(first_row.primary_parent_first_name.trim().to_string()),
+                Some(first_row.primary_parent_last_name.trim().to_string()),
+                Some("Parent".to_string()),
+                first_row.primary_parent_phone.clone(),
+                None,
+            ).with_school_name(school_name.clone());
+
+            // Resolve primary parent — reuse existing DB record or create new
+            let primary_parent = match self.enrollment_dao
+                .get_parent_by_email_and_school(first_row.primary_parent_email.trim(), school_id)
+                .await
+            {
+                Ok(Some(existing)) => existing,
+                _ => {
+                    // Not in DB — create Supabase account + DB record + send welcome email
+                    let primary_auth_id = match self.supabase_client
+                        .create_user_with_password_in_supabase(
+                            first_row.primary_parent_email.trim(),
+                            &password,
+                            metadata,
+                        ).await
+                    {
+                        Ok(id_str) => match Uuid::parse_str(&id_str) {
+                            Ok(id) => id,
+                            Err(_) => {
+                                for &idx in row_indices {
+                                    runtime_errors.push(BulkImportRowError {
+                                        row: idx + 1,
+                                        errors: vec!["Failed to parse auth user ID".to_string()],
+                                    });
+                                }
+                                continue;
+                            }
+                        },
+                        Err(e) => {
+                            for &idx in row_indices {
+                                runtime_errors.push(BulkImportRowError {
+                                    row: idx + 1,
+                                    errors: vec![format!("Failed to create auth user: {}", e)],
+                                });
+                            }
+                            continue;
+                        }
+                    };
+
+                    match self.enrollment_dao.create_parent(
+                        primary_auth_id,
+                        school_id,
+                        first_row.primary_parent_first_name.trim(),
+                        first_row.primary_parent_last_name.trim(),
+                        first_row.primary_parent_email.trim(),
+                        "Parent",
+                        if first_row.primary_parent_address.trim().is_empty() { None } else { Some(first_row.primary_parent_address.trim()) },
+                    ).await {
+                        Ok(p) => {
+                            let _ = self.supabase_client.send_bulk_import_welcome_email(
+                                first_row.primary_parent_email.trim(),
+                                first_row.primary_parent_first_name.trim(),
+                                first_row.primary_parent_last_name.trim(),
+                                &password,
+                                &school_name,
+                            ).await;
+                            p
+                        }
+                        Err(e) => {
+                            for &idx in row_indices {
+                                runtime_errors.push(BulkImportRowError {
+                                    row: idx + 1,
+                                    errors: vec![format!("Failed to create parent record: {}", e)],
+                                });
+                            }
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            // Handle secondary parent from first row (if present)
+            let mut secondary_parent_id_for_group: Option<Uuid> = None;
+            if let (Some(sec_email), Some(sec_first), Some(sec_last)) = (
+                first_row.secondary_parent_email.as_deref().filter(|s| !s.trim().is_empty()),
+                first_row.secondary_parent_first_name.as_deref(),
+                first_row.secondary_parent_last_name.as_deref(),
+            ) {
+                secondary_parent_id_for_group = match self.enrollment_dao
+                    .get_parent_by_email_and_school(sec_email.trim(), school_id)
+                    .await
+                {
+                    Ok(Some(existing)) => Some(existing.id),
+                    _ => {
+                        // Not in DB — create Supabase account + DB record + send welcome email
+                        let sec_metadata = crate::services::supabase_client::UserMetadata::new(
+                            Some(school_id),
+                            Some(sec_first.trim().to_string()),
+                            Some(sec_last.trim().to_string()),
+                            Some("secondary-parent".to_string()),
+                            first_row.secondary_parent_phone.clone(),
+                            None,
+                        ).with_school_name(school_name.clone());
+
+                        let sec_password = generate_parent_password(sec_email.trim(), first_child_dob);
+
+                        if let Ok(sec_id_str) = self.supabase_client
+                            .create_user_with_password_in_supabase(sec_email.trim(), &sec_password, sec_metadata)
+                            .await
+                        {
+                            if let Ok(sec_uuid) = Uuid::parse_str(&sec_id_str) {
+                                match self.enrollment_dao.create_parent(
+                                    sec_uuid, school_id,
+                                    sec_first.trim(), sec_last.trim(),
+                                    sec_email.trim(), "secondary-parent", None,
+                                ).await {
+                                    Ok(p) => {
+                                        let _ = self.supabase_client.send_bulk_import_welcome_email(
+                                            sec_email.trim(),
+                                            sec_first.trim(),
+                                            sec_last.trim(),
+                                            &sec_password,
+                                            &school_name,
+                                        ).await;
+                                        Some(p.id)
+                                    }
+                                    Err(_) => None,
+                                }
+                            } else { None }
+                        } else { None }
+                    }
+                };
+            }
+
+            // Process each child row in this group
+            let mut group_failed = false;
+            for &idx in row_indices {
+                let row = &rows[idx];
+                let row_num = idx + 1;
+                let classroom_id = classroom_map[row.classroom.trim()];
+
+                // Parse child DOB
+                let child_dob = row.child_dob.as_deref()
+                    .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%d/%m/%Y").ok())
+                        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%m/%d/%Y").ok()));
+
+                // Determine secondary parent for this child
+                let sec_parent_id = if row.secondary_parent_email.as_deref()
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    secondary_parent_id_for_group
+                } else {
+                    None
+                };
+
+                // Create child
+                let child_gender_str = row.child_gender.trim().to_lowercase();
+                let child_gender_opt: Option<&str> = if child_gender_str.is_empty() { None } else { Some(&child_gender_str) };
+                let created_child = match self.enrollment_dao.create_child(
+                    primary_parent.id,
+                    school_id,
+                    row.child_first_name.trim(),
+                    row.child_last_name.trim(),
+                    child_dob,
+                    child_gender_opt,
+                    sec_parent_id,
+                ).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        runtime_errors.push(BulkImportRowError {
+                            row: row_num,
+                            errors: vec![format!("Failed to create child: {}", e)],
+                        });
+                        group_failed = true;
+                        continue;
+                    }
+                };
+
+                // Create enrollment
+                let created_enrollment = match self.enrollment_dao.create_enrollment(
+                    created_child.id, school_id, classroom_id,
+                ).await {
+                    Ok(e) => e,
+                    Err(e) => {
+                        runtime_errors.push(BulkImportRowError {
+                            row: row_num,
+                            errors: vec![format!("Failed to create enrollment: {}", e)],
+                        });
+                        group_failed = true;
+                        continue;
+                    }
+                };
+
+                // Process form assignments (reuse existing pattern)
+                if let (Ok(school_forms), Ok(classroom_overrides)) = tokio::join!(
+                    self.enrollment_dao.get_school_default_forms(school_id),
+                    self.enrollment_dao.get_classroom_form_overrides(classroom_id, school_id)
+                ) {
+                    let _ = self.process_form_assignments(
+                        &school_forms,
+                        &classroom_overrides,
+                        created_enrollment.id,
+                        created_child.id,
+                        school_id,
+                    ).await;
+                }
+
+                created_children += 1;
+            }
+
+            if !group_failed {
+                created_families += 1;
+            }
+        }
+
+        runtime_errors.sort_by_key(|e| e.row);
+        Ok(BulkImportResponse {
+            created_families,
+            created_children,
+            row_errors: runtime_errors,
+        })
+    }
+}
+
+fn generate_parent_password(email: &str, child_dob: Option<chrono::NaiveDate>) -> String {
+    let prefix: String = email.chars().take(4).enumerate().map(|(i, c)| {
+        if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }
+    }).collect();
+    let year = child_dob
+        .map(|d| d.format("%Y").to_string())
+        .unwrap_or_else(|| "2024".to_string());
+    format!("{}@{}", prefix, year)
 }

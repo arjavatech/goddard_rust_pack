@@ -308,6 +308,32 @@ impl AuthDao {
         }
     }
 
+    pub async fn get_user_by_email(&self, email: &str) -> ApiResult<UserDetails> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, created_at FROM users WHERE email = $1 AND (is_active = true OR is_active IS NULL) LIMIT 1";
+
+        match client.query_opt(query, &[&email]).await {
+            Ok(Some(row)) => {
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+                Ok(UserDetails {
+                    id: row.get("id"),
+                    school_id: row.get("school_id"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    email: row.get("email"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    created_at,
+                })
+            },
+            Ok(None) => Err(AppError::NotFound("User not found. Please enter correct email.".to_string())),
+            Err(e) => Err(AppError::Database(format!("Failed to query user: {}", e))),
+        }
+    }
+
     pub async fn get_soft_deleted_user_by_email_and_school(&self, email: &str, school_id: uuid::Uuid) -> ApiResult<UserDetails> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

@@ -28,6 +28,12 @@ hive-mind-prompt-*.txt
 node_modules/
 */node_modules/
 
+.env
+.env.dev
+.env.production
+.env
+.env.dev2
+
 # Rust build artifacts
 target/
 */target/

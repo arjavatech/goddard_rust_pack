@@ -18,9 +18,9 @@ BLUE=\033[0;34m
 NC=\033[0m # No Color
 
 # AWS Profile Configuration
-AWS_PROFILE ?= default
+AWS_PROFILE ?= Arjava
 
-.PHONY: help install build test test-local deploy destroy clean synth db-setup db-reset db-status env-setup
+.PHONY: help install build test test-local deploy deploy-dev deploy-prod deploy-env deploy-env-dev deploy-env-prod destroy clean synth db-setup db-reset db-status env-setup
 
 # Default target
 .DEFAULT_GOAL := help
@@ -69,13 +69,32 @@ test-local: ## Run Lambda locally for testing
 	chmod +x scripts/test-local.sh
 	./scripts/test-local.sh
 
-deploy: ## Deploy to AWS
+deploy: ## Deploy to AWS (legacy — use deploy-dev or deploy-prod instead)
+	@echo "⚠️  'make deploy' targets a single prod stack. Use 'make deploy-dev' or 'make deploy-prod' instead."
 	chmod +x scripts/deploy.sh
 	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy.sh
 
-deploy-env: ## Deploy environment variables to Lambda
+deploy-env: ## Deploy environment variables to Lambda (legacy)
 	chmod +x scripts/deploy-env-auto.sh
 	AWS_PROFILE=$(AWS_PROFILE) ./scripts/deploy-env-auto.sh
+
+deploy-dev: ## 🚀 Deploy to AWS Dev (goddard-dev, us-west-1)
+	chmod +x scripts/deploy-aws-dev.sh
+	AWS_PROFILE=Arjava ./scripts/deploy-aws-dev.sh
+
+deploy-prod: ## 🚀 Deploy to AWS Prod (goddard-prod, us-west-1) [confirmation required]
+	chmod +x scripts/deploy-aws-prod.sh
+	AWS_PROFILE=Arjava ./scripts/deploy-aws-prod.sh
+
+deploy-env-dev: ## ⚙️  Push .env.dev variables to goddard-dev Lambda
+	chmod +x scripts/set-lambda-env.sh
+	AWS_PROFILE=$(AWS_PROFILE) LAMBDA_FUNCTION_NAME=goddard-dev ENV_FILE=.env.dev \
+		AWS_REGION=us-west-1 ./scripts/set-lambda-env.sh
+
+deploy-env-prod: ## ⚙️  Push .env.production variables to goddard-prod Lambda
+	chmod +x scripts/set-lambda-env.sh
+	AWS_PROFILE=$(AWS_PROFILE) LAMBDA_FUNCTION_NAME=goddard-prod ENV_FILE=.env.production \
+		AWS_REGION=us-west-1 ./scripts/set-lambda-env.sh
 
 deploy-flyio-dev: ## 🚀 Deploy to Fly.io Development
 	@./scripts/deploy-flyio-dev.sh
@@ -112,6 +131,22 @@ diff: ## Show CDK diff
 validate: ## Validate ARM64 architecture configuration
 	chmod +x scripts/validate-architecture.sh
 	./scripts/validate-architecture.sh
+
+# =============================================
+# FLY.IO DEPLOYMENT
+# =============================================
+
+deploy-flyio-dev: ## 🚀 Deploy to Fly.io Development
+	@chmod +x scripts/deploy-flyio-dev.sh
+	@./scripts/deploy-flyio-dev.sh
+
+deploy-flyio-prod: ## ⚠️  Deploy to Fly.io Production (confirmation required)
+	@chmod +x scripts/deploy-flyio-prod.sh
+	@./scripts/deploy-flyio-prod.sh
+
+preflight-check: ## 🔍 Run pre-deployment validation
+	@chmod +x scripts/preflight-check.sh
+	@./scripts/preflight-check.sh $(ENV)
 
 # =============================================
 # DATABASE COMMANDS

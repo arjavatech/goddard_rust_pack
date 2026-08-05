@@ -36,10 +36,13 @@ impl AdminDao {
                 WHERE school_id = $1 AND is_active = true
             ),
             parent_count AS (
-                SELECT COUNT(DISTINCT c.parent_id) as total
-                FROM children c
-                INNER JOIN enrollments e ON c.id = e.child_id
-                WHERE c.school_id = $1 AND e.is_active = true
+                SELECT COUNT(DISTINCT u.id) as total
+                FROM users u
+                INNER JOIN children c ON (c.parent_id = u.id OR c.secondary_parent_id = u.id)
+                INNER JOIN enrollments e ON e.child_id = c.id
+                WHERE u.school_id = $1
+                AND u.role IN ('Parent', 'secondary-parent')
+                AND u.is_active = true
             ),
             children_count AS (
                 SELECT COUNT(DISTINCT e.child_id) as total

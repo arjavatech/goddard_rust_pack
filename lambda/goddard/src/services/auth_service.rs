@@ -3,6 +3,7 @@ use crate::{
     error::{AppError, ApiResult},
     utils::ValidationUtils,
     services::{SupabaseClient, supabase_client::UserMetadata},
+    models::school::SchoolResponse,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -60,6 +61,7 @@ pub struct ResendInvitationResponse {
     pub success: bool,
     pub message: String,
     pub email: String,
+    pub email_status: String,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -96,6 +98,7 @@ pub struct CreateInvitationResponse {
     pub message: String,
     pub email: String,
     pub user_id: String,
+    pub email_status: String,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -123,6 +126,32 @@ pub struct DeleteAdminRequest {
     pub user_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ResendAdminInviteRequest {
+    pub user_id: uuid::Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResendAdminInviteResponse {
+    pub user_id: String,
+    pub email: String,
+    pub email_sent: bool,
+    pub message: String,
+    pub email_status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForgotPasswordResponse {
+    pub success: bool,
+    pub message: String,
+    pub email: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FilteredUserResponse {
     pub school_id: String,
@@ -132,17 +161,38 @@ pub struct FilteredUserResponse {
     pub parent_id: Option<String>,
     pub last_name: Option<String>,
     pub first_name: Option<String>,
+    pub school_data: Option<SchoolResponse>,
+}
+
+fn email_status_message(status: &str, default_ok: &str) -> String {
+    match status {
+        "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
+        "bounced"    => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
+        "delivered"  => format!("{} Email delivered successfully.", default_ok),
+        _            => default_ok.to_string(),
+    }
 }
 
 pub struct AuthService {
     dao: AuthDao,
     school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
+    notification_service: std::sync::Arc<crate::services::NotificationService>,
 }
 
 impl AuthService {
-    pub fn new(dao: AuthDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
-        Self { dao, school_dao, supabase_client }
+    pub fn new(
+        dao: AuthDao,
+        school_dao: crate::dao::school_dao::SchoolDao,
+        supabase_client: SupabaseClient,
+        notification_service: std::sync::Arc<crate::services::NotificationService>,
+    ) -> Self {
+        Self {
+            dao,
+            school_dao,
+            supabase_client,
+            notification_service,
+        }
     }
 
     pub async fn get_auth_verification_status(
@@ -237,23 +287,62 @@ impl AuthService {
         // Try to send email via Supabase, but handle rate limiting gracefully
         match self.supabase_client.resend_invitation(&request.email).await {
             Ok(_) => {
-                // Successfully sent email, update timestamp
                 self.dao.update_confirmation_sent_at(&request.email).await?;
             }
             Err(AppError::ExternalService(msg)) if msg.contains("rate limit") => {
-                // Rate limited - just update timestamp since user already exists
-                // and they know about the previous email
                 self.dao.update_confirmation_sent_at(&request.email).await?;
             }
             Err(e) => return Err(e),
         }
 
+        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
+
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+        }
+
+        let message = email_status_message(&email_status, "Invitation processed successfully. If no email was received, please check spam folder.");
+
         Ok(ResendInvitationResponse {
             success: true,
-            message: "Invitation processed successfully. If no email was received, please check spam folder or wait 60 seconds before requesting again.".to_string(),
+            message,
             email: request.email,
+            email_status,
             timestamp: Utc::now(),
         })
+    }
+
+    /// Fire the "New Admin Added" in-app notification to all other active admins
+    /// of the school. Called from both `create_invitation` and `create_invitation_enhanced`
+    /// so the wiring can't drift between the two routes.
+    async fn fire_admin_added_notification(
+        &self,
+        school_id: uuid::Uuid,
+        new_admin_user_id: &str,
+        first_name: &str,
+        last_name: &str,
+        role: &str,
+        school_name: &str,
+    ) {
+        let parsed_id = uuid::Uuid::parse_str(new_admin_user_id).ok();
+        self.notification_service.notify_school_admins(
+            crate::models::notification::CreateNotification {
+                school_id,
+                notification_type: crate::models::notification::notification_type::ADMIN_ADDED.to_string(),
+                title: "New Admin Added".to_string(),
+                body: format!(
+                    "{} {} has been added as {} for {}.",
+                    first_name.trim(),
+                    last_name.trim(),
+                    role,
+                    school_name
+                ),
+                related_entity_id: parsed_id,
+                related_entity_type: Some("user".to_string()),
+                action_url: None,
+            },
+            parsed_id,
+        ).await;
     }
 
     pub async fn create_invitation_enhanced(&self, request: CreateInvitationRequestEnhanced) -> ApiResult<CreateInvitationResponse> {
@@ -288,7 +377,14 @@ impl AuthService {
             }
         };
 
-        // STEP 2: Now check if user exists (after school validation)
+        // STEP 2: Block if email already belongs to a parent in this school
+        if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
+            return Err(AppError::Conflict(
+                "This email is already registered as a parent. Cannot invite as an admin.".to_string()
+            ));
+        }
+
+        // Check if user exists (after school validation)
         if self.dao.user_exists_by_email(&request.email).await? {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
@@ -302,16 +398,53 @@ impl AuthService {
             None,  // phone_number - not provided in enhanced endpoint
             Some(true),  // is_verified = true
         )
-        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
+        .with_school_name_option(Some(school_name.clone()));  // school_name is guaranteed to exist
 
-        // STEP 4: Create user invitation via Supabase with enhanced metadata
-        let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
+        // STEP 4: Create user in Supabase (no email) then send 7-day branded invite
+        let user_id = self.supabase_client.create_user_only_in_supabase(&request.email, metadata).await?;
+
+        let role_str = request.role.as_deref().unwrap_or("Admin");
+        let first_name_str = request.first_name.as_deref().unwrap_or("");
+        let last_name_str = request.last_name.as_deref().unwrap_or("");
+        let invite_token = self.dao
+            .create_invite_token(&request.email, role_str, school_uuid)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&request.email, invite_token, first_name_str, last_name_str, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
+        let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
+
+        // Suppress for parent invites because the existing parent-invite flow goes
+        // through a different path.
+        if matches!(role_str, "Admin" | "SuperAdmin" | "Owner") {
+            self.fire_admin_added_notification(
+                school_uuid,
+                &user_id,
+                first_name_str,
+                last_name_str,
+                role_str,
+                &school_name,
+            ).await;
+        }
 
         Ok(CreateInvitationResponse {
             success: true,
-            message: "User invitation created successfully with custom fields. Please check email for confirmation link.".to_string(),
+            message,
             email: request.email,
             user_id,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -325,29 +458,96 @@ impl AuthService {
         let school_uuid = uuid::Uuid::parse_str(&request.school_id)
             .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
-        // Check if user already exists
-        if self.dao.user_exists_by_email(&request.email).await? {
-            return Err(AppError::Conflict("User already exists".to_string()));
+        // Step 1: Block if email already belongs to a parent in this school
+        if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
+            return Err(AppError::Conflict(
+                "This email is already registered as a parent. Cannot invite as an admin.".to_string()
+            ));
         }
 
-        // Build metadata with is_verified = true and role = "Admin"
+        // Step 2: Active user exists → block with conflict error
+        match self.dao.get_user_by_email_and_school(&request.email, school_uuid).await {
+            Ok(_) => return Err(AppError::Conflict("Already registered with different role".to_string())),
+            Err(AppError::NotFound(_)) => {},
+            Err(e) => return Err(e),
+        }
+
+        // Step 2: Soft-deleted user exists → reactivate and resend invite
+        match self.dao.get_soft_deleted_user_by_email_and_school(&request.email, school_uuid).await {
+            Ok(user) => {
+                self.dao.reactivate_user(user.id, &request.first_name, &request.last_name).await?;
+                self.supabase_client.resend_invitation(&user.email).await?;
+                let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+                if matches!(email_status.as_str(), "suppressed" | "bounced") {
+                    return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+                }
+                let message = email_status_message(&email_status, "User reactivated and invitation email resent successfully.");
+                return Ok(CreateInvitationResponse {
+                    success: true,
+                    message,
+                    email: user.email,
+                    user_id: user.id.to_string(),
+                    email_status,
+                    timestamp: Utc::now(),
+                });
+            },
+            Err(AppError::NotFound(_)) => {},
+            Err(e) => return Err(e),
+        }
+
+        // Step 3: New user — create in Supabase then send 7-day branded invite
+        let school_name = self.school_dao.get_school_name(&school_uuid).await
+            .unwrap_or_else(|_| "Goddard School".to_string());
+
         let metadata = UserMetadata::new(
             Some(school_uuid),
             Some(request.first_name.clone()),
             Some(request.last_name.clone()),
-            Some("Admin".to_string()),  // Default role = Admin
-            request.phone_number.clone(),  // Optional - can be None
-            Some(true),  // is_verified = true
-        );
+            Some("Admin".to_string()),
+            request.phone_number.clone(),
+            Some(true),
+        )
+        .with_school_name(school_name.clone());
 
-        // Create user invitation via Supabase with enhanced metadata
-        let user_id = self.supabase_client.create_user_invitation_enhanced(&request.email, metadata).await?;
+        let user_id = self.supabase_client.create_user_only_in_supabase(&request.email, metadata).await?;
+
+        let invite_token = self.dao
+            .create_invite_token(&request.email, "Admin", school_uuid)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
+        let message = email_status_message(&email_status, "User invitation created successfully. Please check email for confirmation link (valid 7 days).");
+
+        // create_invitation always creates an "Admin" (hardcoded above at create_invite_token),
+        // so unconditionally fire — no is_admin_role gate.
+        self.fire_admin_added_notification(
+            school_uuid,
+            &user_id,
+            &request.first_name,
+            &request.last_name,
+            "Admin",
+            &school_name,
+        ).await;
 
         Ok(CreateInvitationResponse {
             success: true,
-            message: "User invitation created successfully. Please check email for confirmation link.".to_string(),
+            message,
             email: request.email,
             user_id,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -365,12 +565,23 @@ impl AuthService {
         let school_uuid = uuid::Uuid::parse_str(&request.school_id)
             .map_err(|_| AppError::Validation("Invalid school_id format".to_string()))?;
 
-        // Step 3: Check if user already exists
+        // Step 3: Block if email already belongs to a parent in this school
+        if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
+            return Err(AppError::Conflict(
+                "This email is already registered as a parent. Cannot invite as an admin.".to_string()
+            ));
+        }
+
+        // Check if user already exists
         if self.dao.user_exists_by_email(&request.email).await? {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
 
-        // Step 4: Build metadata with role = "SuperAdmin" and is_verified = true
+        // Step 4: Look up school name for invite email
+        let school_name = self.school_dao.get_school_name(&school_uuid).await
+            .unwrap_or_else(|_| "Goddard School".to_string());
+
+        // Step 5: Build metadata with role = "SuperAdmin" and is_verified = true
         let metadata = UserMetadata::new(
             Some(school_uuid),
             Some(request.first_name.clone()),
@@ -378,19 +589,40 @@ impl AuthService {
             Some("SuperAdmin".to_string()),  // ROLE = SuperAdmin
             request.phone_number.clone(),
             Some(true),  // is_verified = true
-        );
+        )
+        .with_school_name(school_name.clone());
 
-        // Step 5: Create user invitation via Supabase with enhanced metadata
+        // Step 6: Create user in Supabase then send 7-day branded invite
         let user_id = self.supabase_client
-            .create_user_invitation_enhanced(&request.email, metadata)
+            .create_user_only_in_supabase(&request.email, metadata)
             .await?;
 
-        // Step 6: Return success response
+        let invite_token = self.dao
+            .create_invite_token(&request.email, "SuperAdmin", school_uuid)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
+        let message = email_status_message(&email_status, "SuperAdmin user created successfully. Please check email for confirmation link (valid 7 days).");
+
         Ok(CreateInvitationResponse {
             success: true,
-            message: "SuperAdmin user created successfully. Please check email for confirmation link.".to_string(),
+            message,
             email: request.email,
             user_id,
+            email_status,
             timestamp: Utc::now(),
         })
     }
@@ -444,6 +676,7 @@ impl AuthService {
                 parent_id,
                 first_name,
                 last_name,
+                school_data: None,
             });
         }
 
@@ -497,7 +730,35 @@ impl AuthService {
         let user_uuid = uuid::Uuid::parse_str(&request.user_id)
             .map_err(|_| AppError::Validation("Invalid user_id format".to_string()))?;
 
-        self.dao.soft_delete_admin_user(user_uuid).await
+        // Capture identity BEFORE the soft delete — the post-delete row has
+        // is_active=false, and several lookups filter that out, so we'd lose
+        // the name/email needed to render a useful notification body.
+        let admin_details = self.dao.get_user_by_id(user_uuid).await.ok();
+
+        self.dao.soft_delete_admin_user(user_uuid).await?;
+
+        if let Some(d) = admin_details {
+            self.notification_service.notify_school_admins(
+                crate::models::notification::CreateNotification {
+                    school_id: d.school_id,
+                    notification_type: crate::models::notification::notification_type::ADMIN_DEACTIVATED.to_string(),
+                    title: "Admin Deactivated".to_string(),
+                    body: format!(
+                        "{} {} ({}) has been deactivated as {}.",
+                        d.first_name.trim(),
+                        d.last_name.trim(),
+                        d.email,
+                        d.role
+                    ),
+                    related_entity_id: Some(d.id),
+                    related_entity_type: Some("user".to_string()),
+                    action_url: None,
+                },
+                Some(user_uuid),
+            ).await;
+        }
+
+        Ok(())
     }
 
     /// Get all verified Admin users for a specific school (SuperAdmin only)
@@ -546,6 +807,18 @@ impl AuthService {
             None
         };
 
+        let school_data = match self.school_dao.get_school_by_id(&user.school_id).await {
+            Ok(Some(school)) => Some(SchoolResponse {
+                id: school.id,
+                name: school.name,
+                subdomain: school.subdomain,
+                settings: school.settings,
+                created_at: school.created_at,
+                updated_at: school.updated_at,
+            }),
+            _ => None,
+        };
+
         Ok(FilteredUserResponse {
             school_id: user.school_id.to_string(),
             role: user.role,
@@ -554,6 +827,69 @@ impl AuthService {
             parent_id,
             first_name: Some(user.first_name),
             last_name: Some(user.last_name),
+            school_data,
+        })
+    }
+
+    pub async fn forgot_password(&self, request: ForgotPasswordRequest) -> ApiResult<ForgotPasswordResponse> {
+        // Verify email exists in the system (no school filter)
+        self.dao.get_user_by_email(&request.email).await?;
+
+        // User exists — trigger password reset email via Supabase
+        self.supabase_client.send_password_reset_email(&request.email).await?;
+
+        Ok(ForgotPasswordResponse {
+            success: true,
+            message: "Password reset email sent. Please check your inbox.".to_string(),
+            email: request.email,
+        })
+    }
+
+    pub async fn resend_admin_invite(&self, request: ResendAdminInviteRequest) -> ApiResult<ResendAdminInviteResponse> {
+        // Step 1: Look up admin in users table (has first_name, last_name, school_id)
+        let user = self.dao.get_user_by_id(request.user_id).await?;
+
+        // Step 2: Role check
+        if user.role.to_lowercase() != "admin" {
+            return Err(AppError::Validation("User is not an Admin".to_string()));
+        }
+
+        // Step 3: Get school name for email template
+        let school_name = self.school_dao.get_school_name(&user.school_id).await
+            .unwrap_or_else(|_| "Goddard School".to_string());
+
+        // Step 4: Create a fresh 7-day invite token
+        let invite_token = self.dao
+            .create_invite_token(&user.email, &user.role, user.school_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", user.email, e);
+                uuid::Uuid::nil()
+            });
+
+        // Step 5: Send branded admin invite email via Resend
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(&user.email, invite_token, &user.first_name, &user.last_name, &school_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(AppError::ExternalService(email_status_message(&email_status, "")));
+        }
+
+        let message = email_status_message(&email_status, "Admin invitation email resent successfully.");
+
+        Ok(ResendAdminInviteResponse {
+            user_id: user.id.to_string(),
+            email: user.email,
+            email_sent,
+            message,
+            email_status,
         })
     }
 }

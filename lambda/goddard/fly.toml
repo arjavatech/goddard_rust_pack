@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for goddard on 2025-10-18T08:39:43+05:30
+# fly.toml app configuration file for postgresql-holy-firefly-3725 (Production)
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -8,19 +8,25 @@ primary_region = 'dfw'
 
 [build]
 
-[env]
-  PORT = '8080'
-  FRONTEND_URL = 'https://dev.goddard-app.pages.dev'
-
 [http_service]
-  internal_port = 8080
+  internal_port = 9000
   force_https = true
   auto_stop_machines = 'off'
-  auto_start_machines = true
+  auto_start_machines = false
   min_machines_running = 2
   processes = ['app']
+
+  # HTTP health check for blue-green deployments
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    restart_limit = 0
 
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
-  cpus = 2
+  cpus = 1

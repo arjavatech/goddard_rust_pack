@@ -8,7 +8,7 @@ pub struct ParentInviteRequest {
     pub school_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
-    pub child_birth_date: NaiveDate,
+    pub child_birth_date: Option<NaiveDate>,
     pub gender: String,
     pub class_id: Uuid,
     pub parent_email: String,
@@ -64,7 +64,7 @@ pub struct ChildDetails {
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub birth_date: NaiveDate,
+    pub birth_date: Option<NaiveDate>,
     pub gender: String,
     pub status: String,
     pub created_at: Option<NaiveDateTime>,
@@ -96,6 +96,7 @@ pub struct AssignedFormDetails {
 pub struct AuthUserResult {
     pub auth_user_id: Uuid,
     pub email: String,
+    pub email_sent: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +108,7 @@ pub struct CreatedUser {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub address: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -118,8 +120,8 @@ pub struct CreatedChild {
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub birth_date: NaiveDate,
-    pub gender: String,
+    pub birth_date: Option<NaiveDate>,
+    pub gender: Option<String>,
     pub status: String,
     pub created_at: Option<NaiveDateTime>,
 }
@@ -186,7 +188,7 @@ pub struct AddChildRequest {
     pub school_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
-    pub child_birth_date: NaiveDate,
+    pub child_birth_date: Option<NaiveDate>,
     pub gender: String,
     pub class_id: Uuid,
     pub parent_id: Uuid,
@@ -243,8 +245,9 @@ pub struct ParentWithChildren {
 pub struct ChildWithForms {
     pub child_id: Uuid,
     pub child_full_name: String,
-    pub child_dob: NaiveDate,
+    pub child_dob: Option<NaiveDate>,
     pub child_status: String,
+    pub gender: Option<String>,
     pub enrollment_id: Uuid,
     pub classroom_id: Uuid,
     pub classroom_name: String,
@@ -527,4 +530,39 @@ pub struct TransitionInfo {
     pub transitioned_at: NaiveDateTime,
     pub changed_by: Option<Uuid>,
     pub reason: Option<String>,
+}
+
+// ==========================================
+// BULK CSV IMPORT MODELS
+// ==========================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct BulkImportCsvRow {
+    pub primary_parent_first_name: String,
+    pub primary_parent_last_name: String,
+    pub primary_parent_email: String,
+    pub primary_parent_phone: Option<String>,
+    pub primary_parent_address: String,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
+    pub secondary_parent_phone: Option<String>,
+    pub child_first_name: String,
+    pub child_last_name: String,
+    pub child_gender: String,
+    pub child_dob: Option<String>,
+    pub classroom: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportRowError {
+    pub row: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportResponse {
+    pub created_families: usize,
+    pub created_children: usize,
+    pub row_errors: Vec<BulkImportRowError>,
 }

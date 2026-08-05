@@ -1,0 +1,63 @@
+meta {
+  name: Supabase Signup
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{supabase_url}}/auth/v1/signup
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  apikey: {{supabase_anon_key}}
+}
+
+body:json {
+  {
+    "email": "testuser@unwita.com",
+    "password": "SecurePassword123!",
+    "data": {
+      "full_name": "Test User",
+      "role": "appraiser"
+    }
+  }
+}
+
+docs {
+  # Supabase Signup
+
+  Creates a new user in the Supabase auth.users table.
+
+  ## Request Body Fields
+  - `email` (required): User's email address (must be unique, real domain required)
+  - `password` (required): User's password (min 6 characters)
+  - `data` (optional): User metadata object
+    - `full_name`: User's display name
+    - `role`: User role (e.g., "admin", "appraiser", "viewer")
+
+  ## Response
+  - 200: Signup Successful
+    - Returns `access_token` (JWT token for API authentication)
+    - Returns `refresh_token` (for token renewal)
+    - Returns `user` object with user details
+  - 400: Bad Request - Invalid email format or weak password
+  - 422: Unprocessable Entity - Email already registered
+
+  ## Role Storage
+  - The `role` in `data` is stored in `raw_user_meta_data`
+  - A database trigger copies it to `raw_app_meta_data` for security
+  - `app_metadata.role` is used for authorization (cannot be modified by user)
+
+  ## Notes
+  - Use real email domain (example.com is rejected)
+  - For test users, use "Create Test User (Admin)" instead
+  - A record in public.users is created by database trigger
+
+  ## After Signup
+  1. If email confirmation is disabled, user can login immediately
+  2. If enabled, user must click confirmation link in email first
+  3. Use the returned `access_token` for authenticated API calls
+}

@@ -1,11 +1,18 @@
 use uuid::Uuid;
 use std::collections::HashMap;
+use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use crate::dao::enrollment_dao::EnrollmentDao;
 use crate::services::supabase_client::SupabaseClient;
+use crate::services::email_service::{parent_dashboard_url, EmailService};
+use crate::services::NotificationService;
+use crate::models::notification::{notification_type, CreateNotification};
 use crate::models::parent_details::{
     ParentDetailsResponse, ParentChild, ParentChildForm
+};
+use crate::models::email::{
+    ChildAddedNotification, ChildArchivedNotification, ParentDeactivatedNotification,
 };
 use crate::models::enrollment::{
     ParentInviteRequest, ParentInviteResponse, ParentInviteDetails,
@@ -18,7 +25,8 @@ use crate::models::enrollment::{
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
     GetClassWiseCountRequest, GetClassWiseCountResponse,
     GetSchoolFormsRequest, GetSchoolFormsResponse,
-    DeactivateParentResponse, ActivateParentResponse
+    DeactivateParentResponse, ActivateParentResponse,
+    BulkImportCsvRow, BulkImportRowError, BulkImportResponse,
 };
 use crate::error::AppError;
 
@@ -28,14 +36,24 @@ pub struct EnrollmentService {
     enrollment_dao: EnrollmentDao,
     school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
+    email_service: Arc<EmailService>,
+    notification_service: Arc<NotificationService>,
 }
 
 impl EnrollmentService {
-    pub fn new(enrollment_dao: EnrollmentDao, school_dao: crate::dao::school_dao::SchoolDao, supabase_client: SupabaseClient) -> Self {
+    pub fn new(
+        enrollment_dao: EnrollmentDao,
+        school_dao: crate::dao::school_dao::SchoolDao,
+        supabase_client: SupabaseClient,
+        email_service: Arc<EmailService>,
+        notification_service: Arc<NotificationService>,
+    ) -> Self {
         Self {
             enrollment_dao,
             school_dao,
             supabase_client,
+            email_service,
+            notification_service,
         }
     }
 
@@ -49,6 +67,15 @@ impl EnrollmentService {
         if request.secondary_parent_email.is_some() {
             if request.secondary_parent_first_name.is_none() || request.secondary_parent_last_name.is_none() {
                 return Err(AppError::Validation("Secondary parent first name and last name are required when secondary parent email is provided".to_string()));
+            }
+        }
+
+        // Step 1.2: Primary and secondary parent emails must differ
+        if let Some(ref secondary_email) = request.secondary_parent_email {
+            if secondary_email.to_lowercase() == request.parent_email.to_lowercase() {
+                return Err(AppError::Validation(
+                    "Primary and secondary parent cannot have the same email address.".to_string()
+                ));
             }
         }
 
@@ -71,7 +98,8 @@ impl EnrollmentService {
                     &request.parent_first_name,
                     &request.parent_last_name,
                     &request.parent_email,
-                    "Parent"
+                    "Parent",
+                    None,
                 ).await?
             }
         };
@@ -102,12 +130,13 @@ impl EnrollmentService {
                             sec_first_name,
                             sec_last_name,
                             sec_email,
-                            "secondary-parent"
+                            "secondary-parent",
+                            None,
                         ).await?
                     }
                 };
 
-                (Some(sec_auth_result.auth_user_id), Some(true), Some(sec_parent))
+                (Some(sec_auth_result.auth_user_id), Some(sec_auth_result.email_sent), Some(sec_parent))
             } else {
                 (None, None, None)
             };
@@ -119,7 +148,7 @@ impl EnrollmentService {
             &request.child_first_name,
             &request.child_last_name,
             request.child_birth_date,
-            &request.gender,
+            Some(&request.gender),
             secondary_parent_id,
         ).await?;
 
@@ -178,7 +207,7 @@ impl EnrollmentService {
             first_name: created_child.first_name.clone(),
             last_name: created_child.last_name.clone(),
             birth_date: created_child.birth_date,
-            gender: created_child.gender.clone(),
+            gender: created_child.gender.clone().unwrap_or_default(),
             status: created_child.status.clone(),
             created_at: created_child.created_at,
         };
@@ -203,20 +232,35 @@ impl EnrollmentService {
             is_required: form.is_required,
         }).collect();
 
-        // Step 9: Generate response
+        // Step 9: Check primary parent email delivery status via Resend
+        let primary_email_status = self.supabase_client.get_recent_email_status(&request.parent_email).await;
+        if matches!(primary_email_status.as_str(), "suppressed" | "bounced") {
+            return Err(crate::error::AppError::ExternalService(match primary_email_status.as_str() {
+                "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
+                _ => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
+            }));
+        }
+
+        // Step 10: Generate response
         let response = ParentInviteResponse {
             parent_id: auth_result.auth_user_id,
             child_id: created_child.id,
             enrollment_id: created_enrollment.id,
             assigned_forms_count,
             invite_id: auth_result.auth_user_id,
-            signup_email_sent: true,
+            signup_email_sent: auth_result.email_sent,
             secondary_parent_id,
             secondary_signup_email_sent,
             message: if secondary_parent_id.is_some() {
-                "Parent invite created successfully. Signup emails sent to both primary and secondary parents".to_string()
-            } else {
+                if auth_result.email_sent {
+                    "Parent invite created successfully. Signup emails sent to both primary and secondary parents".to_string()
+                } else {
+                    "Parent invite created successfully but signup email failed. Use resend-confirmation to retry.".to_string()
+                }
+            } else if auth_result.email_sent {
                 "Parent invite created successfully and signup email sent".to_string()
+            } else {
+                "Parent invite created successfully but signup email failed. Use resend-confirmation to retry.".to_string()
             },
             details: ParentInviteDetails {
                 parent,
@@ -226,6 +270,35 @@ impl EnrollmentService {
                 assigned_forms: assigned_form_details,
             },
         };
+
+        // Notify school admins that a new parent was invited.
+        let parent_full_name = format!("{} {}", request.parent_first_name, request.parent_last_name);
+        let child_full_name = format!("{} {}", request.child_first_name, request.child_last_name);
+        let invite_classroom = self
+            .enrollment_dao
+            .get_classroom_name(request.class_id)
+            .await
+            .unwrap_or_default();
+        let invite_classroom_suffix = if invite_classroom.is_empty() {
+            String::new()
+        } else {
+            format!(" Classroom: {}.", invite_classroom)
+        };
+        self.notification_service.notify_school_admins(
+            CreateNotification {
+                school_id: request.school_id,
+                notification_type: notification_type::PARENT_INVITED.to_string(),
+                title: "New Parent Added".to_string(),
+                body: format!(
+                    "{} ({}) has been invited as parent for {}.{}",
+                    parent_full_name, request.parent_email, child_full_name, invite_classroom_suffix
+                ),
+                related_entity_id: Some(response.parent_id),
+                related_entity_type: Some("parent".to_string()),
+                action_url: None,
+            },
+            None,
+        ).await;
 
         Ok(response)
     }
@@ -265,18 +338,70 @@ impl EnrollmentService {
             None,  // phone_number - not provided in enrollment flow
             None,  // is_verified - will be set after email confirmation
         )
-        .with_school_name_option(Some(school_name));  // school_name is guaranteed to exist
+        .with_school_name_option(Some(school_name.clone()));  // school_name is guaranteed to exist
 
-        // STEP 3: Create user with signup confirmation email
-        let auth_user_id_string = self.supabase_client.create_user_with_signup_confirmation(email, metadata).await?;
+        // STEP 3: Create user in Supabase (no email sent here — we send our own branded email)
+        let auth_user_id_string = self.supabase_client.create_user_only_in_supabase(email, metadata).await?;
 
         let auth_user_id = Uuid::parse_str(&auth_user_id_string)
             .map_err(|_| crate::error::AppError::Validation("Invalid UUID format from auth service".to_string()))?;
 
+        // STEP 4: Store a 7-day invite token in DB
+        let invite_token = self.enrollment_dao
+            .create_invite_token(email, role, school_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", email, e);
+                Uuid::nil()
+            });
+
+        // STEP 5: Send branded Resend email with 7-day activation link
+        let email_sent = if invite_token != Uuid::nil() {
+            self.supabase_client
+                .send_parent_invite_email(email, invite_token, first_name, last_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            // Fallback: use Supabase's built-in email if token creation failed
+            self.supabase_client.resend_invitation(email).await.is_ok()
+        };
+
         Ok(AuthUserResult {
             auth_user_id,
             email: email.to_string(),
+            email_sent,
         })
+    }
+
+    /// Validate a 7-day invite token and return the URL to redirect the parent to.
+    /// - If token is valid and user not yet confirmed → fresh Supabase signup URL
+    /// - If token is valid and user already registered → login page URL
+    /// - If token is expired / not found → returns Err
+    pub async fn activate_invite(&self, token: Uuid) -> ApiResult<String> {
+        let result = self.enrollment_dao.get_invite_by_token(token).await?;
+
+        let frontend_url = std::env::var("FRONTEND_URL")
+            .unwrap_or_else(|_| "https://dev.goddard-web.pages.dev".to_string());
+
+        match result {
+            None => Err(AppError::NotFound("Invalid invite link".to_string())),
+
+            // used_at is set by a DB trigger when the user calls updateUser({ password })
+            // This is the only reliable signal — encrypted_password is non-empty for all users
+            Some((_, _, true)) => {
+                Ok(format!("{}/", frontend_url))
+            }
+
+            Some((_, false, false)) => Err(AppError::Validation(
+                "Invite link has expired (7-day limit). Please contact your school admin to resend the invitation.".to_string(),
+            )),
+
+            Some((email, true, false)) => {
+                // Valid, not yet used → generate a fresh Supabase set-password link
+                let action_link = self.supabase_client.generate_signup_link(&email).await?;
+                Ok(action_link)
+            }
+        }
     }
 
     // Process form assignments logic
@@ -296,21 +421,21 @@ impl EnrollmentService {
         }
 
         // Apply classroom overrides
+        // A record in class_form_overrides means "this form belongs to this class"
+        // Only an explicit "remove" action should exclude a form
         for override_form in classroom_overrides {
             match override_form.action.as_deref() {
-                Some("add") => {
+                Some("remove") => {
+                    final_forms.remove(&override_form.form_template_id);
+                }
+                _ => {
+                    // NULL, "add", "include", or any other value → include the form
                     let form_template = FormTemplate {
                         id: override_form.form_template_id,
                         form_name: override_form.form_name.clone(),
                         is_required: override_form.is_required,
                     };
                     final_forms.insert(override_form.form_template_id, (form_template, "class_override".to_string()));
-                }
-                Some("remove") => {
-                    final_forms.remove(&override_form.form_template_id);
-                }
-                _ => {
-                    continue;
                 }
             }
         }
@@ -327,23 +452,45 @@ impl EnrollmentService {
     }
 
     pub async fn resend_parent_confirmation(&self, request: ResendConfirmationRequest) -> ApiResult<ResendConfirmationResponse> {
-        // Step 1: Get user email from Supabase auth using parent_id as auth user ID
-        let parent_email = self.supabase_client.get_user_email_by_id(request.parent_id).await?;
+        // Step 1: Look up user from users table to get first_name, last_name, school_id, email
+        let user = self.enrollment_dao.get_user_by_id(request.parent_id).await?;
 
-        // Step 2: Resend confirmation email through Supabase
-        self.supabase_client.resend_invitation(&parent_email).await?;
+        // Step 2: Create a fresh 7-day invite token
+        let invite_token = self.enrollment_dao
+            .create_invite_token(&user.email, &user.role, user.school_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", user.email, e);
+                uuid::Uuid::nil()
+            });
 
-        // Step 3: Generate response
-        let response = ResendConfirmationResponse {
-            parent_id: request.parent_id,
-            email_sent: true,
-            message: "Confirmation email resent successfully".to_string(),
-            parent_details: ResendConfirmationParentDetails {
-                email: parent_email,
-            },
+        // Step 3: Send branded invite email via Resend
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_parent_invite_email(&user.email, invite_token, &user.first_name, &user.last_name)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
         };
 
-        Ok(response)
+        // Step 4: Check delivery status
+        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+        if matches!(email_status.as_str(), "suppressed" | "bounced") {
+            return Err(AppError::ExternalService(match email_status.as_str() {
+                "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
+                _ => "Email bounced. Please verify the email address is correct and able to receive mail.".to_string(),
+            }));
+        }
+
+        Ok(ResendConfirmationResponse {
+            parent_id: request.parent_id,
+            email_sent,
+            message: "Confirmation email resent successfully".to_string(),
+            parent_details: ResendConfirmationParentDetails {
+                email: user.email,
+            },
+        })
     }
 
     pub async fn add_child(&self, request: AddChildRequest) -> ApiResult<AddChildResponse> {
@@ -362,7 +509,7 @@ impl EnrollmentService {
             &request.child_first_name,
             &request.child_last_name,
             request.child_birth_date,
-            &request.gender,
+            Some(&request.gender),
             None, // secondary_parent_id - not supported in add_child flow
         ).await?;
 
@@ -413,7 +560,7 @@ impl EnrollmentService {
                     first_name: created_child.first_name,
                     last_name: created_child.last_name,
                     birth_date: created_child.birth_date,
-                    gender: created_child.gender,
+                    gender: created_child.gender.unwrap_or_default(),
                     status: created_child.status,
                     created_at: created_child.created_at,
                 },
@@ -436,6 +583,93 @@ impl EnrollmentService {
                 }).collect(),
             },
         };
+
+        // Fire child-added notification (non-blocking).
+        let email_svc = self.email_service.clone();
+        let classroom_name = self
+            .enrollment_dao
+            .get_classroom_name(request.class_id)
+            .await
+            .unwrap_or_default();
+        let school_name = self
+            .enrollment_dao
+            .get_school_name(request.school_id)
+            .await
+            .unwrap_or_default();
+        let classroom_for_inapp = classroom_name.clone();
+        let notification = ChildAddedNotification {
+            parent_email: response.details.parent.email.clone(),
+            parent_first_name: response.details.parent.first_name.clone(),
+            child_name: format!(
+                "{} {}",
+                response.details.child.first_name, response.details.child.last_name
+            ),
+            child_dob: response.details.child.birth_date,
+            classroom_name,
+            school_name,
+            added_on: Utc::now(),
+            form_count: response.assigned_forms_count,
+            dashboard_url: parent_dashboard_url(),
+        };
+        tokio::spawn(async move {
+            if let Err(e) = email_svc.send_child_added_email(notification).await {
+                eprintln!("[EmailService] child_added notification failed (non-fatal): {:?}", e);
+            }
+        });
+
+        // In-app notifications (parent + all school admins).
+        let child_full_name = format!(
+            "{} {}",
+            response.details.child.first_name, response.details.child.last_name
+        );
+        let parent_full_name = format!(
+            "{} {}",
+            response.details.parent.first_name, response.details.parent.last_name
+        );
+        let dob_suffix = match response.details.child.birth_date {
+            Some(d) => format!(" (DOB {})", d.format("%b %d, %Y")),
+            None => String::new(),
+        };
+        let classroom_suffix = if classroom_for_inapp.is_empty() {
+            String::new()
+        } else {
+            format!(" Classroom: {}.", classroom_for_inapp)
+        };
+
+        self.notification_service.notify_user(
+            response.details.parent.id,
+            CreateNotification {
+                school_id: request.school_id,
+                notification_type: notification_type::CHILD_ADDED.to_string(),
+                title: "New Child Added".to_string(),
+                body: format!(
+                    "{}{} has been added to your account.{}",
+                    child_full_name, dob_suffix, classroom_suffix
+                ),
+                related_entity_id: Some(response.details.child.id),
+                related_entity_type: Some("child".to_string()),
+                action_url: Some("/dashboard".to_string()),
+            },
+        ).await;
+        self.notification_service.notify_school_admins(
+            CreateNotification {
+                school_id: request.school_id,
+                notification_type: notification_type::CHILD_ADDED.to_string(),
+                title: "New Student Added".to_string(),
+                body: format!(
+                    "{}{} was added to {} ({})'s account.{}",
+                    child_full_name,
+                    dob_suffix,
+                    parent_full_name,
+                    response.details.parent.email,
+                    classroom_suffix
+                ),
+                related_entity_id: Some(response.details.child.id),
+                related_entity_type: Some("child".to_string()),
+                action_url: None,
+            },
+            None,
+        ).await;
 
         Ok(response)
     }
@@ -541,6 +775,7 @@ impl EnrollmentService {
                         child_full_name: format!("{} {}", child_first_name, child_last_name),
                         child_dob: row.child_dob,
                         child_status: row.child_status.clone(),
+                        gender: row.child_gender.clone(),
                         enrollment_id: row.enrollment_id.unwrap_or_default(),
                         classroom_id: row.classroom_id.unwrap_or_default(),
                         classroom_name: row.classroom_name.clone().unwrap_or_default(),
@@ -618,7 +853,78 @@ impl EnrollmentService {
     // Deactivate parent and all related children and enrollments
     pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
         println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
-        self.enrollment_dao.deactivate_parent(parent_id).await
+
+        // Capture parent email + school name BEFORE the DAO update so the
+        // notification has everything it needs even if the user record changes.
+        let parent_user = self.enrollment_dao.get_user_by_id(parent_id).await.ok();
+
+        let response = self.enrollment_dao.deactivate_parent(parent_id).await?;
+
+        if let Some(user) = parent_user {
+            let email_svc = self.email_service.clone();
+            let school_name = self
+                .enrollment_dao
+                .get_school_name(user.school_id)
+                .await
+                .unwrap_or_default();
+            let school_name_for_inapp = school_name.clone();
+            let notification = ParentDeactivatedNotification {
+                parent_email: user.email.clone(),
+                parent_first_name: user.first_name.clone(),
+                parent_full_name: format!("{} {}", user.first_name, user.last_name),
+                school_name,
+                deactivated_on: Utc::now(),
+                children_count: response.deactivated_children_count,
+                enrollments_count: response.deactivated_enrollments_count,
+            };
+            tokio::spawn(async move {
+                if let Err(e) = email_svc.send_parent_deactivated_email(notification).await {
+                    eprintln!("[EmailService] parent_deactivated notification failed (non-fatal): {:?}", e);
+                }
+            });
+
+            // In-app: notify the parent themselves AND all admins of the school.
+            let parent_full = format!("{} {}", user.first_name, user.last_name);
+            self.notification_service.notify_user(
+                user.id,
+                CreateNotification {
+                    school_id: user.school_id,
+                    notification_type: notification_type::PARENT_DEACTIVATED.to_string(),
+                    title: "Account Deactivated".to_string(),
+                    body: format!(
+                        "Your account at {} has been deactivated. {} child(ren) and {} enrollment(s) affected. Contact your school administrator with questions.",
+                        school_name_for_inapp,
+                        response.deactivated_children_count,
+                        response.deactivated_enrollments_count
+                    ),
+                    related_entity_id: Some(user.id),
+                    related_entity_type: Some("parent".to_string()),
+                    action_url: None,
+                },
+            ).await;
+            self.notification_service.notify_school_admins(
+                CreateNotification {
+                    school_id: user.school_id,
+                    notification_type: notification_type::PARENT_DEACTIVATED.to_string(),
+                    title: "Parent Deactivated".to_string(),
+                    body: format!(
+                        "{} ({}) has been deactivated. {} child(ren), {} enrollment(s) paused.",
+                        parent_full,
+                        user.email,
+                        response.deactivated_children_count,
+                        response.deactivated_enrollments_count
+                    ),
+                    related_entity_id: Some(user.id),
+                    related_entity_type: Some("parent".to_string()),
+                    action_url: None,
+                },
+                None,
+            ).await;
+        } else {
+            println!("[EnrollmentService] Skipping deactivation email — could not load parent user");
+        }
+
+        Ok(response)
     }
 
     // Activate parent and all related children and enrollments
@@ -630,7 +936,102 @@ impl EnrollmentService {
     // Update child status (admin only - no validation, accepts any status value)
     pub async fn update_child_status(&self, child_id: Uuid, request: crate::models::enrollment::UpdateChildStatusRequest) -> ApiResult<crate::models::enrollment::UpdateChildStatusResponse> {
         println!("[DEBUG] EnrollmentService: Updating child {} status to: {}", child_id, request.status);
-        self.enrollment_dao.update_child_status(child_id, &request.status).await
+        let response = self.enrollment_dao.update_child_status(child_id, &request.status).await?;
+
+        // Fire child-archived notification (non-blocking) when the new status is
+        // "archive" or "archived" — the frontend sends "archive" today, but accept
+        // both spellings so any other caller works too.
+        let normalized_status = request.status.trim().to_ascii_lowercase();
+        if normalized_status == "archive" || normalized_status == "archived" {
+            match self.enrollment_dao.get_child_notification_context(child_id).await {
+                Ok(ctx) => {
+                    let school_name = self
+                        .enrollment_dao
+                        .get_school_name(ctx.school_id)
+                        .await
+                        .unwrap_or_default();
+                    let recipients = match ctx.secondary_parent_email.as_ref() {
+                        Some(sp) if !sp.trim().is_empty() => {
+                            format!("{},{}", ctx.parent_email, sp)
+                        }
+                        _ => ctx.parent_email.clone(),
+                    };
+                    let school_name_for_inapp = school_name.clone();
+                    let notification = ChildArchivedNotification {
+                        parent_email: recipients,
+                        parent_first_name: ctx.parent_first_name.clone(),
+                        child_name: format!("{} {}", ctx.child_first_name, ctx.child_last_name),
+                        school_name,
+                        archived_on: Utc::now(),
+                    };
+                    let email_svc = self.email_service.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = email_svc.send_child_archived_email(notification).await {
+                            eprintln!("[EmailService] child_archived notification failed (non-fatal): {:?}", e);
+                        }
+                    });
+
+                    // In-app: parent + secondary parent + all school admins.
+                    let child_full = format!("{} {}", ctx.child_first_name, ctx.child_last_name);
+                    let parent_full = format!("{} {}", ctx.parent_first_name, ctx.parent_last_name);
+                    let classroom_text = ctx
+                        .classroom_name
+                        .as_deref()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("n/a");
+                    let parent_body = format!(
+                        "{}'s record at {} has been archived. Their enrollment is no longer active.",
+                        child_full, school_name_for_inapp
+                    );
+                    self.notification_service.notify_user(
+                        ctx.parent_id,
+                        CreateNotification {
+                            school_id: ctx.school_id,
+                            notification_type: notification_type::CHILD_ARCHIVED.to_string(),
+                            title: "Child Archived".to_string(),
+                            body: parent_body.clone(),
+                            related_entity_id: Some(child_id),
+                            related_entity_type: Some("child".to_string()),
+                            action_url: None,
+                        },
+                    ).await;
+                    if let Some(secondary_id) = ctx.secondary_parent_id {
+                        self.notification_service.notify_user(
+                            secondary_id,
+                            CreateNotification {
+                                school_id: ctx.school_id,
+                                notification_type: notification_type::CHILD_ARCHIVED.to_string(),
+                                title: "Child Archived".to_string(),
+                                body: parent_body,
+                                related_entity_id: Some(child_id),
+                                related_entity_type: Some("child".to_string()),
+                                action_url: None,
+                            },
+                        ).await;
+                    }
+                    self.notification_service.notify_school_admins(
+                        CreateNotification {
+                            school_id: ctx.school_id,
+                            notification_type: notification_type::CHILD_ARCHIVED.to_string(),
+                            title: "Student Archived".to_string(),
+                            body: format!(
+                                "{} (parent: {}) has been archived. Classroom: {}.",
+                                child_full, parent_full, classroom_text
+                            ),
+                            related_entity_id: Some(child_id),
+                            related_entity_type: Some("child".to_string()),
+                            action_url: None,
+                        },
+                        None,
+                    ).await;
+                }
+                Err(e) => {
+                    println!("[EnrollmentService] Skipping archive email — could not load child context: {:?}", e);
+                }
+            }
+        }
+
+        Ok(response)
     }
 
     // ==========================================
@@ -994,4 +1395,413 @@ impl EnrollmentService {
             message,
         })
     }
+
+    // ==========================================
+    // BULK CSV IMPORT
+    // ==========================================
+
+    pub async fn bulk_import_families(
+        &self,
+        school_id: Uuid,
+        csv_bytes: Vec<u8>,
+    ) -> ApiResult<BulkImportResponse> {
+        // Step 1: Parse CSV
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .trim(csv::Trim::All)
+            .from_reader(csv_bytes.as_slice());
+
+        let mut rows: Vec<BulkImportCsvRow> = Vec::new();
+        let mut parse_errors: Vec<BulkImportRowError> = Vec::new();
+
+        for (idx, result) in reader.deserialize::<BulkImportCsvRow>().enumerate() {
+            let row_num = idx + 1;
+            match result {
+                Ok(row) => rows.push(row),
+                Err(e) => parse_errors.push(BulkImportRowError {
+                    row: row_num,
+                    errors: vec![format!("CSV parse error: {}", e)],
+                }),
+            }
+        }
+
+        // Step 2: Validate all rows (no DB calls)
+        let mut validation_errors: Vec<BulkImportRowError> = Vec::new();
+
+        for (idx, row) in rows.iter().enumerate() {
+            let row_num = idx + 1;
+            let mut errors: Vec<String> = Vec::new();
+
+            if row.primary_parent_first_name.trim().is_empty() {
+                errors.push("Primary parent first name is required".to_string());
+            }
+            if row.primary_parent_last_name.trim().is_empty() {
+                errors.push("Primary parent last name is required".to_string());
+            }
+            let email = row.primary_parent_email.trim();
+            if email.is_empty() {
+                errors.push("Primary parent email is required".to_string());
+            } else if !email.contains('@') || !email.contains('.') {
+                errors.push(format!("Primary parent email '{}' is invalid", email));
+            }
+            if row.child_first_name.trim().is_empty() {
+                errors.push("Child first name is required".to_string());
+            }
+            if row.child_last_name.trim().is_empty() {
+                errors.push("Child last name is required".to_string());
+            }
+            if row.classroom.trim().is_empty() {
+                errors.push("Classroom is required".to_string());
+            }
+
+            // Secondary parent: if email given, names are required
+            if row.secondary_parent_email.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+                if row.secondary_parent_first_name.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+                    errors.push("Secondary parent first name is required when secondary parent email is provided".to_string());
+                }
+                if row.secondary_parent_last_name.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+                    errors.push("Secondary parent last name is required when secondary parent email is provided".to_string());
+                }
+                // Primary and secondary emails must differ
+                if let Some(ref sec_email) = row.secondary_parent_email {
+                    if sec_email.trim().to_lowercase() == email.to_lowercase() {
+                        errors.push("Primary and secondary parent cannot have the same email address".to_string());
+                    }
+                }
+            }
+
+            if !errors.is_empty() {
+                validation_errors.push(BulkImportRowError { row: row_num, errors });
+            }
+        }
+
+        // Step 3: Batch-resolve classroom names → IDs (one DB query per unique name, never per row)
+        let mut classroom_map: HashMap<String, Uuid> = HashMap::new();
+        let mut missing_classrooms: Vec<String> = Vec::new();
+
+        let unique_classrooms: Vec<String> = {
+            let mut seen = std::collections::HashSet::new();
+            rows.iter()
+                .map(|r| r.classroom.trim().to_string())
+                .filter(|name| !name.is_empty() && seen.insert(name.clone()))
+                .collect()
+        };
+
+        for name in &unique_classrooms {
+            match self.enrollment_dao.get_classroom_id_by_name(name, school_id).await {
+                Ok(Some(id)) => { classroom_map.insert(name.clone(), id); }
+                Ok(None) => { missing_classrooms.push(name.clone()); }
+                Err(e) => {
+                    tracing::warn!("Failed to resolve classroom '{}': {}", name, e);
+                    for (idx, row) in rows.iter().enumerate() {
+                        if row.classroom.trim() == name.as_str() {
+                            let row_num = idx + 1;
+                            if let Some(existing) = validation_errors.iter_mut().find(|e| e.row == row_num) {
+                                existing.errors.push(format!("Classroom '{}' lookup failed", name));
+                            } else {
+                                validation_errors.push(BulkImportRowError {
+                                    row: row_num,
+                                    errors: vec![format!("Classroom '{}' lookup failed", name)],
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 4: Combine all errors and early exit before any DB writes
+        let mut all_errors = parse_errors;
+        all_errors.extend(validation_errors);
+        all_errors.sort_by_key(|e| e.row);
+
+        if !all_errors.is_empty() {
+            return Ok(BulkImportResponse {
+                created_families: 0,
+                created_children: 0,
+                row_errors: all_errors,
+            });
+        }
+
+        // Step 4b: Create missing classrooms (one insert per unique name, reused via classroom_map)
+        for name in &missing_classrooms {
+            match self.enrollment_dao.create_classroom_for_school(name, school_id).await {
+                Ok(new_id) => { classroom_map.insert(name.clone(), new_id); }
+                Err(e) => {
+                    return Err(AppError::Database(
+                        format!("Failed to create classroom '{}': {}", name, e)
+                    ));
+                }
+            }
+        }
+
+        // Step 5: Fetch school name for emails
+        let school_name = self.school_dao.get_school_name(&school_id).await
+            .unwrap_or_else(|_| "The Goddard School".to_string());
+
+        // Step 6: Group rows by primary parent email (case-insensitive), preserving order
+        let mut parent_groups: Vec<(String, Vec<usize>)> = Vec::new(); // (lowercase email, row indices)
+        let mut email_index: HashMap<String, usize> = HashMap::new();
+
+        for (idx, row) in rows.iter().enumerate() {
+            let key = row.primary_parent_email.trim().to_lowercase();
+            if let Some(&group_idx) = email_index.get(&key) {
+                parent_groups[group_idx].1.push(idx);
+            } else {
+                let group_idx = parent_groups.len();
+                email_index.insert(key.clone(), group_idx);
+                parent_groups.push((key, vec![idx]));
+            }
+        }
+
+        // Step 7: Process each parent group
+        let mut created_families: usize = 0;
+        let mut created_children: usize = 0;
+        let mut runtime_errors: Vec<BulkImportRowError> = Vec::new();
+
+        for (_email_key, row_indices) in &parent_groups {
+            let first_row = &rows[row_indices[0]];
+            let first_row_num = row_indices[0] + 1;
+
+            // Derive password: first 4 chars of email (first letter uppercased) + "@" + child DOB year
+            let first_child_dob = first_row.child_dob.as_deref()
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                    .or_else(|| chrono::NaiveDate::parse_from_str(s, "%d/%m/%Y").ok())
+                    .or_else(|| chrono::NaiveDate::parse_from_str(s, "%m/%d/%Y").ok()));
+
+            let password = generate_parent_password(&first_row.primary_parent_email, first_child_dob);
+
+            // Build metadata
+            let metadata = crate::services::supabase_client::UserMetadata::new(
+                Some(school_id),
+                Some(first_row.primary_parent_first_name.trim().to_string()),
+                Some(first_row.primary_parent_last_name.trim().to_string()),
+                Some("Parent".to_string()),
+                first_row.primary_parent_phone.clone(),
+                None,
+            ).with_school_name(school_name.clone());
+
+            // Resolve primary parent — reuse existing DB record or create new
+            let primary_parent = match self.enrollment_dao
+                .get_parent_by_email_and_school(first_row.primary_parent_email.trim(), school_id)
+                .await
+            {
+                Ok(Some(existing)) => existing,
+                _ => {
+                    // Not in DB — create Supabase account + DB record + send welcome email
+                    let primary_auth_id = match self.supabase_client
+                        .create_user_with_password_in_supabase(
+                            first_row.primary_parent_email.trim(),
+                            &password,
+                            metadata,
+                        ).await
+                    {
+                        Ok(id_str) => match Uuid::parse_str(&id_str) {
+                            Ok(id) => id,
+                            Err(_) => {
+                                for &idx in row_indices {
+                                    runtime_errors.push(BulkImportRowError {
+                                        row: idx + 1,
+                                        errors: vec!["Failed to parse auth user ID".to_string()],
+                                    });
+                                }
+                                continue;
+                            }
+                        },
+                        Err(e) => {
+                            for &idx in row_indices {
+                                runtime_errors.push(BulkImportRowError {
+                                    row: idx + 1,
+                                    errors: vec![format!("Failed to create auth user: {}", e)],
+                                });
+                            }
+                            continue;
+                        }
+                    };
+
+                    match self.enrollment_dao.create_parent(
+                        primary_auth_id,
+                        school_id,
+                        first_row.primary_parent_first_name.trim(),
+                        first_row.primary_parent_last_name.trim(),
+                        first_row.primary_parent_email.trim(),
+                        "Parent",
+                        if first_row.primary_parent_address.trim().is_empty() { None } else { Some(first_row.primary_parent_address.trim()) },
+                    ).await {
+                        Ok(p) => {
+                            let _ = self.supabase_client.send_bulk_import_welcome_email(
+                                first_row.primary_parent_email.trim(),
+                                first_row.primary_parent_first_name.trim(),
+                                first_row.primary_parent_last_name.trim(),
+                                &password,
+                                &school_name,
+                            ).await;
+                            p
+                        }
+                        Err(e) => {
+                            for &idx in row_indices {
+                                runtime_errors.push(BulkImportRowError {
+                                    row: idx + 1,
+                                    errors: vec![format!("Failed to create parent record: {}", e)],
+                                });
+                            }
+                            continue;
+                        }
+                    }
+                }
+            };
+
+            // Handle secondary parent from first row (if present)
+            let mut secondary_parent_id_for_group: Option<Uuid> = None;
+            if let (Some(sec_email), Some(sec_first), Some(sec_last)) = (
+                first_row.secondary_parent_email.as_deref().filter(|s| !s.trim().is_empty()),
+                first_row.secondary_parent_first_name.as_deref(),
+                first_row.secondary_parent_last_name.as_deref(),
+            ) {
+                secondary_parent_id_for_group = match self.enrollment_dao
+                    .get_parent_by_email_and_school(sec_email.trim(), school_id)
+                    .await
+                {
+                    Ok(Some(existing)) => Some(existing.id),
+                    _ => {
+                        // Not in DB — create Supabase account + DB record + send welcome email
+                        let sec_metadata = crate::services::supabase_client::UserMetadata::new(
+                            Some(school_id),
+                            Some(sec_first.trim().to_string()),
+                            Some(sec_last.trim().to_string()),
+                            Some("secondary-parent".to_string()),
+                            first_row.secondary_parent_phone.clone(),
+                            None,
+                        ).with_school_name(school_name.clone());
+
+                        let sec_password = generate_parent_password(sec_email.trim(), first_child_dob);
+
+                        if let Ok(sec_id_str) = self.supabase_client
+                            .create_user_with_password_in_supabase(sec_email.trim(), &sec_password, sec_metadata)
+                            .await
+                        {
+                            if let Ok(sec_uuid) = Uuid::parse_str(&sec_id_str) {
+                                match self.enrollment_dao.create_parent(
+                                    sec_uuid, school_id,
+                                    sec_first.trim(), sec_last.trim(),
+                                    sec_email.trim(), "secondary-parent", None,
+                                ).await {
+                                    Ok(p) => {
+                                        let _ = self.supabase_client.send_bulk_import_welcome_email(
+                                            sec_email.trim(),
+                                            sec_first.trim(),
+                                            sec_last.trim(),
+                                            &sec_password,
+                                            &school_name,
+                                        ).await;
+                                        Some(p.id)
+                                    }
+                                    Err(_) => None,
+                                }
+                            } else { None }
+                        } else { None }
+                    }
+                };
+            }
+
+            // Process each child row in this group
+            let mut group_failed = false;
+            for &idx in row_indices {
+                let row = &rows[idx];
+                let row_num = idx + 1;
+                let classroom_id = classroom_map[row.classroom.trim()];
+
+                // Parse child DOB
+                let child_dob = row.child_dob.as_deref()
+                    .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+                        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%d/%m/%Y").ok())
+                        .or_else(|| chrono::NaiveDate::parse_from_str(s, "%m/%d/%Y").ok()));
+
+                // Determine secondary parent for this child
+                let sec_parent_id = if row.secondary_parent_email.as_deref()
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    secondary_parent_id_for_group
+                } else {
+                    None
+                };
+
+                // Create child
+                let child_gender_str = row.child_gender.trim().to_lowercase();
+                let child_gender_opt: Option<&str> = if child_gender_str.is_empty() { None } else { Some(&child_gender_str) };
+                let created_child = match self.enrollment_dao.create_child(
+                    primary_parent.id,
+                    school_id,
+                    row.child_first_name.trim(),
+                    row.child_last_name.trim(),
+                    child_dob,
+                    child_gender_opt,
+                    sec_parent_id,
+                ).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        runtime_errors.push(BulkImportRowError {
+                            row: row_num,
+                            errors: vec![format!("Failed to create child: {}", e)],
+                        });
+                        group_failed = true;
+                        continue;
+                    }
+                };
+
+                // Create enrollment
+                let created_enrollment = match self.enrollment_dao.create_enrollment(
+                    created_child.id, school_id, classroom_id,
+                ).await {
+                    Ok(e) => e,
+                    Err(e) => {
+                        runtime_errors.push(BulkImportRowError {
+                            row: row_num,
+                            errors: vec![format!("Failed to create enrollment: {}", e)],
+                        });
+                        group_failed = true;
+                        continue;
+                    }
+                };
+
+                // Process form assignments (reuse existing pattern)
+                if let (Ok(school_forms), Ok(classroom_overrides)) = tokio::join!(
+                    self.enrollment_dao.get_school_default_forms(school_id),
+                    self.enrollment_dao.get_classroom_form_overrides(classroom_id, school_id)
+                ) {
+                    let _ = self.process_form_assignments(
+                        &school_forms,
+                        &classroom_overrides,
+                        created_enrollment.id,
+                        created_child.id,
+                        school_id,
+                    ).await;
+                }
+
+                created_children += 1;
+            }
+
+            if !group_failed {
+                created_families += 1;
+            }
+        }
+
+        runtime_errors.sort_by_key(|e| e.row);
+        Ok(BulkImportResponse {
+            created_families,
+            created_children,
+            row_errors: runtime_errors,
+        })
+    }
+}
+
+fn generate_parent_password(email: &str, child_dob: Option<chrono::NaiveDate>) -> String {
+    let prefix: String = email.chars().take(4).enumerate().map(|(i, c)| {
+        if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }
+    }).collect();
+    let year = child_dob
+        .map(|d| d.format("%Y").to_string())
+        .unwrap_or_else(|| "2024".to_string());
+    format!("{}@{}", prefix, year)
 }

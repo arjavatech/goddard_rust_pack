@@ -18,9 +18,11 @@ pub struct ParentChild {
     pub child_full_name: String,
     pub child_dob: Option<NaiveDate>,
     pub child_status: Option<String>,
+    pub gender: Option<String>,
     pub enrollment_id: Uuid,
     pub classroom_id: Uuid,
     pub classroom_name: String,
+    pub parent_type: String,  // "primary_parent" or "secondary_parent"
     pub forms: Vec<ParentChildForm>,
 }
 
@@ -29,6 +31,7 @@ pub struct ParentChildForm {
     pub form_id: String, // Format: "form_{uuid}"
     pub student_form_assignment_id: Uuid,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<String>, // Format: DD-MM-YYYY
     pub form_name: String,
     pub status: String,
     pub is_required: bool,
@@ -52,6 +55,9 @@ pub struct ParentDetailsRow {
     pub child_last_name: Option<String>,
     pub child_dob: Option<NaiveDate>,
     pub child_status: Option<String>,
+    pub child_gender: Option<String>,
+    pub child_parent_id: Option<Uuid>,           // Child's primary parent_id
+    pub child_secondary_parent_id: Option<Uuid>, // Child's secondary_parent_id
     pub enrollment_id: Option<Uuid>,
     pub classroom_id: Option<Uuid>,
     pub classroom_name: Option<String>,
@@ -59,6 +65,7 @@ pub struct ParentDetailsRow {
     pub form_template_id: Option<Uuid>,
     pub form_name: Option<String>,
     pub fillout_form_id: Option<String>,
+    pub due_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub is_required: Option<bool>,
     pub recent_edit_link: Option<String>,

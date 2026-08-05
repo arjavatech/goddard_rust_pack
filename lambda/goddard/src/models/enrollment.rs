@@ -8,12 +8,16 @@ pub struct ParentInviteRequest {
     pub school_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
-    pub child_birth_date: NaiveDate,
+    pub child_birth_date: Option<NaiveDate>,
     pub gender: String,
     pub class_id: Uuid,
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    // Optional secondary parent fields
+    pub secondary_parent_email: Option<String>,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -24,6 +28,9 @@ pub struct ParentInviteResponse {
     pub assigned_forms_count: usize,
     pub invite_id: Uuid,
     pub signup_email_sent: bool,
+    // Secondary parent fields (optional)
+    pub secondary_parent_id: Option<Uuid>,
+    pub secondary_signup_email_sent: Option<bool>,
     pub message: String,
     pub details: ParentInviteDetails,
 }
@@ -31,6 +38,7 @@ pub struct ParentInviteResponse {
 #[derive(Debug, Serialize)]
 pub struct ParentInviteDetails {
     pub parent: ParentDetails,
+    pub secondary_parent: Option<ParentDetails>,
     pub child: ChildDetails,
     pub enrollment: EnrollmentDetails,
     pub assigned_forms: Vec<AssignedFormDetails>,
@@ -52,10 +60,11 @@ pub struct ParentDetails {
 pub struct ChildDetails {
     pub id: Uuid,
     pub parent_id: Uuid,
+    pub secondary_parent_id: Option<Uuid>,
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub birth_date: NaiveDate,
+    pub birth_date: Option<NaiveDate>,
     pub gender: String,
     pub status: String,
     pub created_at: Option<NaiveDateTime>,
@@ -87,6 +96,7 @@ pub struct AssignedFormDetails {
 pub struct AuthUserResult {
     pub auth_user_id: Uuid,
     pub email: String,
+    pub email_sent: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +108,7 @@ pub struct CreatedUser {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub address: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -105,11 +116,12 @@ pub struct CreatedUser {
 pub struct CreatedChild {
     pub id: Uuid,
     pub parent_id: Uuid,
+    pub secondary_parent_id: Option<Uuid>,
     pub school_id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    pub birth_date: NaiveDate,
-    pub gender: String,
+    pub birth_date: Option<NaiveDate>,
+    pub gender: Option<String>,
     pub status: String,
     pub created_at: Option<NaiveDateTime>,
 }
@@ -176,7 +188,7 @@ pub struct AddChildRequest {
     pub school_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
-    pub child_birth_date: NaiveDate,
+    pub child_birth_date: Option<NaiveDate>,
     pub gender: String,
     pub class_id: Uuid,
     pub parent_id: Uuid,
@@ -233,12 +245,23 @@ pub struct ParentWithChildren {
 pub struct ChildWithForms {
     pub child_id: Uuid,
     pub child_full_name: String,
-    pub child_dob: NaiveDate,
+    pub child_dob: Option<NaiveDate>,
     pub child_status: String,
+    pub gender: Option<String>,
     pub enrollment_id: Uuid,
     pub classroom_id: Uuid,
     pub classroom_name: String,
     pub forms: Vec<FormStatus>,
+    // Primary parent info
+    pub primary_parent_id: Uuid,
+    pub primary_parent_first_name: String,
+    pub primary_parent_last_name: String,
+    pub primary_parent_email: String,
+    // Secondary parent info (optional)
+    pub secondary_parent_id: Option<Uuid>,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -247,6 +270,7 @@ pub struct FormStatus {
     pub student_form_assignment_id: Option<Uuid>,
     pub fillout_form_id: Option<String>,
     pub form_name: String,
+    pub due_date: Option<String>,
     pub status: String,
     pub is_required: bool,
     pub recent_edit_link: Option<String>,
@@ -310,6 +334,7 @@ pub struct GetSchoolFormsResponse {
 
 #[derive(Debug, Serialize)]
 pub struct SchoolFormDetails {
+    pub enrollment_id: Uuid,
     pub parent_id: Uuid,
     pub parent_first_name: String,
     pub parent_last_name: String,
@@ -325,6 +350,11 @@ pub struct SchoolFormDetails {
     /// Example: { "Admission Form": { "status": "incomplete", "assigned_at": "26-09-2025" } }
     pub forms: serde_json::Value,
     pub additional_parent_email: Option<String>,
+    // Secondary parent details
+    pub secondary_parent_id: Option<Uuid>,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
 }
 
 // 8.4.1 Get Class-Based Enrollment Form Details
@@ -388,4 +418,151 @@ pub struct UpdateChildStatusResponse {
     pub status: String,
     pub updated_at: NaiveDateTime,
     pub message: String,
+}
+
+// ==========================================
+// CLASS TRANSITIONS API MODELS
+// ==========================================
+
+// ClassTransition model (database record)
+#[derive(Debug, Serialize, Clone)]
+pub struct ClassTransition {
+    pub id: Uuid,
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub school_id: Uuid,
+    pub from_classroom_id: Uuid,
+    pub to_classroom_id: Uuid,
+    pub changed_by: Option<Uuid>,
+    pub reason: Option<String>,
+    pub transitioned_at: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+}
+
+// API 1: Promote Enrollment - Request/Response
+#[derive(Debug, Deserialize)]
+pub struct PromoteEnrollmentRequest {
+    pub to_classroom_id: Uuid,
+    pub reason: Option<String>,
+    pub effective_date: Option<DateTime<Utc>>,
+}
+
+// Bulk Promotion Models
+#[derive(Debug, Deserialize)]
+pub struct PromotionRequest {
+    pub enrollment_id: Uuid,
+    pub to_classroom_id: Uuid,
+    pub reason: Option<String>,
+    pub effective_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkPromoteEnrollmentsRequest {
+    pub school_id: Uuid,
+    pub promotions: Vec<PromotionRequest>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FailedPromotion {
+    pub enrollment_id: Uuid,
+    pub child_name: Option<String>,
+    pub to_classroom_id: Uuid,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkPromoteEnrollmentsResponse {
+    pub successful: Vec<PromoteEnrollmentResponse>,
+    pub failed: Vec<FailedPromotion>,
+    pub summary: PromotionSummary,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PromotionSummary {
+    pub total_requested: usize,
+    pub successful_count: usize,
+    pub failed_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PromoteEnrollmentResponse {
+    pub enrollment_id: Uuid,
+    pub child_id: Uuid,
+    pub child_name: String,
+    pub from_classroom: ClassroomInfo,
+    pub to_classroom: ClassroomInfo,
+    pub transition: TransitionInfo,
+    pub message: String,
+}
+
+// API 2: Edit Class Transition - Request/Response
+#[derive(Debug, Deserialize)]
+pub struct EditClassTransitionRequest {
+    pub to_classroom_id: Option<Uuid>,
+    pub reason: Option<String>,
+    pub transitioned_at: Option<DateTime<Utc>>,
+    pub sync_enrollment: Option<bool>,  // Default: false
+}
+
+#[derive(Debug, Serialize)]
+pub struct EditClassTransitionResponse {
+    pub transition_id: Uuid,
+    pub enrollment_id: Uuid,
+    pub child_name: String,
+    pub from_classroom: ClassroomInfo,
+    pub to_classroom: ClassroomInfo,
+    pub transitioned_at: NaiveDateTime,
+    pub reason: Option<String>,
+    pub enrollment_synced: bool,
+    pub message: String,
+}
+
+// Shared helper structs
+#[derive(Debug, Serialize)]
+pub struct ClassroomInfo {
+    pub id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransitionInfo {
+    pub id: Uuid,
+    pub transitioned_at: NaiveDateTime,
+    pub changed_by: Option<Uuid>,
+    pub reason: Option<String>,
+}
+
+// ==========================================
+// BULK CSV IMPORT MODELS
+// ==========================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct BulkImportCsvRow {
+    pub primary_parent_first_name: String,
+    pub primary_parent_last_name: String,
+    pub primary_parent_email: String,
+    pub primary_parent_phone: Option<String>,
+    pub primary_parent_address: String,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
+    pub secondary_parent_phone: Option<String>,
+    pub child_first_name: String,
+    pub child_last_name: String,
+    pub child_gender: String,
+    pub child_dob: Option<String>,
+    pub classroom: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportRowError {
+    pub row: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportResponse {
+    pub created_families: usize,
+    pub created_children: usize,
+    pub row_errors: Vec<BulkImportRowError>,
 }

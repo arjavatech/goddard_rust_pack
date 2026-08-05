@@ -1,0 +1,65 @@
+meta {
+  name: Delete Admin
+  type: http
+  seq: 2
+}
+
+delete {
+  url: {{base_url}}/users/admin
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "user_id": "{{admin_user_id}}",
+    "school_id": "{{school_id}}"
+  }
+}
+
+vars:pre-request {
+  admin_user_id:
+  school_id:
+}
+
+assert {
+  res.status: eq 200
+  res.body.success: eq true
+}
+
+script:post-response {
+  if (res.status === 200) {
+    console.log("Admin deleted successfully:", res.body.data.email);
+  }
+}
+
+docs {
+  # Delete Admin User
+
+  Deactivates/deletes an admin user from the system.
+
+  **Authentication**: JWT Bearer Token (SuperAdmin role required)
+
+  **Request Body**:
+  - `user_id` (UUID, required) - ID of the admin user to delete
+  - `school_id` (UUID, required) - School ID for authorization
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "message": "Admin user deleted successfully",
+    "data": {
+      "user_id": "uuid",
+      "school_id": "uuid",
+      "email": "admin@example.com"
+    }
+  }
+  ```
+
+  **Note**: This performs a soft delete (sets is_active = false)
+}

@@ -1,0 +1,85 @@
+meta {
+  name: Promote to New Class
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/class-promotions/{{enrollment_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "to_classroom_id": "{{target_classroom_id}}",
+    "reason": "Age progression to Pre-K",
+    "effective_date": "2025-01-15T10:00:00Z"
+  }
+}
+
+vars:pre-request {
+  enrollment_id:
+  target_classroom_id:
+}
+
+assert {
+  res.status: eq 200
+  res.body.success: eq true
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("transition_id", res.body.data.transition.id);
+    console.log("Student promoted:", res.body.data.message);
+  }
+}
+
+docs {
+  # Promote Student to New Class
+
+  Promotes a student to a new classroom by creating a class transition record.
+
+  **Authentication**: JWT Bearer Token or API Key (Admin/SuperAdmin role required)
+
+  **Path Parameters**:
+  - `enrollment_id` (UUID, required) - ID of the enrollment to promote
+
+  **Request Body**:
+  - `to_classroom_id` (UUID, required) - Target classroom ID
+  - `reason` (string, optional) - Reason for the promotion
+  - `effective_date` (ISO 8601, optional) - When the transition takes effect (defaults to now)
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "enrollment_id": "uuid",
+      "child_id": "uuid",
+      "child_name": "John Doe",
+      "from_classroom": {
+        "id": "uuid",
+        "name": "Toddlers Room A"
+      },
+      "to_classroom": {
+        "id": "uuid",
+        "name": "Pre-K Room B"
+      },
+      "transition": {
+        "id": "uuid",
+        "transitioned_at": "2025-01-15T10:00:00Z",
+        "changed_by": "admin-uuid",
+        "reason": "Age progression to Pre-K"
+      },
+      "message": "Student successfully promoted from Toddlers Room A to Pre-K Room B"
+    }
+  }
+  ```
+
+  **Note**: This automatically updates the enrollment's current classroom
+}

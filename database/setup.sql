@@ -74,12 +74,14 @@ CREATE TABLE form_templates (
     form_name VARCHAR(255) NOT NULL,  -- Unique per school (composite constraint below)
     form_type VARCHAR(100),
     fillout_form_id VARCHAR(255),  -- Stores the Fillout form ID/URL
+    due_date DATE,  -- Optional deadline for form completion (must be >= CURRENT_DATE when provided)
     status VARCHAR(50),
     is_required BOOLEAN DEFAULT false,
     display_order INTEGER,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP
+    updated_at TIMESTAMP,
+    CONSTRAINT check_due_date_valid CHECK (due_date IS NULL OR due_date >= CURRENT_DATE)
 );
 
 -- Add composite unique constraint for form name per school
@@ -143,11 +145,18 @@ CREATE TABLE form_submissions (
     fillout_submission_id VARCHAR(255) UNIQUE NOT NULL,
     form_data JSONB,
     metadata JSONB,
+    status VARCHAR(50) DEFAULT 'pending',
+    revision_number INTEGER DEFAULT 1,
+    revision_reason VARCHAR(500),
+    edit_link TEXT,
+    pdf_link TEXT,
     submitted_at TIMESTAMP,
     processed_at TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP
+    updated_at TIMESTAMP,
+    CONSTRAINT check_form_submission_status
+        CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'requires_review', 'approved', 'rejected'))
 );
 
 -- 10. DOCUMENTS Table
@@ -205,7 +214,7 @@ ALTER TABLE student_form_assignments ADD CONSTRAINT check_assignment_source
 CHECK (assignment_source IN ('school_default', 'class_override', 'manual'));
 
 ALTER TABLE student_form_assignments ADD CONSTRAINT check_status
-CHECK (status IN ('incomplete', 'in_progress', 'completed', 'archived'));
+CHECK (status IN ('incomplete', 'in_progress', 'completed', 'archived', 'approved', 'rejected'));
 
 -- Comments for documentation
 COMMENT ON TABLE schools IS 'School entities in the multi-tenant system';
@@ -421,7 +430,7 @@ AND (is_verified = false OR is_verified IS NULL);
 -- PART 3: UPDATE TRIGGER FOR AUTH.USERS SYNC
 -- ==========================================
 
--- Update the auth user sync function to respect role-based is_verified
+-- Update the auth user sync function to respect is_verified from metadata
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -456,12 +465,15 @@ BEGIN
             NEW.raw_user_meta_data->>'role',
             'Parent'
         ),
-        -- Set is_verified based on role
-        CASE
-            WHEN COALESCE(NEW.raw_user_meta_data->>'role', 'Parent') IN ('Parent', 'primary-parent', 'secondary-parent')
-            THEN true
-            ELSE false
-        END,
+        -- Respect is_verified from metadata if provided, otherwise default based on role
+        COALESCE(
+            (NEW.raw_user_meta_data->>'is_verified')::boolean,
+            CASE
+                WHEN COALESCE(NEW.raw_user_meta_data->>'role', 'Parent') IN ('Parent', 'primary-parent', 'secondary-parent')
+                THEN true
+                ELSE false
+            END
+        ),
         NOW(),
         NEW.raw_user_meta_data,
         true
@@ -769,3 +781,151 @@ COMMENT ON INDEX unique_active_form_name_per_school IS 'Ensures form names are u
 -- 2. Soft delete it by setting is_active = false
 -- 3. Create another classroom "Pre-K A" with is_active = true (this will now work!)
 -- Same applies to form_templates table
+
+
+-- ==========================================
+-- CLASS TRANSITIONS TABLE - Track Student Class Changes
+-- Date: 2025-12-12
+-- Description: Audit trail for tracking when students move between classrooms
+--              with smart detection to distinguish real transitions from data corrections
+-- ==========================================
+
+-- ==========================================
+-- TABLE: class_transitions
+-- ==========================================
+CREATE TABLE class_transitions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    enrollment_id UUID NOT NULL REFERENCES enrollments(id),
+    child_id UUID NOT NULL REFERENCES children(id),
+    school_id UUID NOT NULL REFERENCES schools(id),
+    from_classroom_id UUID NOT NULL REFERENCES classrooms(id),
+    to_classroom_id UUID NOT NULL REFERENCES classrooms(id),
+    changed_by UUID REFERENCES users(id),
+    reason TEXT,
+    transitioned_at TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT true,
+    CONSTRAINT check_different_classrooms CHECK (from_classroom_id != to_classroom_id),
+    CONSTRAINT check_valid_transition_time CHECK (transitioned_at <= NOW())
+);
+
+-- ==========================================
+-- INDEXES FOR PERFORMANCE
+-- ==========================================
+CREATE INDEX idx_class_transitions_enrollment_id ON class_transitions(enrollment_id);
+CREATE INDEX idx_class_transitions_child_id ON class_transitions(child_id);
+CREATE INDEX idx_class_transitions_school_id ON class_transitions(school_id);
+CREATE INDEX idx_class_transitions_transitioned_at ON class_transitions(transitioned_at DESC);
+CREATE INDEX idx_class_transitions_from_classroom ON class_transitions(from_classroom_id);
+CREATE INDEX idx_class_transitions_to_classroom ON class_transitions(to_classroom_id);
+
+-- Composite index for common query pattern: get student's transition history
+CREATE INDEX idx_class_transitions_child_time ON class_transitions(child_id, transitioned_at DESC);
+
+-- ==========================================
+-- TRIGGER FUNCTION: Auto-track classroom transitions
+-- ==========================================
+CREATE OR REPLACE FUNCTION track_classroom_transition()
+RETURNS TRIGGER AS $$
+DECLARE
+    current_user_id UUID;
+    recent_transition_count INTEGER;
+BEGIN
+    -- Only track if classroom actually changed
+    IF OLD.classroom_id IS DISTINCT FROM NEW.classroom_id THEN
+
+        -- Check if a transition was just updated in the last 2 seconds (edit sync scenario)
+        -- This prevents duplicate transitions when using the Edit API's sync_enrollment feature
+        SELECT COUNT(*) INTO recent_transition_count
+        FROM class_transitions
+        WHERE enrollment_id = NEW.id
+        AND from_classroom_id = OLD.classroom_id
+        AND to_classroom_id = NEW.classroom_id
+        AND created_at > NOW() - INTERVAL '2 seconds';
+
+        -- Skip if we just edited this transition (prevents duplicates)
+        IF recent_transition_count > 0 THEN
+            RETURN NEW;
+        END IF;
+
+        -- Always create transition record for all classroom changes
+        -- Updated 2025-12-30: Removed form submission check to fix promotion 404 errors
+
+        -- Try to get current user from session settings
+        BEGIN
+            current_user_id := current_setting('app.current_user_id', true)::UUID;
+        EXCEPTION WHEN OTHERS THEN
+            current_user_id := NULL;
+        END;
+
+        INSERT INTO class_transitions (
+            enrollment_id,
+            child_id,
+            school_id,
+            from_classroom_id,
+            to_classroom_id,
+            changed_by,
+            transitioned_at
+        ) VALUES (
+            NEW.id,
+            NEW.child_id,
+            NEW.school_id,
+            OLD.classroom_id,
+            NEW.classroom_id,
+            current_user_id,
+            NOW()
+        );
+
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Add comment explaining the function behavior
+COMMENT ON FUNCTION track_classroom_transition() IS
+'Automatically tracks classroom transitions when enrollment.classroom_id changes.
+Always creates audit trail records for all classroom changes regardless of form submission status.
+Updated 2025-12-30: Removed form submission requirement to fix promotion 404 errors and ensure complete audit trail.';
+
+-- ==========================================
+-- TRIGGER: Automatically track class changes
+-- ==========================================
+CREATE TRIGGER trigger_track_classroom_transition
+    AFTER UPDATE ON enrollments
+    FOR EACH ROW
+    EXECUTE FUNCTION track_classroom_transition();
+
+-- ==========================================
+-- DOCUMENTATION
+-- ==========================================
+COMMENT ON TABLE class_transitions IS 'Audit trail of student class changes with smart detection to distinguish real transitions from data corrections';
+COMMENT ON COLUMN class_transitions.enrollment_id IS 'Link to the specific enrollment record';
+COMMENT ON COLUMN class_transitions.child_id IS 'Direct reference to the student for quick lookup';
+COMMENT ON COLUMN class_transitions.school_id IS 'School reference for multi-tenant data isolation';
+COMMENT ON COLUMN class_transitions.from_classroom_id IS 'The classroom the student moved FROM';
+COMMENT ON COLUMN class_transitions.to_classroom_id IS 'The classroom the student moved TO';
+COMMENT ON COLUMN class_transitions.changed_by IS 'User who made the change (admin/staff)';
+COMMENT ON COLUMN class_transitions.reason IS 'Optional explanation for why the transition occurred';
+COMMENT ON COLUMN class_transitions.transitioned_at IS 'When the class change happened';
+COMMENT ON COLUMN class_transitions.is_active IS 'Soft delete flag for data retention';
+
+COMMENT ON FUNCTION track_classroom_transition() IS 'Smart detection: Only tracks transitions when student has form submissions (real enrollment). Ignores changes with no submissions (data corrections)';
+
+-- ==========================================
+-- BUSINESS RULES SUMMARY
+-- ==========================================
+-- When a classroom_id is updated in enrollments table:
+--
+-- ✅ TRACKED (student has form submissions):
+--    - Indicates real enrollment and active participation
+--    - Class change represents legitimate student transition
+--    - Creates audit trail record in class_transitions
+--
+-- ❌ NOT TRACKED (student has NO form submissions):
+--    - Indicates data correction or initial setup mistake
+--    - No forms submitted = student never actively enrolled
+--    - Change is silently allowed without audit trail
+--
+-- This prevents cluttering the audit trail with administrative corrections
+-- while maintaining complete history of actual student movements
+-- ==========================================

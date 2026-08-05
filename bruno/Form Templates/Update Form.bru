@@ -16,17 +16,56 @@ headers {
 
 body:json {
   {
-      "id": "2812c31a-5099-4489-a852-4a725db7871f",
-      "school_id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
+    "id": "2812c31a-5099-4489-a852-4a725db7871f",
+    "school_id": "ca72c4cf-a513-4bc9-9a2f-17b15257e0cc",
+    "form_name": "Admission Form",
+    "form_type": "school_form",
+    "fillout_form_id": "www.yahoo.com",
+    "due_date": "2026-01-15",
+    "status": "school_default",
+    "is_required": false,
+    "display_order": null
+  }
+}
+
+docs {
+  # Update Form Template
+
+  Updates an existing form template.
+
+  **Authentication**: API Key (X-API-Key header)
+
+  **Request Body**:
+  - `id` (UUID, required) - Form template ID
+  - `school_id` (UUID, required) - School ID
+  - `form_name` (string, required) - Updated form name
+  - `form_type` (string, optional) - Form type
+  - `fillout_form_id` (string, optional) - Updated Fillout form ID/URL
+  - `due_date` (date, optional) - Updated deadline (YYYY-MM-DD format, must be >= current date)
+  - `status` (string, optional) - Form status
+  - `is_required` (boolean, optional) - Whether form is required
+  - `display_order` (integer, optional) - Display order
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "uuid",
+      "school_id": "uuid",
       "form_name": "Admission Form",
       "form_type": "school_form",
       "fillout_form_id": "www.yahoo.com",
-      "fillout_form_url": null,
+      "due_date": "2026-01-15",
       "status": "school_default",
       "is_required": false,
       "display_order": null,
-      "created_at": "2025-09-17T16:54:07.907545"
+      "is_active": true,
+      "created_at": "timestamp",
+      "updated_at": "timestamp"
     }
+  }
+  ```
 }
 
 settings {

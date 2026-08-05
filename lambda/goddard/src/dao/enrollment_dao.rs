@@ -167,7 +167,7 @@ impl EnrollmentDao {
 
     // Step 4: Get parent by ID (should be created by DB trigger)
     pub async fn get_parent_by_id(&self, parent_id: Uuid, school_id: Uuid) -> ApiResult<CreatedUser> {
-        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at FROM users WHERE id = $1 AND school_id = $2";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, created_at FROM users WHERE id = $1 AND school_id = $2";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -182,6 +182,7 @@ impl EnrollmentDao {
             email: row.get("email"),
             role: row.get("role"),
             is_verified: row.get("is_verified"),
+            address: row.get("address"),
             created_at: row.get("created_at"),
         })
     }
@@ -191,7 +192,7 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
         let row = client
             .query_one(
-                "SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at FROM users WHERE id = $1",
+                "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, created_at FROM users WHERE id = $1",
                 &[&user_id],
             )
             .await
@@ -204,17 +205,18 @@ impl EnrollmentDao {
             email: row.get("email"),
             role: row.get("role"),
             is_verified: row.get("is_verified"),
+            address: row.get("address"),
             created_at: row.get("created_at"),
         })
     }
 
     // Create parent in users table
-    pub async fn create_parent(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, email: &str, role: &str) -> ApiResult<CreatedUser> {
-        let query = "INSERT INTO users (id, school_id, first_name, last_name, email, role) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, school_id, first_name, last_name, email, role, is_verified, created_at";
+    pub async fn create_parent(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, email: &str, role: &str, address: Option<&str>) -> ApiResult<CreatedUser> {
+        let query = "INSERT INTO users (id, school_id, first_name, last_name, email, role, address) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, school_id, first_name, last_name, email, role, is_verified, address, created_at";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
-        let row = client.query_one(query, &[&parent_id, &school_id, &first_name, &last_name, &email, &role]).await
+        let row = client.query_one(query, &[&parent_id, &school_id, &first_name, &last_name, &email, &role, &address]).await
             .map_err(|e| AppError::Database(format!("Failed to create parent: {}", e)))?;
 
         Ok(CreatedUser {
@@ -225,12 +227,65 @@ impl EnrollmentDao {
             email: row.get("email"),
             role: row.get("role"),
             is_verified: row.get("is_verified"),
+            address: row.get("address"),
             created_at: row.get("created_at"),
         })
     }
 
+    // Resolve classroom name to UUID for a given school (used by bulk import)
+    pub async fn get_classroom_id_by_name(&self, name: &str, school_id: Uuid) -> ApiResult<Option<Uuid>> {
+        let name = name.to_string();
+        self.execute_with_connection(|client| async move {
+            let row = client.query_opt(
+                "SELECT id FROM classrooms WHERE LOWER(name) = LOWER($1) AND school_id = $2 AND (is_active = true OR is_active IS NULL) LIMIT 1",
+                &[&name, &school_id],
+            ).await
+            .map_err(|e| AppError::Database(format!("Failed to lookup classroom by name: {}", e)))?;
+            Ok(row.map(|r| r.get("id")))
+        }).await
+    }
+
+    pub async fn get_parent_by_email_and_school(&self, email: &str, school_id: Uuid) -> ApiResult<Option<CreatedUser>> {
+        let email = email.to_string();
+        self.execute_with_connection(|client| async move {
+            let row = client.query_opt(
+                "SELECT id, school_id, first_name, last_name, email, role, \
+                 COALESCE(is_verified, false) as is_verified, address, created_at \
+                 FROM users WHERE LOWER(email) = LOWER($1) AND school_id = $2 \
+                 AND (is_active = true OR is_active IS NULL) LIMIT 1",
+                &[&email, &school_id],
+            ).await
+            .map_err(|e| AppError::Database(format!("Failed to lookup parent by email: {}", e)))?;
+            Ok(row.map(|r| CreatedUser {
+                id: r.get("id"),
+                school_id: r.get("school_id"),
+                first_name: r.get("first_name"),
+                last_name: r.get("last_name"),
+                email: r.get("email"),
+                role: r.get("role"),
+                is_verified: r.get("is_verified"),
+                address: r.get("address"),
+                created_at: r.get("created_at"),
+            }))
+        }).await
+    }
+
+    pub async fn create_classroom_for_school(&self, name: &str, school_id: Uuid) -> ApiResult<Uuid> {
+        let name = name.to_string();
+        self.execute_with_connection(|client| async move {
+            let row = client.query_one(
+                "INSERT INTO classrooms (id, school_id, name, age_group, capacity, enrolled_count, is_active, created_at, updated_at)
+                 VALUES (gen_random_uuid(), $1, $2, null, null, 0, true, NOW(), NOW())
+                 RETURNING id",
+                &[&school_id, &name],
+            ).await
+            .map_err(|e| AppError::Database(format!("Failed to create classroom '{}': {}", name, e)))?;
+            Ok(row.get("id"))
+        }).await
+    }
+
     // Single transaction method to create child with explicit parent verification
-    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: Option<NaiveDate>, gender: &str, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
+    pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: Option<NaiveDate>, gender: Option<&str>, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
         println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}, secondary_parent_id: {:?}", parent_id, school_id, secondary_parent_id);
 
         use tokio::time::{timeout, Duration};
@@ -516,7 +571,7 @@ impl EnrollmentDao {
 
     // Additional method for getting parents by school (used in get_parent_details_by_school)
     pub async fn get_parents_by_school(&self, school_id: Uuid) -> ApiResult<Vec<CreatedUser>> {
-        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, created_at FROM users WHERE school_id = $1 AND role = 'Parent' AND (is_active = true OR is_active IS NULL) ORDER BY created_at DESC";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, created_at FROM users WHERE school_id = $1 AND role = 'Parent' AND (is_active = true OR is_active IS NULL) ORDER BY created_at DESC";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -531,6 +586,7 @@ impl EnrollmentDao {
             email: row.get("email"),
             role: row.get("role"),
             is_verified: row.get("is_verified"),
+            address: row.get("address"),
             created_at: row.get("created_at"),
         }).collect())
     }

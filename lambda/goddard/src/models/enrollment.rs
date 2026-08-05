@@ -108,6 +108,7 @@ pub struct CreatedUser {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub address: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -120,7 +121,7 @@ pub struct CreatedChild {
     pub first_name: String,
     pub last_name: String,
     pub birth_date: Option<NaiveDate>,
-    pub gender: String,
+    pub gender: Option<String>,
     pub status: String,
     pub created_at: Option<NaiveDateTime>,
 }
@@ -529,4 +530,39 @@ pub struct TransitionInfo {
     pub transitioned_at: NaiveDateTime,
     pub changed_by: Option<Uuid>,
     pub reason: Option<String>,
+}
+
+// ==========================================
+// BULK CSV IMPORT MODELS
+// ==========================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct BulkImportCsvRow {
+    pub primary_parent_first_name: String,
+    pub primary_parent_last_name: String,
+    pub primary_parent_email: String,
+    pub primary_parent_phone: Option<String>,
+    pub primary_parent_address: String,
+    pub secondary_parent_first_name: Option<String>,
+    pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_email: Option<String>,
+    pub secondary_parent_phone: Option<String>,
+    pub child_first_name: String,
+    pub child_last_name: String,
+    pub child_gender: String,
+    pub child_dob: Option<String>,
+    pub classroom: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportRowError {
+    pub row: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkImportResponse {
+    pub created_families: usize,
+    pub created_children: usize,
+    pub row_errors: Vec<BulkImportRowError>,
 }

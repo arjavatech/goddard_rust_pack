@@ -454,6 +454,50 @@ pub fn form_assigned_html(payload: &FormAssignedNotification) -> String {
     render_shell(accent, &headline, &preheader, &body, &cta)
 }
 
+// ----- Template: Bulk Import Welcome -----
+
+pub fn bulk_import_welcome_html(
+    first_name: &str,
+    last_name: &str,
+    email: &str,
+    password: &str,
+    school_name: &str,
+    dashboard_url: &str,
+) -> String {
+    let accent = "#2ecc71"; // welcoming green
+    let headline = format!("Welcome to {} — Your Account Is Ready", html_escape(school_name));
+    let preheader = format!(
+        "Your Goddard School parent account at {} has been created. Find your login details inside.",
+        school_name
+    );
+
+    let credentials = details_card(&[
+        ("Email", email.to_string()),
+        ("Password", password.to_string()),
+    ]);
+
+    let body = format!(
+        r#"<p>Dear {first_name} {last_name},</p>
+          <p>Welcome! Your parent account at <strong>{school}</strong> has been created. You can now log in to your parent dashboard using the credentials below.</p>
+          {credentials}
+          <p style="margin-top:18px;"><strong>Next steps</strong></p>
+          <ol style="margin:0;padding-left:20px;color:#333;">
+            <li>Log in with the email and password above</li>
+            <li>We recommend changing your password after your first login</li>
+            <li>Complete any enrollment forms assigned to your child(ren)</li>
+          </ol>
+          <p style="margin-top:18px;color:#666;font-size:14px;">If you have any questions, please reach out to your school's administrator.</p>"#,
+        first_name = html_escape(first_name),
+        last_name = html_escape(last_name),
+        school = html_escape(school_name),
+        credentials = credentials,
+    );
+
+    let cta = cta_button("Log In to Parent Dashboard", dashboard_url, accent);
+
+    render_shell(accent, &headline, &preheader, &body, &cta)
+}
+
 // ----- Template 5: Child Archived -----
 
 pub fn child_archived_html(payload: &ChildArchivedNotification) -> String {

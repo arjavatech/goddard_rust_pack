@@ -1001,4 +1001,111 @@ impl SupabaseClient {
         tracing::info!("User created in Supabase: {}", user_id);
         Ok(user_id.to_string())
     }
+
+    /// Create a Supabase user with a pre-set password (email immediately confirmed).
+    /// Used by the bulk CSV import flow where passwords are auto-generated.
+    pub async fn create_user_with_password_in_supabase(
+        &self,
+        email: &str,
+        password: &str,
+        metadata: UserMetadata,
+    ) -> Result<String, AppError> {
+        let user_metadata_json = metadata.to_supabase_metadata();
+
+        let create_user_body = json!({
+            "email": email,
+            "password": password,
+            "email_confirm": true,
+            "user_metadata": user_metadata_json,
+            "app_metadata": {
+                "provider": "email",
+                "providers": ["email"]
+            }
+        });
+
+        let create_response = self.client
+            .post(&format!("{}/auth/v1/admin/users", self.project_url))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&create_user_body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to create user with password: {}", e)))?;
+
+        let status_code = create_response.status();
+
+        if !status_code.is_success() {
+            let error_body = create_response.text().await.unwrap_or_default();
+            if status_code == 422 && error_body.contains("already been registered") {
+                return Err(AppError::Conflict("User with this email already exists".to_string()));
+            }
+            return Err(AppError::ExternalService(format!("Failed to create user with password: {}", error_body)));
+        }
+
+        let user_data: serde_json::Value = create_response
+            .json()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to parse user creation response: {}", e)))?;
+
+        let user_id = user_data
+            .get("id")
+            .and_then(|id| id.as_str())
+            .ok_or_else(|| AppError::ExternalService("User ID not found in response".to_string()))?;
+
+        tracing::info!("User created with password in Supabase: {}", user_id);
+        Ok(user_id.to_string())
+    }
+
+    /// Send bulk import welcome email via Resend containing login credentials.
+    pub async fn send_bulk_import_welcome_email(
+        &self,
+        email: &str,
+        first_name: &str,
+        last_name: &str,
+        password: &str,
+        school_name: &str,
+    ) -> Result<bool, AppError> {
+        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
+        if resend_api_key.is_empty() {
+            tracing::warn!("RESEND_API_KEY not set; skipping bulk import welcome email for {}", email);
+            return Ok(false);
+        }
+
+        let dashboard_url = self.frontend_url.clone();
+        let html_body = super::email_templates::bulk_import_welcome_html(
+            first_name,
+            last_name,
+            email,
+            password,
+            school_name,
+            &dashboard_url,
+        );
+
+        let subject = format!("Welcome to {} — Your Login Details", school_name);
+        let body = json!({
+            "from": "Goddard Schools <no-reply@arjavatech.com>",
+            "to": [email],
+            "subject": subject,
+            "html": html_body,
+        });
+
+        let response = self.client
+            .post("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", resend_api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to send bulk import welcome email: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::warn!("Bulk import welcome email failed for {}: {}", email, error_text);
+            return Ok(false);
+        }
+
+        tracing::info!("✅ Bulk import welcome email sent to {}", email);
+        Ok(true)
+    }
 }

@@ -13,6 +13,7 @@ pub mod admin;
 pub mod email;
 pub mod notification;
 pub mod websocket_message;
+pub mod employee;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

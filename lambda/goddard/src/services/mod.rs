@@ -15,6 +15,7 @@ pub mod email_service;
 pub mod notification_service;
 pub mod fcm_service;
 pub mod connection_registry;
+pub mod employee_service;
 
 pub use auth_service::AuthService;
 pub use supabase_client::SupabaseClient;
@@ -32,3 +33,4 @@ pub use email_service::EmailService;
 pub use notification_service::NotificationService;
 pub use fcm_service::FcmService;
 pub use connection_registry::ConnectionRegistry;
+pub use employee_service::EmployeeService;

@@ -10,6 +10,10 @@ pub mod portal_dao;
 pub mod admin_dao;
 pub mod notification_dao;
 pub mod device_token_dao;
+pub mod employee_dao;
+pub mod employee_form_template_dao;
+pub mod employee_form_assignment_dao;
+pub mod employee_form_submission_dao;
 
 pub use auth_dao::AuthDao;
 pub use school_dao::SchoolDao;
@@ -23,3 +27,7 @@ pub use portal_dao::PortalDao;
 pub use admin_dao::AdminDao;
 pub use notification_dao::NotificationDao;
 pub use device_token_dao::DeviceTokenDao;
+pub use employee_dao::EmployeeDao;
+pub use employee_form_template_dao::EmployeeFormTemplateDao;
+pub use employee_form_assignment_dao::EmployeeFormAssignmentDao;
+pub use employee_form_submission_dao::EmployeeFormSubmissionDao;

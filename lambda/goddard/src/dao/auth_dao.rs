@@ -118,9 +118,29 @@ impl AuthDao {
         Ok((0, 0, 0, 1)) // (super_admin, admin, teacher, parent)
     }
 
-    pub async fn user_exists_by_email(&self, _email: &str) -> ApiResult<bool> {
-        // TODO: Implement with tokio-postgres
-        Ok(false)
+    pub async fn user_exists_by_email(&self, email: &str) -> ApiResult<bool> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            "SELECT COUNT(*) > 0 FROM users WHERE email = $1",
+            &[&email],
+        ).await.map_err(|e| AppError::Database(format!("Failed to check user existence: {}", e)))?;
+
+        Ok(row.get(0))
+    }
+
+    pub async fn get_user_id_by_email(&self, email: &str) -> ApiResult<Uuid> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_opt(
+            "SELECT id FROM users WHERE email = $1 LIMIT 1",
+            &[&email],
+        ).await.map_err(|e| AppError::Database(format!("Failed to query user by email: {}", e)))?
+        .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+        Ok(row.get("id"))
     }
 
     pub async fn user_needs_confirmation(&self, _email: &str) -> ApiResult<bool> {

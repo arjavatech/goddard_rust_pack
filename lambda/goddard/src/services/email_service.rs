@@ -20,8 +20,9 @@ impl EmailService {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
-            api_key: "re_eTyTdH1N_GD3g5HKBTT9yXp5dcAVPsZxK".to_string(),
-            from_email: "Goddard Schools <no-reply@arjavatech.com>".to_string(),
+            api_key: std::env::var("RESEND_API_KEY").unwrap_or_default(),
+            from_email: std::env::var("EMAIL_FROM")
+                .unwrap_or_else(|_| "Goddard Schools <no-reply@arjavatech.com>".to_string()),
         }
     }
 
@@ -280,6 +281,69 @@ impl EmailService {
         let html = email_templates::form_assigned_html(&payload);
         self.dispatch_resend(&payload.parent_email, &subject, &html)
             .await
+    }
+
+    pub async fn send_employee_invite_email(
+        &self,
+        email: &str,
+        first_name: &str,
+        last_name: &str,
+        invite_link: &str,
+        school_name: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("Welcome to {} — Employee Access", school_name);
+        let html = email_templates::employee_invite_html(first_name, last_name, invite_link, school_name);
+        self.dispatch_resend(email, &subject, &html).await
+    }
+
+    pub async fn send_employee_form_assigned_email(
+        &self,
+        email: &str,
+        employee_name: &str,
+        form_name: &str,
+        due_date: &str,
+        dashboard_url: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("New form assigned: {}", form_name);
+        let html = email_templates::employee_form_assigned_html(employee_name, form_name, due_date, dashboard_url);
+        self.dispatch_resend(email, &subject, &html).await
+    }
+
+    pub async fn send_employee_form_approved_email(
+        &self,
+        email: &str,
+        employee_name: &str,
+        form_name: &str,
+        notes: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("{} has been approved", form_name);
+        let html = email_templates::employee_form_approved_html(employee_name, form_name, notes);
+        self.dispatch_resend(email, &subject, &html).await
+    }
+
+    pub async fn send_employee_form_rejected_email(
+        &self,
+        email: &str,
+        employee_name: &str,
+        form_name: &str,
+        notes: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("Action needed: {} requires updates", form_name);
+        let html = email_templates::employee_form_rejected_html(employee_name, form_name, notes);
+        self.dispatch_resend(email, &subject, &html).await
+    }
+
+    pub async fn send_employee_form_reminder_email(
+        &self,
+        email: &str,
+        employee_name: &str,
+        form_name: &str,
+        due_date: &str,
+        dashboard_url: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("Reminder: {} is due soon", form_name);
+        let html = email_templates::employee_form_reminder_html(employee_name, form_name, due_date, dashboard_url);
+        self.dispatch_resend(email, &subject, &html).await
     }
 
     /// Low-level Resend POST. Accepts a comma-separated `parent_email` field

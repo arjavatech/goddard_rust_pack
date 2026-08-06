@@ -15,3 +15,4 @@ pub mod email_controller;
 pub mod notification_controller;
 pub mod device_token_controller;
 pub mod websocket_controller;
+pub mod employee_controller;

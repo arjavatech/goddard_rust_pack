@@ -81,14 +81,25 @@ use controllers::{
     websocket_controller::{
         websocket_handler,
     },
+    employee_controller::{
+        invite_employee, get_employees, get_employee_by_id, update_employee,
+        deactivate_employee, activate_employee, get_employee_forms, get_current_employee,
+        create_employee_form_template, get_employee_form_templates,
+        update_employee_form_template, delete_employee_form_template,
+        assign_employee_form, get_employee_form_assignments,
+        review_employee_form_assignment, delete_employee_form_assignment,
+        employee_form_submission_webhook, send_bulk_employee_form_reminders,
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
-    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao
+    AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao,
+    EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
 };
 use services::{
-    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry
+    AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry,
+    EmployeeService,
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -141,6 +152,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let admin_dao = AdminDao::new(pool.clone());
     let notification_dao = NotificationDao::new(pool.clone());
     let device_token_dao = Arc::new(DeviceTokenDao::new(pool.clone()));
+    let employee_dao = EmployeeDao::new(pool.clone());
+    let employee_form_template_dao = EmployeeFormTemplateDao::new(pool.clone());
+    let employee_form_assignment_dao = EmployeeFormAssignmentDao::new(pool.clone());
+    let employee_form_submission_dao = EmployeeFormSubmissionDao::new(pool.clone());
 
     // Initialize FCM service. Live when all three env vars are present; otherwise a
     // no-op stub that lets local dev / staging boot without Firebase configured.
@@ -199,6 +214,16 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao, email_service.clone(), notification_service.clone()));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
+    let employee_service = Arc::new(EmployeeService::new(
+        employee_dao,
+        employee_form_template_dao,
+        employee_form_assignment_dao,
+        employee_form_submission_dao,
+        auth_dao.clone(),
+        school_dao.clone(),
+        supabase_client.clone(),
+        email_service.clone(),
+    ));
 
     // Initialize tracing
     tracing_subscriber::fmt()
@@ -347,6 +372,36 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/device-tokens", post(register_device_token).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/device-tokens/:token", delete(unregister_device_token).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(device_token_dao)
+
+        // Employee Management APIs
+        .route("/employees/invite", post(invite_employee).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/me", get(get_current_employee).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/employees", get(get_employees).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/:employee_id", get(get_employee_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/employees/:employee_id", patch(update_employee).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/:employee_id", delete(deactivate_employee).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/:employee_id/activate", patch(activate_employee).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/:employee_id/forms", get(get_employee_forms).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+
+        // Employee Form Templates (Admin only)
+        .route("/employee-form-templates", post(create_employee_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates", get(get_employee_form_templates).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates", put(update_employee_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates", delete(delete_employee_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+
+        // Employee Form Assignments (Admin manages; Employee reads)
+        .route("/employee-form-assignments", post(assign_employee_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-assignments", get(get_employee_form_assignments).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/employee-form-assignments", delete(delete_employee_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-assignments/review", put(review_employee_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+
+        // Fillout webhook for employee form submissions (public)
+        .route("/employee-form-submissions/webhook", post(employee_form_submission_webhook))
+
+        // Bulk employee form reminders
+        .route("/emails/bulk-employee-form-reminders", post(send_bulk_employee_form_reminders).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+
+        .with_state(employee_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers));

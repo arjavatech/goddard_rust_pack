@@ -538,3 +538,119 @@ pub fn child_archived_html(payload: &ChildArchivedNotification) -> String {
 
     render_shell(accent, &headline, &preheader, &body, "")
 }
+
+// =====================================================
+// Employee lifecycle notification templates
+// =====================================================
+
+pub fn employee_invite_html(first_name: &str, last_name: &str, invite_link: &str, school_name: &str) -> String {
+    let accent = "#2980b9";
+    let headline = format!("Welcome to {} — Employee Access", html_escape(school_name));
+    let preheader = format!("You've been added as an employee at {}. Set up your account to get started.", school_name);
+
+    let body = format!(
+        r#"<p>Dear {first_name} {last_name},</p>
+          <p>You have been added as an employee at <strong>{school}</strong>. To complete your account setup and access your employee dashboard, please click the button below.</p>
+          <p style="color:#555;font-size:14px;">This invitation link is valid for 7 days.</p>"#,
+        first_name = html_escape(first_name),
+        last_name = html_escape(last_name),
+        school = html_escape(school_name),
+    );
+
+    let cta = cta_button("Set Up Your Account", invite_link, accent);
+    render_shell(accent, &headline, &preheader, &body, &cta)
+}
+
+pub fn employee_form_assigned_html(employee_name: &str, form_name: &str, due_date: &str, dashboard_url: &str) -> String {
+    let accent = "#27ae60";
+    let headline = format!("New form assigned: {}", html_escape(form_name));
+    let preheader = format!("A new form has been assigned to you. Please complete {} by {}.", form_name, due_date);
+
+    let due = if due_date.is_empty() { "at your earliest convenience".to_string() } else { html_escape(due_date) };
+
+    let details = details_card(&[
+        ("Form", form_name.to_string()),
+        ("Due Date", due.clone()),
+    ]);
+
+    let body = format!(
+        r#"<p>Dear {name},</p>
+          <p>A new form has been assigned to you that requires your attention.</p>
+          {details}
+          <p>Please complete this form by <strong>{due}</strong>.</p>"#,
+        name = html_escape(employee_name),
+        details = details,
+        due = due,
+    );
+
+    let cta = cta_button("Open Employee Dashboard", dashboard_url, accent);
+    render_shell(accent, &headline, &preheader, &body, &cta)
+}
+
+pub fn employee_form_approved_html(employee_name: &str, form_name: &str, notes: &str) -> String {
+    let accent = "#27ae60";
+    let headline = format!("{} has been approved", html_escape(form_name));
+    let preheader = format!("Your submission for {} has been approved.", form_name);
+
+    let notes_line = if !notes.is_empty() {
+        format!("<p><strong>Notes:</strong> {}</p>", html_escape(notes))
+    } else {
+        String::new()
+    };
+
+    let body = format!(
+        r#"<p>Dear {name},</p>
+          <p>Your submission for <strong>{form}</strong> has been reviewed and <strong>approved</strong>.</p>
+          {notes}
+          <p>Thank you for completing this form promptly.</p>"#,
+        name = html_escape(employee_name),
+        form = html_escape(form_name),
+        notes = notes_line,
+    );
+
+    render_shell(accent, &headline, &preheader, &body, "")
+}
+
+pub fn employee_form_rejected_html(employee_name: &str, form_name: &str, notes: &str) -> String {
+    let accent = "#e74c3c";
+    let headline = format!("Action needed: {} requires updates", html_escape(form_name));
+    let preheader = format!("Your submission for {} has been returned for revision.", form_name);
+
+    let notes_line = if !notes.is_empty() {
+        format!("<p><strong>Reviewer notes:</strong> {}</p>", html_escape(notes))
+    } else {
+        String::new()
+    };
+
+    let body = format!(
+        r#"<p>Dear {name},</p>
+          <p>Your submission for <strong>{form}</strong> has been reviewed and <strong>returned for revision</strong>. Please update and resubmit at your earliest convenience.</p>
+          {notes}
+          <p>Please log into your employee dashboard to review the details and resubmit.</p>"#,
+        name = html_escape(employee_name),
+        form = html_escape(form_name),
+        notes = notes_line,
+    );
+
+    render_shell(accent, &headline, &preheader, &body, "")
+}
+
+pub fn employee_form_reminder_html(employee_name: &str, form_name: &str, due_date: &str, dashboard_url: &str) -> String {
+    let accent = "#e67e22";
+    let headline = format!("Reminder: {} is due soon", html_escape(form_name));
+    let preheader = format!("Friendly reminder: please complete {} by {}.", form_name, due_date);
+
+    let due = if due_date.is_empty() { "soon".to_string() } else { html_escape(due_date) };
+
+    let body = format!(
+        r#"<p>Dear {name},</p>
+          <p>This is a friendly reminder that <strong>{form}</strong> is due <strong>{due}</strong> and has not yet been completed.</p>
+          <p>Please log in to your employee dashboard to complete this form.</p>"#,
+        name = html_escape(employee_name),
+        form = html_escape(form_name),
+        due = due,
+    );
+
+    let cta = cta_button("Complete Form Now", dashboard_url, accent);
+    render_shell(accent, &headline, &preheader, &body, &cta)
+}

@@ -269,6 +269,47 @@ pub async fn bulk_import_families(
     }
 }
 
+pub async fn bulk_add_secondary_parents(
+    Extension(auth): Extension<AuthContext>,
+    State(enrollment_service): State<Arc<EnrollmentService>>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    println!("[DEBUG] Bulk add secondary parents - User: {}, Role: {:?}", auth.email, auth.role);
+
+    let mut school_id: Option<Uuid> = None;
+    let mut csv_bytes: Option<Vec<u8>> = None;
+
+    while let Some(field) = multipart.next_field().await
+        .map_err(|e| AppError::Validation(format!("Failed to read multipart field: {}", e)))?
+    {
+        match field.name() {
+            Some("school_id") => {
+                let text = field.text().await
+                    .map_err(|e| AppError::Validation(format!("Failed to read school_id: {}", e)))?;
+                school_id = Some(Uuid::parse_str(text.trim())
+                    .map_err(|_| AppError::Validation(format!("Invalid school_id UUID: '{}'", text.trim())))?);
+            }
+            Some("file") => {
+                let bytes = field.bytes().await
+                    .map_err(|e| AppError::Validation(format!("Failed to read CSV file: {}", e)))?;
+                csv_bytes = Some(bytes.to_vec());
+            }
+            _ => {}
+        }
+    }
+
+    let school_id = school_id.ok_or_else(|| AppError::Validation("Missing required field: school_id".to_string()))?;
+    let csv_bytes = csv_bytes.ok_or_else(|| AppError::Validation("Missing required field: file".to_string()))?;
+
+    use axum::response::IntoResponse;
+    let response = enrollment_service.bulk_add_secondary_parents(school_id, csv_bytes).await?;
+    if response.row_errors.is_empty() {
+        Ok(ResponseUtils::success(response).into_response())
+    } else {
+        Ok((axum::http::StatusCode::UNPROCESSABLE_ENTITY, axum::Json(response)).into_response())
+    }
+}
+
 /// GET /enrollments/activate/:token
 /// Validates a 7-day invite token and 302-redirects the parent to a fresh Supabase signup URL.
 /// No authentication required — the token is the credential.

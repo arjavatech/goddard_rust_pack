@@ -586,3 +586,24 @@ pub struct BulkImportResponse {
     pub created_children: usize,
     pub row_errors: Vec<BulkImportRowError>,
 }
+
+// Bulk secondary parent upload
+#[derive(Debug, serde::Deserialize)]
+pub struct BulkSecondaryParentRow {
+    pub child_name: String,
+    pub secondary_parent_name: String,
+    pub secondary_parent_email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkSecondaryParentError {
+    pub row: usize,
+    pub child_name: String,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkSecondaryParentResponse {
+    pub processed: usize,
+    pub row_errors: Vec<BulkSecondaryParentError>,
+}

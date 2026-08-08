@@ -167,7 +167,7 @@ impl EnrollmentDao {
 
     // Step 4: Get parent by ID (should be created by DB trigger)
     pub async fn get_parent_by_id(&self, parent_id: Uuid, school_id: Uuid) -> ApiResult<CreatedUser> {
-        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, created_at FROM users WHERE id = $1 AND school_id = $2";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, phone_number, relation_type, created_at FROM users WHERE id = $1 AND school_id = $2";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -183,6 +183,8 @@ impl EnrollmentDao {
             role: row.get("role"),
             is_verified: row.get("is_verified"),
             address: row.get("address"),
+            phone_number: row.get("phone_number"),
+            relation_type: row.get("relation_type"),
             created_at: row.get("created_at"),
         })
     }
@@ -192,7 +194,7 @@ impl EnrollmentDao {
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
         let row = client
             .query_one(
-                "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, created_at FROM users WHERE id = $1",
+                "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, phone_number, relation_type, created_at FROM users WHERE id = $1",
                 &[&user_id],
             )
             .await
@@ -206,17 +208,32 @@ impl EnrollmentDao {
             role: row.get("role"),
             is_verified: row.get("is_verified"),
             address: row.get("address"),
+            phone_number: row.get("phone_number"),
+            relation_type: row.get("relation_type"),
             created_at: row.get("created_at"),
         })
     }
 
     // Create parent in users table
-    pub async fn create_parent(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, email: &str, role: &str, address: Option<&str>) -> ApiResult<CreatedUser> {
-        let query = "INSERT INTO users (id, school_id, first_name, last_name, email, role, address) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, school_id, first_name, last_name, email, role, is_verified, address, created_at";
+    pub async fn create_parent(
+        &self,
+        parent_id: Uuid,
+        school_id: Uuid,
+        first_name: &str,
+        last_name: &str,
+        email: &str,
+        role: &str,
+        address: Option<&str>,
+        phone_number: Option<&str>,
+        relation_type: Option<&str>,
+    ) -> ApiResult<CreatedUser> {
+        let query = "INSERT INTO users (id, school_id, first_name, last_name, email, role, address, phone_number, relation_type) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+                     RETURNING id, school_id, first_name, last_name, email, role, is_verified, address, phone_number, relation_type, created_at";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
-        let row = client.query_one(query, &[&parent_id, &school_id, &first_name, &last_name, &email, &role, &address]).await
+        let row = client.query_one(query, &[&parent_id, &school_id, &first_name, &last_name, &email, &role, &address, &phone_number, &relation_type]).await
             .map_err(|e| AppError::Database(format!("Failed to create parent: {}", e)))?;
 
         Ok(CreatedUser {
@@ -228,8 +245,33 @@ impl EnrollmentDao {
             role: row.get("role"),
             is_verified: row.get("is_verified"),
             address: row.get("address"),
+            phone_number: row.get("phone_number"),
+            relation_type: row.get("relation_type"),
             created_at: row.get("created_at"),
         })
+    }
+
+    // Update optional profile fields on an existing user row (used after Supabase trigger creates the row)
+    pub async fn update_parent_optional_fields(
+        &self,
+        user_id: Uuid,
+        address: Option<&str>,
+        phone_number: Option<&str>,
+        relation_type: Option<&str>,
+    ) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
+        client.execute(
+            "UPDATE users SET \
+                address       = COALESCE($2, address), \
+                phone_number  = COALESCE($3, phone_number), \
+                relation_type = COALESCE($4, relation_type), \
+                updated_at    = NOW() \
+             WHERE id = $1",
+            &[&user_id, &address, &phone_number, &relation_type],
+        ).await
+        .map_err(|e| AppError::Database(format!("Failed to update parent optional fields: {}", e)))?;
+        Ok(())
     }
 
     // Resolve classroom name to UUID for a given school (used by bulk import)
@@ -250,7 +292,7 @@ impl EnrollmentDao {
         self.execute_with_connection(|client| async move {
             let row = client.query_opt(
                 "SELECT id, school_id, first_name, last_name, email, role, \
-                 COALESCE(is_verified, false) as is_verified, address, created_at \
+                 COALESCE(is_verified, false) as is_verified, address, phone_number, relation_type, created_at \
                  FROM users WHERE LOWER(email) = LOWER($1) AND school_id = $2 \
                  AND (is_active = true OR is_active IS NULL) LIMIT 1",
                 &[&email, &school_id],
@@ -265,6 +307,8 @@ impl EnrollmentDao {
                 role: r.get("role"),
                 is_verified: r.get("is_verified"),
                 address: r.get("address"),
+                phone_number: r.get("phone_number"),
+                relation_type: r.get("relation_type"),
                 created_at: r.get("created_at"),
             }))
         }).await
@@ -571,7 +615,7 @@ impl EnrollmentDao {
 
     // Additional method for getting parents by school (used in get_parent_details_by_school)
     pub async fn get_parents_by_school(&self, school_id: Uuid) -> ApiResult<Vec<CreatedUser>> {
-        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, created_at FROM users WHERE school_id = $1 AND role = 'Parent' AND (is_active = true OR is_active IS NULL) ORDER BY created_at DESC";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, is_verified, address, phone_number, relation_type, created_at FROM users WHERE school_id = $1 AND role = 'Parent' AND (is_active = true OR is_active IS NULL) ORDER BY created_at DESC";
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
 
@@ -587,6 +631,8 @@ impl EnrollmentDao {
             role: row.get("role"),
             is_verified: row.get("is_verified"),
             address: row.get("address"),
+            phone_number: row.get("phone_number"),
+            relation_type: row.get("relation_type"),
             created_at: row.get("created_at"),
         }).collect())
     }
@@ -600,6 +646,9 @@ impl EnrollmentDao {
                     u.email as parent_email,
                     u.first_name as parent_first_name,
                     u.last_name as parent_last_name,
+                    u.address as parent_address,
+                    u.phone_number as parent_phone_number,
+                    u.relation_type as parent_relation_type,
                     u.is_active as parent_is_active,
                     CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN 'signed' ELSE 'not signed' END as signed_status,
                     c.id as child_id,
@@ -649,6 +698,9 @@ impl EnrollmentDao {
                 parent_email,
                 parent_first_name,
                 parent_last_name,
+                parent_address,
+                parent_phone_number,
+                parent_relation_type,
                 parent_is_active,
                 signed_status,
                 child_id,
@@ -693,7 +745,7 @@ impl EnrollmentDao {
                     '[]'::json
                 ) as forms
             FROM parent_children_forms
-            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_is_active, signed_status,
+            GROUP BY parent_id, parent_email, parent_first_name, parent_last_name, parent_address, parent_phone_number, parent_relation_type, parent_is_active, signed_status,
                      child_id, child_full_name, child_dob, child_status, child_gender, enrollment_id,
                      classroom_id, classroom_name,
                      primary_parent_id, primary_parent_first_name, primary_parent_last_name, primary_parent_email,
@@ -747,6 +799,9 @@ impl EnrollmentDao {
                     parent_email: row.get("parent_email"),
                     parent_first_name: row.get("parent_first_name"),
                     parent_last_name: row.get("parent_last_name"),
+                    parent_address: row.get("parent_address"),
+                    parent_phone_number: row.get("parent_phone_number"),
+                    parent_relation_type: row.get("parent_relation_type"),
                     signed_status: row.get("signed_status"),
                     children: vec![child],
                 }, parent_is_active));
@@ -818,6 +873,9 @@ impl EnrollmentDao {
                 c.parent_id as parent_id,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
+                u.address as parent_address,
+                u.phone_number as parent_phone_number,
+                u.relation_type as parent_relation_type,
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
@@ -847,7 +905,10 @@ impl EnrollmentDao {
                 c.secondary_parent_id as secondary_parent_id,
                 sp.first_name as secondary_parent_first_name,
                 sp.last_name as secondary_parent_last_name,
-                sp.email as secondary_parent_email
+                sp.email as secondary_parent_email,
+                sp.address as secondary_parent_address,
+                sp.phone_number as secondary_parent_phone_number,
+                sp.relation_type as secondary_parent_relation_type
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             JOIN users u ON c.parent_id = u.id
@@ -869,6 +930,9 @@ impl EnrollmentDao {
             parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
+            parent_address: row.get("parent_address"),
+            parent_phone_number: row.get("parent_phone_number"),
+            parent_relation_type: row.get("parent_relation_type"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
@@ -882,6 +946,9 @@ impl EnrollmentDao {
             secondary_parent_first_name: row.get("secondary_parent_first_name"),
             secondary_parent_last_name: row.get("secondary_parent_last_name"),
             secondary_parent_email: row.get("secondary_parent_email"),
+            secondary_parent_address: row.get("secondary_parent_address"),
+            secondary_parent_phone_number: row.get("secondary_parent_phone_number"),
+            secondary_parent_relation_type: row.get("secondary_parent_relation_type"),
         }).collect())
     }
 
@@ -893,6 +960,9 @@ impl EnrollmentDao {
                 c.parent_id as parent_id,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
+                u.address as parent_address,
+                u.phone_number as parent_phone_number,
+                u.relation_type as parent_relation_type,
                 c.id as child_id,
                 c.first_name as child_first_name,
                 c.last_name as child_last_name,
@@ -905,7 +975,10 @@ impl EnrollmentDao {
                 c.secondary_parent_id as secondary_parent_id,
                 sp.first_name as secondary_parent_first_name,
                 sp.last_name as secondary_parent_last_name,
-                sp.email as secondary_parent_email
+                sp.email as secondary_parent_email,
+                sp.address as secondary_parent_address,
+                sp.phone_number as secondary_parent_phone_number,
+                sp.relation_type as secondary_parent_relation_type
             FROM enrollments e
             JOIN children c ON e.child_id = c.id
             JOIN users u ON c.parent_id = u.id
@@ -928,6 +1001,9 @@ impl EnrollmentDao {
             parent_id: row.get("parent_id"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
+            parent_address: row.get("parent_address"),
+            parent_phone_number: row.get("parent_phone_number"),
+            parent_relation_type: row.get("parent_relation_type"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),
             child_last_name: row.get("child_last_name"),
@@ -941,6 +1017,9 @@ impl EnrollmentDao {
             secondary_parent_first_name: row.get("secondary_parent_first_name"),
             secondary_parent_last_name: row.get("secondary_parent_last_name"),
             secondary_parent_email: row.get("secondary_parent_email"),
+            secondary_parent_address: row.get("secondary_parent_address"),
+            secondary_parent_phone_number: row.get("secondary_parent_phone_number"),
+            secondary_parent_relation_type: row.get("secondary_parent_relation_type"),
         }).collect())
     }
 
@@ -991,6 +1070,9 @@ impl EnrollmentDao {
                 u.email as parent_email,
                 u.first_name as parent_first_name,
                 u.last_name as parent_last_name,
+                u.phone_number as parent_phone_number,
+                u.address as parent_address,
+                u.relation_type as parent_relation_type,
                 CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN 'signed' ELSE 'not signed' END as signed_status,
                 c.id as child_id,
                 c.first_name as child_first_name,
@@ -1042,6 +1124,9 @@ impl EnrollmentDao {
             parent_email: row.get("parent_email"),
             parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"),
+            parent_phone_number: row.get("parent_phone_number"),
+            parent_address: row.get("parent_address"),
+            parent_relation_type: row.get("parent_relation_type"),
             signed_status: row.get("signed_status"),
             child_id: row.get("child_id"),
             child_first_name: row.get("child_first_name"),

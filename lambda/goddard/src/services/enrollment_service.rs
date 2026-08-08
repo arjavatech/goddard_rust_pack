@@ -79,17 +79,44 @@ impl EnrollmentService {
             }
         }
 
+        // Step 1.3: Validate and normalize relation_type fields
+        let parent_relation_type = match request.parent_relation_type.as_deref() {
+            None | Some("") => None,
+            Some(rt) => {
+                let upper = rt.to_uppercase();
+                if upper != "FATHER" && upper != "MOTHER" {
+                    return Err(AppError::Validation(
+                        "parent_relation_type must be 'FATHER', 'MOTHER', or omitted".to_string()
+                    ));
+                }
+                Some(upper)
+            }
+        };
+        let secondary_relation_type = match request.secondary_parent_relation_type.as_deref() {
+            None | Some("") => None,
+            Some(rt) => {
+                let upper = rt.to_uppercase();
+                if upper != "FATHER" && upper != "MOTHER" {
+                    return Err(AppError::Validation(
+                        "secondary_parent_relation_type must be 'FATHER', 'MOTHER', or omitted".to_string()
+                    ));
+                }
+                Some(upper)
+            }
+        };
+
         // Step 2: Create auth user via Supabase (primary parent)
         let auth_result = self.create_auth_user(
             &request.parent_email,
             request.school_id,
             &request.parent_first_name,
             &request.parent_last_name,
-            "Parent"
+            "Parent",
+            request.parent_phone_number.as_deref(),
         ).await?;
 
         // Step 3: Get or create parent (may have been created by DB trigger)
-        let created_parent = match self.enrollment_dao.get_parent_by_id(auth_result.auth_user_id, request.school_id).await {
+        let mut created_parent = match self.enrollment_dao.get_parent_by_id(auth_result.auth_user_id, request.school_id).await {
             Ok(existing_parent) => existing_parent,
             Err(_) => {
                 self.enrollment_dao.create_parent(
@@ -99,10 +126,29 @@ impl EnrollmentService {
                     &request.parent_last_name,
                     &request.parent_email,
                     "Parent",
-                    None,
+                    request.parent_address.as_deref(),
+                    request.parent_phone_number.as_deref(),
+                    parent_relation_type.as_deref(),
                 ).await?
             }
         };
+
+        // Step 3.0: Persist optional fields that the Supabase trigger-created row won't have
+        if request.parent_address.is_some()
+            || request.parent_phone_number.is_some()
+            || parent_relation_type.is_some()
+        {
+            self.enrollment_dao.update_parent_optional_fields(
+                created_parent.id,
+                request.parent_address.as_deref(),
+                request.parent_phone_number.as_deref(),
+                parent_relation_type.as_deref(),
+            ).await?;
+            // Patch in-memory so the invite response reflects the saved values
+            created_parent.address       = request.parent_address.clone().or(created_parent.address);
+            created_parent.phone_number  = request.parent_phone_number.clone().or(created_parent.phone_number);
+            created_parent.relation_type = parent_relation_type.clone().or(created_parent.relation_type);
+        }
 
         // Step 3.1: Create secondary parent if provided
         let (secondary_parent_id, secondary_signup_email_sent, created_secondary_parent) =
@@ -117,11 +163,12 @@ impl EnrollmentService {
                     request.school_id,
                     sec_first_name,
                     sec_last_name,
-                    "secondary-parent"
+                    "secondary-parent",
+                    request.secondary_parent_phone_number.as_deref(),
                 ).await?;
 
                 // Get or create secondary parent user record
-                let sec_parent = match self.enrollment_dao.get_parent_by_id(sec_auth_result.auth_user_id, request.school_id).await {
+                let mut sec_parent = match self.enrollment_dao.get_parent_by_id(sec_auth_result.auth_user_id, request.school_id).await {
                     Ok(existing) => existing,
                     Err(_) => {
                         self.enrollment_dao.create_parent(
@@ -131,10 +178,28 @@ impl EnrollmentService {
                             sec_last_name,
                             sec_email,
                             "secondary-parent",
-                            None,
+                            request.secondary_parent_address.as_deref(),
+                            request.secondary_parent_phone_number.as_deref(),
+                            secondary_relation_type.as_deref(),
                         ).await?
                     }
                 };
+
+                // Persist optional fields for secondary parent
+                if request.secondary_parent_address.is_some()
+                    || request.secondary_parent_phone_number.is_some()
+                    || secondary_relation_type.is_some()
+                {
+                    self.enrollment_dao.update_parent_optional_fields(
+                        sec_parent.id,
+                        request.secondary_parent_address.as_deref(),
+                        request.secondary_parent_phone_number.as_deref(),
+                        secondary_relation_type.as_deref(),
+                    ).await?;
+                    sec_parent.address       = request.secondary_parent_address.clone().or(sec_parent.address);
+                    sec_parent.phone_number  = request.secondary_parent_phone_number.clone().or(sec_parent.phone_number);
+                    sec_parent.relation_type = secondary_relation_type.clone().or(sec_parent.relation_type);
+                }
 
                 (Some(sec_auth_result.auth_user_id), Some(sec_auth_result.email_sent), Some(sec_parent))
             } else {
@@ -184,6 +249,9 @@ impl EnrollmentService {
             email: created_parent.email.clone(),
             role: created_parent.role.clone(),
             is_verified: created_parent.is_verified,
+            address: created_parent.address.clone(),
+            phone_number: created_parent.phone_number.clone(),
+            relation_type: created_parent.relation_type.clone(),
             created_at: created_parent.created_at,
         };
 
@@ -196,6 +264,9 @@ impl EnrollmentService {
             email: sp.email,
             role: sp.role,
             is_verified: sp.is_verified,
+            address: sp.address,
+            phone_number: sp.phone_number,
+            relation_type: sp.relation_type,
             created_at: sp.created_at,
         });
 
@@ -310,7 +381,8 @@ impl EnrollmentService {
         school_id: Uuid,
         first_name: &str,
         last_name: &str,
-        role: &str
+        role: &str,
+        phone_number: Option<&str>,
     ) -> ApiResult<AuthUserResult> {
         // STEP 1: Fetch school name FIRST - PREREQUISITE VALIDATION
         tracing::info!("🔍 Fetching school name for school_id: {}", school_id);
@@ -335,7 +407,7 @@ impl EnrollmentService {
             Some(first_name.to_string()),
             Some(last_name.to_string()),
             Some(role.to_string()),
-            None,  // phone_number - not provided in enrollment flow
+            phone_number.map(|s| s.to_string()),
             None,  // is_verified - will be set after email confirmation
         )
         .with_school_name_option(Some(school_name.clone()));  // school_name is guaranteed to exist
@@ -755,6 +827,9 @@ impl EnrollmentService {
         let parent_email = first_row.parent_email.clone();
         let parent_first_name = first_row.parent_first_name.clone();
         let parent_last_name = first_row.parent_last_name.clone();
+        let parent_phone_number = first_row.parent_phone_number.clone();
+        let parent_address = first_row.parent_address.clone();
+        let parent_relation_type = first_row.parent_relation_type.clone();
         let signed_status = first_row.signed_status.clone();
 
         for row in rows {
@@ -818,6 +893,9 @@ impl EnrollmentService {
             parent_email,
             parent_first_name,
             parent_last_name,
+            parent_phone_number,
+            parent_address,
+            parent_relation_type,
             signed_status,
             children: children_map.into_values().collect(),
         };
@@ -1627,6 +1705,8 @@ impl EnrollmentService {
                         first_row.primary_parent_email.trim(),
                         "Parent",
                         if first_row.primary_parent_address.trim().is_empty() { None } else { Some(first_row.primary_parent_address.trim()) },
+                        first_row.primary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
+                        None,
                     ).await {
                         Ok(p) => {
                             let _ = self.supabase_client.send_bulk_import_welcome_email(
@@ -1685,6 +1765,8 @@ impl EnrollmentService {
                                     sec_uuid, school_id,
                                     sec_first.trim(), sec_last.trim(),
                                     sec_email.trim(), "secondary-parent", None,
+                                    first_row.secondary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
+                                    None,
                                 ).await {
                                     Ok(p) => {
                                         let _ = self.supabase_client.send_bulk_import_welcome_email(

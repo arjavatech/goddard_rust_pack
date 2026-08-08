@@ -1,0 +1,79 @@
+meta {
+  name: Bulk Secondary Parents
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{base_url}}/enrollments/bulk-secondary-parents
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:multipart-form {
+  school_id: {{school_id}}
+  file: @file(secondary_parents.csv)
+}
+
+docs {
+  # Bulk Add Secondary Parents
+
+  Adds secondary parents in bulk from a CSV file. Children must already exist in the system.
+  All records are validated before any database changes are made (all-or-nothing).
+
+  **Authentication**: JWT Bearer Token or API Key (Admin/SuperAdmin role required)
+
+  **Multipart Fields**:
+  - `school_id` (UUID, required) - School ID
+  - `file` (CSV, required) - CSV file with header row
+
+  **CSV Columns (header row required)**:
+  - `child_name` — full name e.g. "Emma Johnson"
+  - `secondary_parent_name` — full name e.g. "Jane Doe"
+  - `secondary_parent_email` — e.g. "jane.doe@example.com"
+
+  **Password Rule**: First 4 chars of email (first char uppercased) + @2026
+  e.g. jane.doe@example.com → Jane@2026
+
+  **Example CSV**:
+  ```
+  child_name,secondary_parent_name,secondary_parent_email
+  Emma Johnson,Jane Doe,jane.doe@example.com
+  Liam Smith,Bob Smith,bob.smith@example.com
+  ```
+
+  **Response 200** — all rows processed successfully:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "processed": 2,
+      "row_errors": []
+    }
+  }
+  ```
+
+  **Response 422** — validation errors (no DB changes made):
+  ```json
+  {
+    "processed": 0,
+    "row_errors": [
+      {
+        "row": 2,
+        "child_name": "Unknown Child",
+        "errors": ["Child 'Unknown Child' not found under the given school"]
+      }
+    ]
+  }
+  ```
+
+  **Notes**:
+  - Emails are normalized (trimmed and lowercased) before processing
+  - Duplicate emails across rows result in a single user creation; all children are linked
+  - If a secondary parent email already exists, the existing user is reused
+  - No welcome emails are sent to newly created secondary parent accounts
+}

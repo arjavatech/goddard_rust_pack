@@ -22,6 +22,7 @@ use crate::models::enrollment::{
     AddChildRequest, AddChildResponse, AddChildDetails, AddChildParentDetails,
     GetParentDetailsBySchoolRequest, GetParentDetailsBySchoolResponse, ParentWithAuthDetails,
     ParentWithChildren, ChildWithForms, FormStatus,
+    BulkSecondaryParentRow, BulkSecondaryParentError, BulkSecondaryParentResponse,
     GetEnrollmentChildrenRequest, GetEnrollmentChildrenResponse, EnrollmentChildWithForms,
     GetClassWiseCountRequest, GetClassWiseCountResponse,
     GetSchoolFormsRequest, GetSchoolFormsResponse,
@@ -1876,6 +1877,202 @@ impl EnrollmentService {
             row_errors: runtime_errors,
         })
     }
+
+    pub async fn bulk_add_secondary_parents(
+        &self,
+        school_id: uuid::Uuid,
+        csv_bytes: Vec<u8>,
+    ) -> ApiResult<BulkSecondaryParentResponse> {
+        // Phase 1: Parse CSV
+        let mut reader = csv::Reader::from_reader(csv_bytes.as_slice());
+        let mut rows: Vec<BulkSecondaryParentRow> = Vec::new();
+        let mut parse_errors: Vec<BulkSecondaryParentError> = Vec::new();
+
+        for (idx, result) in reader.deserialize::<BulkSecondaryParentRow>().enumerate() {
+            match result {
+                Ok(row) => rows.push(row),
+                Err(e) => parse_errors.push(BulkSecondaryParentError {
+                    row: idx + 1,
+                    child_name: String::new(),
+                    errors: vec![format!("CSV parse error: {}", e)],
+                }),
+            }
+        }
+        if !parse_errors.is_empty() {
+            return Ok(BulkSecondaryParentResponse { processed: 0, row_errors: parse_errors });
+        }
+
+        // Phase 2: Full pre-flight validation (no DB writes)
+        let mut validation_errors: Vec<BulkSecondaryParentError> = Vec::new();
+        // child_name → child UUID (built during validation for use in Phase 5)
+        let mut child_id_map: Vec<Option<uuid::Uuid>> = vec![None; rows.len()];
+
+        for (idx, row) in rows.iter().enumerate() {
+            let mut row_errs: Vec<String> = Vec::new();
+
+            let child_name = row.child_name.trim().to_string();
+            let sec_name = row.secondary_parent_name.trim().to_string();
+            let sec_email = row.secondary_parent_email.trim().to_lowercase();
+
+            if child_name.is_empty() { row_errs.push("child_name is required".to_string()); }
+            if sec_name.is_empty() { row_errs.push("secondary_parent_name is required".to_string()); }
+            if sec_email.is_empty() || !sec_email.contains('@') {
+                row_errs.push("secondary_parent_email is missing or invalid".to_string());
+            }
+
+            let (child_first, child_last) = split_name(&child_name);
+            if child_first.is_empty() || child_last.is_empty() {
+                row_errs.push("child_name must include both first and last name separated by a space".to_string());
+            }
+
+            if row_errs.is_empty() {
+                // DB check: child must exist
+                match self.enrollment_dao.get_child_by_name_and_school(&child_first, &child_last, school_id).await {
+                    Ok(Some(child_id)) => { child_id_map[idx] = Some(child_id); }
+                    Ok(None) => {
+                        row_errs.push(format!("Child '{}' not found under the given school", child_name));
+                    }
+                    Err(e) => {
+                        row_errs.push(format!("DB error while looking up child: {}", e));
+                    }
+                }
+            }
+
+            if !row_errs.is_empty() {
+                validation_errors.push(BulkSecondaryParentError {
+                    row: idx + 1,
+                    child_name: row.child_name.trim().to_string(),
+                    errors: row_errs,
+                });
+            }
+        }
+
+        if !validation_errors.is_empty() {
+            return Ok(BulkSecondaryParentResponse { processed: 0, row_errors: validation_errors });
+        }
+
+        // Phase 3 & 4: Dedup by email, create/resolve secondary parents
+        let school_name = self.school_dao.get_school_name(&school_id).await
+            .unwrap_or_else(|_| "Unknown School".to_string());
+
+        // email (lowercase) → secondary_parent UUID
+        let mut email_to_id: std::collections::HashMap<String, uuid::Uuid> = std::collections::HashMap::new();
+        let mut runtime_errors: Vec<BulkSecondaryParentError> = Vec::new();
+
+        for (idx, row) in rows.iter().enumerate() {
+            let sec_email = row.secondary_parent_email.trim().to_lowercase();
+            if email_to_id.contains_key(&sec_email) {
+                continue; // already resolved this email
+            }
+
+            // Check if parent already exists
+            let existing = self.enrollment_dao.get_parent_by_email_and_school(&sec_email, school_id).await;
+            match existing {
+                Ok(Some(user)) => {
+                    email_to_id.insert(sec_email, user.id);
+                }
+                _ => {
+                    // Create new secondary parent
+                    let (sec_first, sec_last) = split_name(row.secondary_parent_name.trim());
+                    let password = generate_secondary_parent_password(&sec_email);
+
+                    let metadata = crate::services::supabase_client::UserMetadata::new(
+                        Some(school_id),
+                        Some(sec_first.clone()),
+                        Some(sec_last.clone()),
+                        Some("secondary-parent".to_string()),
+                        None,
+                        None,
+                    ).with_school_name(school_name.clone());
+
+                    let auth_id_str = match self.supabase_client
+                        .create_user_with_password_in_supabase(&sec_email, &password, metadata)
+                        .await
+                    {
+                        Ok(id) => id,
+                        Err(e) => {
+                            runtime_errors.push(BulkSecondaryParentError {
+                                row: idx + 1,
+                                child_name: row.child_name.trim().to_string(),
+                                errors: vec![format!("Failed to create auth user: {}", e)],
+                            });
+                            continue;
+                        }
+                    };
+
+                    let sec_uuid = match uuid::Uuid::parse_str(&auth_id_str) {
+                        Ok(id) => id,
+                        Err(_) => {
+                            runtime_errors.push(BulkSecondaryParentError {
+                                row: idx + 1,
+                                child_name: row.child_name.trim().to_string(),
+                                errors: vec!["Failed to parse auth user UUID".to_string()],
+                            });
+                            continue;
+                        }
+                    };
+
+                    let db_result = match self.enrollment_dao.get_parent_by_id(sec_uuid, school_id).await {
+                        Ok(existing_user) => Ok(existing_user),
+                        Err(_) => {
+                            self.enrollment_dao.create_parent(
+                                sec_uuid, school_id,
+                                &sec_first, &sec_last,
+                                &sec_email, "secondary-parent",
+                                None, None, None,
+                            ).await
+                        }
+                    };
+
+                    match db_result {
+                        Ok(_) => {
+                            // Persist optional fields (handles trigger-created row)
+                            let _ = self.enrollment_dao.update_parent_optional_fields(sec_uuid, None, None, None).await;
+                            email_to_id.insert(sec_email, sec_uuid);
+                        }
+                        Err(e) => {
+                            runtime_errors.push(BulkSecondaryParentError {
+                                row: idx + 1,
+                                child_name: row.child_name.trim().to_string(),
+                                errors: vec![format!("Failed to create parent DB record: {}", e)],
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 5: Link secondary parents to children
+        let mut processed: usize = 0;
+
+        for (idx, row) in rows.iter().enumerate() {
+            let sec_email = row.secondary_parent_email.trim().to_lowercase();
+            let child_id = match child_id_map[idx] {
+                Some(id) => id,
+                None => continue, // should not happen post-validation
+            };
+            let sec_parent_id = match email_to_id.get(&sec_email) {
+                Some(id) => *id,
+                None => {
+                    // parent creation failed — skip (already recorded in runtime_errors)
+                    continue;
+                }
+            };
+
+            match self.enrollment_dao.set_child_secondary_parent(child_id, sec_parent_id).await {
+                Ok(_) => { processed += 1; }
+                Err(e) => {
+                    runtime_errors.push(BulkSecondaryParentError {
+                        row: idx + 1,
+                        child_name: row.child_name.trim().to_string(),
+                        errors: vec![format!("Failed to link secondary parent to child: {}", e)],
+                    });
+                }
+            }
+        }
+
+        Ok(BulkSecondaryParentResponse { processed, row_errors: runtime_errors })
+    }
 }
 
 fn generate_parent_password(email: &str, child_dob: Option<chrono::NaiveDate>) -> String {
@@ -1886,4 +2083,19 @@ fn generate_parent_password(email: &str, child_dob: Option<chrono::NaiveDate>) -
         .map(|d| d.format("%Y").to_string())
         .unwrap_or_else(|| "2024".to_string());
     format!("{}@{}", prefix, year)
+}
+
+fn generate_secondary_parent_password(email: &str) -> String {
+    let prefix: String = email.chars().take(4).enumerate().map(|(i, c)| {
+        if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }
+    }).collect();
+    format!("{}@2026", prefix)
+}
+
+fn split_name(full_name: &str) -> (String, String) {
+    let trimmed = full_name.trim();
+    let mut parts = trimmed.splitn(2, ' ');
+    let first = parts.next().unwrap_or("").to_string();
+    let last = parts.next().unwrap_or("").to_string();
+    (first, last)
 }

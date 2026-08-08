@@ -46,7 +46,7 @@ use controllers::{
         create_class_form_override, delete_class_form_override
     },
     enrollment_controller::{
-        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, activate_parent, update_child_status, promote_enrollment, bulk_promote_enrollments, edit_class_transition, activate_invite, bulk_import_families
+        create_parent_invite, resend_parent_confirmation, add_child, get_parent_details_by_school, get_enrollment_children_with_forms, get_school_forms, get_class_wise_count, get_class_based_enrollments, deactivate_parent, activate_parent, update_child_status, promote_enrollment, bulk_promote_enrollments, edit_class_transition, activate_invite, bulk_import_families, bulk_add_secondary_parents
     },
     parent_details_controller::{
         get_parent_details_by_id
@@ -333,6 +333,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/class-transitions/:enrollment_id", patch(edit_class_transition).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments/activate/:token", get(activate_invite))
         .route("/enrollments/bulk-import", post(bulk_import_families).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/enrollments/bulk-secondary-parents", post(bulk_add_secondary_parents).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(enrollment_service)
 
         // Form Submissions Management APIs (Admin JWT or API Key)

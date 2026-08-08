@@ -14,10 +14,16 @@ pub struct ParentInviteRequest {
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    pub parent_address: Option<String>,
+    pub parent_phone_number: Option<String>,
+    pub parent_relation_type: Option<String>,
     // Optional secondary parent fields
     pub secondary_parent_email: Option<String>,
     pub secondary_parent_first_name: Option<String>,
     pub secondary_parent_last_name: Option<String>,
+    pub secondary_parent_address: Option<String>,
+    pub secondary_parent_phone_number: Option<String>,
+    pub secondary_parent_relation_type: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +59,9 @@ pub struct ParentDetails {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub address: Option<String>,
+    pub phone_number: Option<String>,
+    pub relation_type: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -109,6 +118,8 @@ pub struct CreatedUser {
     pub role: String,
     pub is_verified: bool,
     pub address: Option<String>,
+    pub phone_number: Option<String>,
+    pub relation_type: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -237,6 +248,9 @@ pub struct ParentWithChildren {
     pub parent_email: String,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    pub parent_address: Option<String>,
+    pub parent_phone_number: Option<String>,
+    pub parent_relation_type: Option<String>,
     pub signed_status: String,
     pub children: Vec<ChildWithForms>,
 }
@@ -338,6 +352,9 @@ pub struct SchoolFormDetails {
     pub parent_id: Uuid,
     pub parent_first_name: String,
     pub parent_last_name: String,
+    pub parent_address: Option<String>,
+    pub parent_phone_number: Option<String>,
+    pub parent_relation_type: Option<String>,
     pub child_id: Uuid,
     pub child_first_name: String,
     pub child_last_name: String,
@@ -355,6 +372,9 @@ pub struct SchoolFormDetails {
     pub secondary_parent_first_name: Option<String>,
     pub secondary_parent_last_name: Option<String>,
     pub secondary_parent_email: Option<String>,
+    pub secondary_parent_address: Option<String>,
+    pub secondary_parent_phone_number: Option<String>,
+    pub secondary_parent_relation_type: Option<String>,
 }
 
 // 8.4.1 Get Class-Based Enrollment Form Details

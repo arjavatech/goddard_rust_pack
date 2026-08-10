@@ -1920,14 +1920,15 @@ impl EnrollmentService {
                 row_errs.push("secondary_parent_email is missing or invalid".to_string());
             }
 
-            let (child_first, child_last) = split_name(&child_name);
-            if child_first.is_empty() || child_last.is_empty() {
+            if child_name.split_whitespace().count() < 2 {
                 row_errs.push("child_name must include both first and last name separated by a space".to_string());
             }
 
             if row_errs.is_empty() {
-                // DB check: child must exist
-                match self.enrollment_dao.get_child_by_name_and_school(&child_first, &child_last, school_id).await {
+                // Normalize apostrophes (curly → straight) before DB lookup
+                let normalized_child_name = normalize_apostrophes(&child_name);
+                // DB check: child must exist — match on LOWER(first_name || ' ' || last_name)
+                match self.enrollment_dao.get_child_by_name_and_school(&normalized_child_name, school_id).await {
                     Ok(Some(child_id)) => { child_id_map[idx] = Some(child_id); }
                     Ok(None) => {
                         row_errs.push(format!("Child '{}' not found under the given school", child_name));
@@ -2098,4 +2099,10 @@ fn split_name(full_name: &str) -> (String, String) {
     let first = parts.next().unwrap_or("").to_string();
     let last = parts.next().unwrap_or("").to_string();
     (first, last)
+}
+
+fn normalize_apostrophes(s: &str) -> String {
+    s.replace('\u{2019}', "'")  // RIGHT SINGLE QUOTATION MARK → straight apostrophe
+     .replace('\u{2018}', "'")  // LEFT SINGLE QUOTATION MARK → straight apostrophe
+     .replace('\u{02BC}', "'")  // MODIFIER LETTER APOSTROPHE → straight apostrophe
 }

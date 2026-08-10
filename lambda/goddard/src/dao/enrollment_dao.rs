@@ -1776,21 +1776,26 @@ impl EnrollmentDao {
 
     pub async fn get_child_by_name_and_school(
         &self,
-        first_name: &str,
-        last_name: &str,
+        full_name: &str,
         school_id: Uuid,
     ) -> ApiResult<Option<Uuid>> {
-        let first_name = first_name.to_string();
-        let last_name = last_name.to_string();
+        let full_name = full_name.to_string();
         self.execute_with_connection(|client| async move {
             let row = client.query_opt(
                 "SELECT id FROM children \
-                 WHERE LOWER(first_name) = LOWER($1) \
-                   AND LOWER(last_name)  = LOWER($2) \
-                   AND school_id = $3 \
+                 WHERE LOWER(\
+                   REPLACE(REPLACE(REPLACE(\
+                     first_name || ' ' || last_name, \
+                     chr(8217), chr(39)), chr(8216), chr(39)), chr(700), chr(39))\
+                 ) = LOWER(\
+                   REPLACE(REPLACE(REPLACE(\
+                     $1::text, \
+                     chr(8217), chr(39)), chr(8216), chr(39)), chr(700), chr(39))\
+                 ) \
+                   AND school_id = $2 \
                    AND (is_active = true OR is_active IS NULL) \
                  LIMIT 1",
-                &[&first_name, &last_name, &school_id],
+                &[&full_name, &school_id],
             ).await
             .map_err(|e| AppError::Database(format!("Failed to look up child by name: {}", e)))?;
             Ok(row.map(|r| r.get("id")))

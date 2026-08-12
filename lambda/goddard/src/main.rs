@@ -182,8 +182,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         }
     };
 
+    // Initialize email service first (SupabaseClient depends on it)
+    let email_service = Arc::new(EmailService::new());
+
     // Initialize Supabase client
-    let supabase_client = SupabaseClient::new()?;
+    let supabase_client = SupabaseClient::new(email_service.clone())?;
 
     // Initialize Fillout service (optional - only if environment variables are present)
     let fillout_service = std::env::var("FILLOUT_API_KEY")
@@ -199,9 +202,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         println!("[WARN] Fillout service not initialized - missing environment variables");
     }
 
-    // Initialize services
-    let email_service = Arc::new(EmailService::new());
-    
     // ✅ NEW: Initialize connection registry for WebSocket
     let connection_registry = Arc::new(ConnectionRegistry::new());
     

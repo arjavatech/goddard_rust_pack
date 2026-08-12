@@ -5,51 +5,71 @@ use crate::{
         FormApprovedNotification, FormAssignedNotification, FormRejectedNotification,
         ParentDeactivatedNotification, ParentFormReminder,
     },
-    services::email_templates,
+    services::{email_provider::{EmailProvider, SmtpProvider}, email_templates},
 };
 use chrono::NaiveDate;
-use serde_json::json;
+use std::sync::Arc;
 
 pub struct EmailService {
-    client: reqwest::Client,
-    api_key: String,
-    from_email: String,
+    provider: Arc<dyn EmailProvider>,
 }
 
 impl EmailService {
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
-            api_key: std::env::var("RESEND_API_KEY").unwrap_or_default(),
-            from_email: std::env::var("EMAIL_FROM")
-                .unwrap_or_else(|_| "Goddard Schools <no-reply@arjavatech.com>".to_string()),
+            provider: Arc::new(SmtpProvider::new()),
         }
+    }
+
+    /// Dispatch a single email. Accepts comma-separated recipients in `to`.
+    pub async fn dispatch(&self, to: &str, subject: &str, html: &str) -> Result<(), AppError> {
+        let emails: Vec<String> = to
+            .split(',')
+            .map(|e| e.trim().to_lowercase())
+            .filter(|e| !e.is_empty())
+            .collect();
+
+        if emails.is_empty() {
+            return Err(AppError::Validation(
+                "No recipient email addresses provided".to_string(),
+            ));
+        }
+
+        println!(
+            "[EmailService] Sending: subject={:?}, to={:?}",
+            subject, emails
+        );
+
+        self.provider
+            .send(emails, subject.to_string(), html.to_string())
+            .await
     }
 
     /// Convert DD-MM-YYYY to "December 25, 2025" format
     fn convert_date_format(dd_mm_yyyy: &str) -> Result<String, AppError> {
-        // Parse DD-MM-YYYY
         let parts: Vec<&str> = dd_mm_yyyy.split('-').collect();
         if parts.len() != 3 {
-            return Err(AppError::Validation("Invalid date format. Expected DD-MM-YYYY".to_string()));
+            return Err(AppError::Validation(
+                "Invalid date format. Expected DD-MM-YYYY".to_string(),
+            ));
         }
 
-        let day: u32 = parts[0].parse()
+        let day: u32 = parts[0]
+            .parse()
             .map_err(|_| AppError::Validation("Invalid day in date".to_string()))?;
-        let month: u32 = parts[1].parse()
+        let month: u32 = parts[1]
+            .parse()
             .map_err(|_| AppError::Validation("Invalid month in date".to_string()))?;
-        let year: i32 = parts[2].parse()
+        let year: i32 = parts[2]
+            .parse()
             .map_err(|_| AppError::Validation("Invalid year in date".to_string()))?;
 
-        // Create NaiveDate
         let date = NaiveDate::from_ymd_opt(year, month, day)
             .ok_or_else(|| AppError::Validation("Invalid date values".to_string()))?;
 
-        // Format as "December 25, 2025"
         Ok(date.format("%B %d, %Y").to_string())
     }
 
-    /// Generate HTML email body
     fn generate_html_body(
         parent_name: &str,
         student_name: &str,
@@ -88,19 +108,19 @@ impl EmailService {
         )
     }
 
-    /// Send a single form reminder email
     async fn send_form_reminder_email(&self, reminder: &ParentFormReminder) -> Result<(), AppError> {
         println!("[EmailService] Sending email to: {}", reminder.parent_email);
 
-        // Convert date format, fallback for empty due_date
         let formatted_due_date = if reminder.due_date.trim().is_empty() {
             "at your earliest convenience".to_string()
         } else {
             Self::convert_date_format(&reminder.due_date)?
         };
-        println!("[EmailService] Converted date: {} → {}", reminder.due_date, formatted_due_date);
+        println!(
+            "[EmailService] Converted date: {} → {}",
+            reminder.due_date, formatted_due_date
+        );
 
-        // Generate email body
         let html_body = Self::generate_html_body(
             &reminder.parent_name,
             &reminder.student_name,
@@ -109,61 +129,26 @@ impl EmailService {
             &formatted_due_date,
         );
 
-        // Generate subject — omit "Due" when no due_date provided
         let subject = if reminder.due_date.trim().is_empty() {
             format!("Reminder: {} for {}", reminder.form_name, reminder.student_name)
         } else {
-            format!("Reminder: {} for {} - Due {}", reminder.form_name, reminder.student_name, formatted_due_date)
+            format!(
+                "Reminder: {} for {} - Due {}",
+                reminder.form_name, reminder.student_name, formatted_due_date
+            )
         };
 
-        // Split comma-separated emails and trim whitespace
-        let emails: Vec<String> = reminder.parent_email
-            .split(',')
-            .map(|e| e.trim().to_lowercase())
-            .filter(|e| !e.is_empty())
-            .collect();
-
-        // Prepare Resend API request
-        let request_body = json!({
-            "from": self.from_email,
-            "to": emails,
-            "subject": subject,
-            "html": html_body
-        });
-
-        // Call Resend API
-        let response = self.client
-            .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send email: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            println!("[EmailService] Email send failed: {} - {}", status, error_text);
-            return Err(AppError::ExternalService(format!(
-                "Resend API error: {} - {}",
-                status, error_text
-            )));
-        }
-
-        let response_data: serde_json::Value = response.json().await
-            .map_err(|e| AppError::ExternalService(format!("Failed to parse response: {}", e)))?;
-
-        println!("[EmailService] Email sent successfully: {:?}", response_data);
-        Ok(())
+        self.dispatch(&reminder.parent_email, &subject, &html_body).await
     }
 
-    /// Send bulk form reminder emails
     pub async fn send_bulk_form_reminders(
         &self,
         reminders: Vec<ParentFormReminder>,
     ) -> ApiResult<BulkEmailResponse> {
-        println!("[EmailService] Starting bulk email send: {} emails", reminders.len());
+        println!(
+            "[EmailService] Starting bulk email send: {} emails",
+            reminders.len()
+        );
 
         let mut total_sent = 0;
         let mut total_failed = 0;
@@ -175,7 +160,10 @@ impl EmailService {
                     total_sent += 1;
                 }
                 Err(e) => {
-                    println!("[EmailService] Failed to send to {}: {:?}", reminder.parent_email, e);
+                    println!(
+                        "[EmailService] Failed to send to {}: {:?}",
+                        reminder.parent_email, e
+                    );
                     total_failed += 1;
                     failed_emails.push(reminder.parent_email.clone());
                 }
@@ -202,10 +190,7 @@ impl EmailService {
     }
 
     // =====================================================
-    // Parent lifecycle notifications.
-    // Each method renders a template via email_templates and POSTs to Resend.
-    // Callers should dispatch via tokio::spawn — failures here are logged but
-    // never block the original API request. See docs/EMAIL_NOTIFICATIONS.md.
+    // Parent lifecycle notifications
     // =====================================================
 
     pub async fn send_form_approved_email(
@@ -217,8 +202,7 @@ impl EmailService {
             payload.form_name, payload.child_name
         );
         let html = email_templates::form_approved_html(&payload);
-        self.dispatch_resend(&payload.parent_email, &subject, &html)
-            .await
+        self.dispatch(&payload.parent_email, &subject, &html).await
     }
 
     pub async fn send_form_rejected_email(
@@ -230,8 +214,7 @@ impl EmailService {
             payload.form_name, payload.child_name
         );
         let html = email_templates::form_rejected_html(&payload);
-        self.dispatch_resend(&payload.parent_email, &subject, &html)
-            .await
+        self.dispatch(&payload.parent_email, &subject, &html).await
     }
 
     pub async fn send_child_added_email(
@@ -243,8 +226,7 @@ impl EmailService {
             payload.child_name
         );
         let html = email_templates::child_added_html(&payload);
-        self.dispatch_resend(&payload.parent_email, &subject, &html)
-            .await
+        self.dispatch(&payload.parent_email, &subject, &html).await
     }
 
     pub async fn send_parent_deactivated_email(
@@ -253,8 +235,7 @@ impl EmailService {
     ) -> Result<(), AppError> {
         let subject = "Your Goddard School parent account has been deactivated".to_string();
         let html = email_templates::parent_deactivated_html(&payload);
-        self.dispatch_resend(&payload.parent_email, &subject, &html)
-            .await
+        self.dispatch(&payload.parent_email, &subject, &html).await
     }
 
     pub async fn send_child_archived_email(
@@ -266,8 +247,7 @@ impl EmailService {
             payload.child_name, payload.school_name
         );
         let html = email_templates::child_archived_html(&payload);
-        self.dispatch_resend(&payload.parent_email, &subject, &html)
-            .await
+        self.dispatch(&payload.parent_email, &subject, &html).await
     }
 
     pub async fn send_form_assigned_email(
@@ -279,9 +259,12 @@ impl EmailService {
             payload.child_name, payload.form_name
         );
         let html = email_templates::form_assigned_html(&payload);
-        self.dispatch_resend(&payload.parent_email, &subject, &html)
-            .await
+        self.dispatch(&payload.parent_email, &subject, &html).await
     }
+
+    // =====================================================
+    // Employee lifecycle notifications
+    // =====================================================
 
     pub async fn send_employee_invite_email(
         &self,
@@ -292,8 +275,9 @@ impl EmailService {
         school_name: &str,
     ) -> Result<(), AppError> {
         let subject = format!("Welcome to {} — Employee Access", school_name);
-        let html = email_templates::employee_invite_html(first_name, last_name, invite_link, school_name);
-        self.dispatch_resend(email, &subject, &html).await
+        let html =
+            email_templates::employee_invite_html(first_name, last_name, invite_link, school_name);
+        self.dispatch(email, &subject, &html).await
     }
 
     pub async fn send_employee_form_assigned_email(
@@ -305,8 +289,13 @@ impl EmailService {
         dashboard_url: &str,
     ) -> Result<(), AppError> {
         let subject = format!("New form assigned: {}", form_name);
-        let html = email_templates::employee_form_assigned_html(employee_name, form_name, due_date, dashboard_url);
-        self.dispatch_resend(email, &subject, &html).await
+        let html = email_templates::employee_form_assigned_html(
+            employee_name,
+            form_name,
+            due_date,
+            dashboard_url,
+        );
+        self.dispatch(email, &subject, &html).await
     }
 
     pub async fn send_employee_form_approved_email(
@@ -318,7 +307,7 @@ impl EmailService {
     ) -> Result<(), AppError> {
         let subject = format!("{} has been approved", form_name);
         let html = email_templates::employee_form_approved_html(employee_name, form_name, notes);
-        self.dispatch_resend(email, &subject, &html).await
+        self.dispatch(email, &subject, &html).await
     }
 
     pub async fn send_employee_form_rejected_email(
@@ -330,7 +319,7 @@ impl EmailService {
     ) -> Result<(), AppError> {
         let subject = format!("Action needed: {} requires updates", form_name);
         let html = email_templates::employee_form_rejected_html(employee_name, form_name, notes);
-        self.dispatch_resend(email, &subject, &html).await
+        self.dispatch(email, &subject, &html).await
     }
 
     pub async fn send_employee_form_reminder_email(
@@ -342,76 +331,18 @@ impl EmailService {
         dashboard_url: &str,
     ) -> Result<(), AppError> {
         let subject = format!("Reminder: {} is due soon", form_name);
-        let html = email_templates::employee_form_reminder_html(employee_name, form_name, due_date, dashboard_url);
-        self.dispatch_resend(email, &subject, &html).await
-    }
-
-    /// Low-level Resend POST. Accepts a comma-separated `parent_email` field
-    /// (same convention `send_form_reminder_email` uses).
-    async fn dispatch_resend(
-        &self,
-        parent_email: &str,
-        subject: &str,
-        html: &str,
-    ) -> Result<(), AppError> {
-        let emails: Vec<String> = parent_email
-            .split(',')
-            .map(|e| e.trim().to_lowercase())
-            .filter(|e| !e.is_empty())
-            .collect();
-
-        if emails.is_empty() {
-            return Err(AppError::Validation(
-                "No recipient email addresses provided".to_string(),
-            ));
-        }
-
-        println!(
-            "[EmailService] Sending notification: subject={:?}, to={:?}",
-            subject, emails
+        let html = email_templates::employee_form_reminder_html(
+            employee_name,
+            form_name,
+            due_date,
+            dashboard_url,
         );
-
-        let request_body = json!({
-            "from": self.from_email,
-            "to": emails,
-            "subject": subject,
-            "html": html,
-        });
-
-        let response = self
-            .client
-            .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send email: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            println!(
-                "[EmailService] Notification send failed: {} - {}",
-                status, error_text
-            );
-            return Err(AppError::ExternalService(format!(
-                "Resend API error: {} - {}",
-                status, error_text
-            )));
-        }
-
-        println!("[EmailService] Notification sent successfully (subject={:?})", subject);
-        Ok(())
+        self.dispatch(email, &subject, &html).await
     }
 }
 
 /// Resolve the parent dashboard base URL used in CTA buttons.
-/// Falls back to the dev URL when the env var is not set.
 pub fn parent_dashboard_url() -> String {
-    // Set PARENT_DASHBOARD_URL=https://goddardschool.org/ in prod.
-    // Default falls back to the dev frontend so emails sent from a misconfigured
-    // environment still link somewhere usable.
     std::env::var("PARENT_DASHBOARD_URL")
         .unwrap_or_else(|_| "https://dev.goddard-web.pages.dev/".to_string())
 }

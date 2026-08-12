@@ -304,8 +304,8 @@ impl EnrollmentService {
             is_required: form.is_required,
         }).collect();
 
-        // Step 9: Check primary parent email delivery status via Resend
-        let primary_email_status = self.supabase_client.get_recent_email_status(&request.parent_email).await;
+        // Step 9: Email was dispatched via SMTP; delivery status not available synchronously
+        let primary_email_status = "unknown".to_string();
         if matches!(primary_email_status.as_str(), "suppressed" | "bounced") {
             return Err(crate::error::AppError::ExternalService(match primary_email_status.as_str() {
                 "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),
@@ -547,8 +547,8 @@ impl EnrollmentService {
             false
         };
 
-        // Step 4: Check delivery status
-        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+        // Step 4: Email dispatched via SMTP; delivery status not available synchronously
+        let email_status = "unknown".to_string();
         if matches!(email_status.as_str(), "suppressed" | "bounced") {
             return Err(AppError::ExternalService(match email_status.as_str() {
                 "suppressed" => "Email was suppressed by the mail provider. The address may have previously bounced — please ask the recipient to check with their IT or try a different address.".to_string(),

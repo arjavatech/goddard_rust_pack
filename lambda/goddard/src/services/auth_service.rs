@@ -295,7 +295,7 @@ impl AuthService {
             Err(e) => return Err(e),
         }
 
-        let email_status = self.supabase_client.get_recent_email_status(&request.email).await;
+        let email_status = "unknown".to_string();
 
         if matches!(email_status.as_str(), "suppressed" | "bounced") {
             return Err(AppError::ExternalService(email_status_message(&email_status, "")));
@@ -477,7 +477,7 @@ impl AuthService {
             Ok(user) => {
                 self.dao.reactivate_user(user.id, &request.first_name, &request.last_name).await?;
                 self.supabase_client.resend_invitation(&user.email).await?;
-                let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+                let email_status = "unknown".to_string();
                 if matches!(email_status.as_str(), "suppressed" | "bounced") {
                     return Err(AppError::ExternalService(email_status_message(&email_status, "")));
                 }
@@ -877,7 +877,7 @@ impl AuthService {
             false
         };
 
-        let email_status = self.supabase_client.get_recent_email_status(&user.email).await;
+        let email_status = "unknown".to_string();
         if matches!(email_status.as_str(), "suppressed" | "bounced") {
             return Err(AppError::ExternalService(email_status_message(&email_status, "")));
         }

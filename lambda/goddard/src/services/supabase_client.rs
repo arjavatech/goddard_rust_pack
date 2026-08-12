@@ -1,7 +1,9 @@
 use crate::error::AppError;
+use crate::services::email_service::EmailService;
 use reqwest::Client;
 use serde_json::json;
 use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -97,10 +99,11 @@ pub struct SupabaseClient {
     anon_key: String,
     frontend_url: String,
     api_base_url: String,
+    email_service: Arc<EmailService>,
 }
 
 impl SupabaseClient {
-    pub fn new() -> Result<Self, AppError> {
+    pub fn new(email_service: Arc<EmailService>) -> Result<Self, AppError> {
         let project_url = env::var("SUPABASE_URL")
             .map_err(|_| AppError::Internal("SUPABASE_URL must be set".to_string()))?;
         let service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
@@ -140,6 +143,7 @@ impl SupabaseClient {
             anon_key,
             frontend_url,
             api_base_url,
+            email_service,
         })
     }
 
@@ -744,53 +748,6 @@ impl SupabaseClient {
         Ok(user_data)
     }
 
-    /// Check the delivery status of the most recently sent email to `email` via Resend.
-    /// Waits 2 seconds for Resend to process the send before querying.
-    /// Returns the `last_event` string: "delivered", "suppressed", "bounced", "clicked", etc.
-    pub async fn get_recent_email_status(&self, email: &str) -> String {
-        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
-        if resend_api_key.is_empty() {
-            return "unknown".to_string();
-        }
-
-        // Give Resend time to process the email before querying status
-        tokio::time::sleep(Duration::from_secs(2)).await;
-
-        let response = match self.client
-            .get("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", resend_api_key))
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(_) => return "unknown".to_string(),
-        };
-
-        let data: serde_json::Value = match response.json().await {
-            Ok(d) => d,
-            Err(_) => return "unknown".to_string(),
-        };
-
-        if let Some(emails) = data.get("data").and_then(|d| d.as_array()) {
-            for item in emails {
-                let to_matches = item
-                    .get("to")
-                    .and_then(|t| t.as_array())
-                    .map(|arr| arr.iter().any(|t| t.as_str() == Some(email)))
-                    .unwrap_or(false);
-
-                if to_matches {
-                    return item
-                        .get("last_event")
-                        .and_then(|e| e.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                }
-            }
-        }
-
-        "unknown".to_string()
-    }
 
     pub async fn send_password_reset_email(&self, email: &str) -> Result<(), AppError> {
         let endpoint = format!("{}/auth/v1/recover", self.project_url);
@@ -854,8 +811,6 @@ impl SupabaseClient {
         Ok(action_link.to_string())
     }
 
-    /// Send parent invite email via Resend — replicates the Supabase parent invite template.
-    /// Subject: "Invitation to Create an Account for The Goddard School Admission"
     pub async fn send_parent_invite_email(
         &self,
         email: &str,
@@ -863,43 +818,20 @@ impl SupabaseClient {
         first_name: &str,
         last_name: &str,
     ) -> Result<bool, AppError> {
-        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
-        if resend_api_key.is_empty() {
-            tracing::warn!("RESEND_API_KEY not set; skipping parent invite email for {}", email);
-            return Ok(false);
-        }
-
         let confirmation_url = format!("{}/enrollments/activate/{}", self.api_base_url, invite_token);
         let html_body = super::email_templates::parent_invite_html(first_name, last_name, &confirmation_url);
-
-        let body = json!({
-            "from": "Goddard Schools <no-reply@arjavatech.com>",
-            "to": [email],
-            "subject": "Invitation to Create an Account for The Goddard School Admission",
-            "html": html_body,
-        });
-
-        let response = self.client
-            .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", resend_api_key))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send parent invite email: {}", e)))?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            tracing::warn!("Parent invite email failed for {}: {}", email, error_text);
-            return Ok(false);
+        match self.email_service.dispatch(email, "Invitation to Create an Account for The Goddard School Admission", &html_body).await {
+            Ok(_) => {
+                tracing::info!("✅ Parent invite email sent to {} (token: {})", email, invite_token);
+                Ok(true)
+            }
+            Err(e) => {
+                tracing::warn!("Parent invite email failed for {}: {}", email, e);
+                Ok(false)
+            }
         }
-
-        tracing::info!("✅ Parent invite email sent to {} (token: {})", email, invite_token);
-        Ok(true)
     }
 
-    /// Send admin invite email via Resend — replicates the Supabase admin invite template.
-    /// Subject: "Welcome to {school_name} - Administrator Access"
     pub async fn send_admin_invite_email(
         &self,
         email: &str,
@@ -908,12 +840,6 @@ impl SupabaseClient {
         last_name: &str,
         school_name: &str,
     ) -> Result<bool, AppError> {
-        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
-        if resend_api_key.is_empty() {
-            tracing::warn!("RESEND_API_KEY not set; skipping admin invite email for {}", email);
-            return Ok(false);
-        }
-
         let confirmation_url = format!("{}/enrollments/activate/{}", self.api_base_url, invite_token);
         let subject = format!("Welcome to {} - Administrator Access", school_name);
         let html_body = super::email_templates::admin_invite_html(
@@ -922,31 +848,16 @@ impl SupabaseClient {
             school_name,
             &confirmation_url,
         );
-
-        let body = json!({
-            "from": "Goddard Schools <no-reply@arjavatech.com>",
-            "to": [email],
-            "subject": subject,
-            "html": html_body,
-        });
-
-        let response = self.client
-            .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", resend_api_key))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send admin invite email: {}", e)))?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            tracing::warn!("Admin invite email failed for {}: {}", email, error_text);
-            return Ok(false);
+        match self.email_service.dispatch(email, &subject, &html_body).await {
+            Ok(_) => {
+                tracing::info!("✅ Admin invite email sent to {} (token: {})", email, invite_token);
+                Ok(true)
+            }
+            Err(e) => {
+                tracing::warn!("Admin invite email failed for {}: {}", email, e);
+                Ok(false)
+            }
         }
-
-        tracing::info!("✅ Admin invite email sent to {} (token: {})", email, invite_token);
-        Ok(true)
     }
 
     /// Create a Supabase user without sending any email (user creation only).
@@ -1056,7 +967,6 @@ impl SupabaseClient {
         Ok(user_id.to_string())
     }
 
-    /// Send bulk import welcome email via Resend containing login credentials.
     pub async fn send_bulk_import_welcome_email(
         &self,
         email: &str,
@@ -1065,12 +975,6 @@ impl SupabaseClient {
         password: &str,
         school_name: &str,
     ) -> Result<bool, AppError> {
-        let resend_api_key = env::var("RESEND_API_KEY").unwrap_or_default();
-        if resend_api_key.is_empty() {
-            tracing::warn!("RESEND_API_KEY not set; skipping bulk import welcome email for {}", email);
-            return Ok(false);
-        }
-
         let dashboard_url = self.frontend_url.clone();
         let html_body = super::email_templates::bulk_import_welcome_html(
             first_name,
@@ -1080,31 +984,16 @@ impl SupabaseClient {
             school_name,
             &dashboard_url,
         );
-
         let subject = format!("Welcome to {} — Your Login Details", school_name);
-        let body = json!({
-            "from": "Goddard Schools <no-reply@arjavatech.com>",
-            "to": [email],
-            "subject": subject,
-            "html": html_body,
-        });
-
-        let response = self.client
-            .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", resend_api_key))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to send bulk import welcome email: {}", e)))?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            tracing::warn!("Bulk import welcome email failed for {}: {}", email, error_text);
-            return Ok(false);
+        match self.email_service.dispatch(email, &subject, &html_body).await {
+            Ok(_) => {
+                tracing::info!("✅ Bulk import welcome email sent to {}", email);
+                Ok(true)
+            }
+            Err(e) => {
+                tracing::warn!("Bulk import welcome email failed for {}: {}", email, e);
+                Ok(false)
+            }
         }
-
-        tracing::info!("✅ Bulk import welcome email sent to {}", email);
-        Ok(true)
     }
 }

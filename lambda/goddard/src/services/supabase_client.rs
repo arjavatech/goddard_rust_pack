@@ -921,7 +921,6 @@ impl SupabaseClient {
             last_name,
             school_name,
             &confirmation_url,
-            &invite_token.to_string(),
         );
 
         let body = json!({

@@ -36,7 +36,6 @@ pub fn admin_invite_html(
     last_name: &str,
     school_name: &str,
     confirmation_url: &str,
-    token: &str,
 ) -> String {
     format!(
         r#"<html>
@@ -63,10 +62,6 @@ to manage your school's operations, staff, and enrollment processes.</p>
 none; border-radius: 5px; font-weight: bold; font-size: 16px;">Set Your Password</a>
       </p>
 
-      <p style="font-size: 14px; color: #666;">If the button doesn't work, copy and paste this link into your browser:</p>
-      <p style="font-size: 14px; color: #3498db; word-break: break-all;">{url}</p>
-
-      <p style="font-size: 14px; color: #666; margin-top: 20px;">Or use this confirmation code: <strong style="color: #333;">{token}</strong></p>
 
       <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
 
@@ -86,7 +81,6 @@ please contact our support team immediately.</p>
         first_name = first_name,
         last_name = last_name,
         url = confirmation_url,
-        token = token,
     )
 }
 

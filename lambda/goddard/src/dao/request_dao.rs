@@ -41,6 +41,7 @@ impl RequestDao {
             payment_method: row.get("payment_method"),
             purchase_date: row.get("purchase_date"),
             payment_notes: row.get("payment_notes"),
+            bill_image: row.get("bill_image"),
             created_at: row.get("created_at"),
         }
     }
@@ -65,7 +66,7 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at,
                     COUNT(*) OVER() AS total_count,
                     COUNT(*) FILTER (WHERE status = 'Pending') OVER() AS pending_count,
                     COUNT(*) FILTER (WHERE status = 'In Progress') OVER() AS in_progress_count,
@@ -108,7 +109,7 @@ impl RequestDao {
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at",
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
             &[
                 &body.school_id, &body.requester_id, &body.requester_name, &body.requester_role,
                 &body.item, &body.quantity, &body.category, &body.scope,
@@ -129,7 +130,7 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at
              FROM requests WHERE id = $1",
             &[&id],
         ).await.map_err(|e| AppError::Database(format!("Failed to get request: {}", e)))?;
@@ -147,7 +148,7 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at",
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
             &[&id, &status],
         ).await.map_err(|e| AppError::Database(format!("Failed to update request status: {}", e)))?;
 
@@ -161,6 +162,7 @@ impl RequestDao {
         payment_method: &str,
         purchase_date: NaiveDate,
         payment_notes: Option<&str>,
+        bill_image: Option<&str>,
     ) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -168,13 +170,13 @@ impl RequestDao {
         let row = client.query_one(
             "UPDATE requests
              SET status = 'Completed', amount_spent = $2, payment_method = $3,
-                 purchase_date = $4, payment_notes = $5
+                 purchase_date = $4, payment_notes = $5, bill_image = $6
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at",
-            &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes],
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
+            &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes, &bill_image],
         ).await.map_err(|e| AppError::Database(format!("Failed to pay request: {}", e)))?;
 
         Ok(self.row_to_request(&row))
@@ -214,7 +216,7 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at,
                     COUNT(*) OVER() AS total_count
              FROM requests
              WHERE status = 'Completed'
@@ -305,7 +307,7 @@ impl RequestDao {
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at",
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
             &[
                 &body.school_id, &body.requester_name, &body.requester_role,
                 &body.item, &body.quantity, &body.category, &body.scope,

@@ -28,6 +28,7 @@ pub struct Request {
     pub payment_method: Option<String>,
     pub purchase_date: Option<NaiveDate>,
     pub payment_notes: Option<String>,
+    pub bill_image: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -69,6 +70,9 @@ pub struct PayRequestBody {
     pub payment_method: String,
     pub purchase_date: NaiveDate,
     pub payment_notes: Option<String>,
+    pub bill_image_base64: Option<String>,
+    pub bill_image_name: Option<String>,
+    pub bill_image_content_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

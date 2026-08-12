@@ -140,7 +140,7 @@ impl RequestService {
         self.dao.update_request_status(id, &body.status).await
     }
 
-    pub async fn pay_request(&self, id: Uuid, body: PayRequestBody) -> Result<Request, AppError> {
+    pub async fn pay_request(&self, id: Uuid, mut body: PayRequestBody) -> Result<Request, AppError> {
         self.dao.get_request_by_id(id).await?
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
 
@@ -148,7 +148,27 @@ impl RequestService {
             return Err(AppError::Validation("Amount must be greater than 0".to_string()));
         }
 
-        self.dao.pay_request(id, body.amount_spent, &body.payment_method, body.purchase_date, body.payment_notes.as_deref()).await
+        let mut bill_image_url: Option<String> = None;
+        if let (Some(b64), Some(name), Some(ct)) = (
+            body.bill_image_base64.take(),
+            body.bill_image_name.take(),
+            body.bill_image_content_type.take(),
+        ) {
+            use base64::{engine::general_purpose::STANDARD, Engine};
+            let bytes = STANDARD.decode(&b64)
+                .map_err(|e| AppError::Validation(format!("Invalid base64 bill image: {}", e)))?;
+            let resp = self.upload_service.upload_image(&name, &ct, bytes).await?;
+            bill_image_url = Some(resp.s3_url);
+        }
+
+        self.dao.pay_request(
+            id,
+            body.amount_spent,
+            &body.payment_method,
+            body.purchase_date,
+            body.payment_notes.as_deref(),
+            bill_image_url.as_deref(),
+        ).await
     }
 
     pub async fn delete_request(&self, auth: &AuthContext, id: Uuid) -> Result<(), AppError> {

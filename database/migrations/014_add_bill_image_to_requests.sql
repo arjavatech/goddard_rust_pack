@@ -1,0 +1,1 @@
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS bill_image TEXT;

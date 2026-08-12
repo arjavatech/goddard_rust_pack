@@ -14,6 +14,8 @@ pub mod email;
 pub mod notification;
 pub mod websocket_message;
 pub mod employee;
+pub mod requests;
+pub mod upload;
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};

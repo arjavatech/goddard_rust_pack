@@ -90,16 +90,23 @@ use controllers::{
         review_employee_form_assignment, delete_employee_form_assignment,
         employee_form_submission_webhook, send_bulk_employee_form_reminders,
     },
+    request_controller::{
+        list_requests, create_request, update_request_status, pay_request, delete_request,
+    },
+    expense_controller::{
+        list_expenses, create_expense,
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao,
     EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
+    RequestDao,
 };
 use services::{
     AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry,
-    EmployeeService,
+    EmployeeService, RequestService, UploadService,
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -156,6 +163,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let employee_form_template_dao = EmployeeFormTemplateDao::new(pool.clone());
     let employee_form_assignment_dao = EmployeeFormAssignmentDao::new(pool.clone());
     let employee_form_submission_dao = EmployeeFormSubmissionDao::new(pool.clone());
+    let request_dao = RequestDao::new(pool.clone());
 
     // Initialize FCM service. Live when all three env vars are present; otherwise a
     // no-op stub that lets local dev / staging boot without Firebase configured.
@@ -214,6 +222,9 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao, email_service.clone(), notification_service.clone()));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
+    let upload_service = Arc::new(UploadService::new().await);
+    let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone()));
+
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
         employee_form_template_dao,
@@ -273,7 +284,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         // Classroom Management APIs (Admin JWT or API Key)
         .route("/classrooms", post(create_classroom).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
-        .route("/classrooms", get(get_classrooms_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/classrooms", get(get_classrooms_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/classrooms", put(update_classroom).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/classrooms", delete(delete_classroom).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(classroom_service)
@@ -404,8 +415,19 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         .with_state(employee_service)
 
+        // Procurement — Requests & Expenses (single table, single service)
+        .route("/requests", get(list_requests).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/requests", post(create_request).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/requests/:id/status", patch(update_request_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/requests/:id/pay", post(pay_request).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/requests/:id", delete(delete_request).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/expenses", get(list_expenses).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/expenses", post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .with_state(request_service)
+
         .layer(axum_middleware::from_fn(request_id_middleware))
-        .layer(axum_middleware::from_fn(add_cors_headers));
+        .layer(axum_middleware::from_fn(add_cors_headers))
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)); // 10 MB
 
     Ok(app)
 }

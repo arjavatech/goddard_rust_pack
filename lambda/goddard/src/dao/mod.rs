@@ -14,6 +14,7 @@ pub mod employee_dao;
 pub mod employee_form_template_dao;
 pub mod employee_form_assignment_dao;
 pub mod employee_form_submission_dao;
+pub mod request_dao;
 
 pub use auth_dao::AuthDao;
 pub use school_dao::SchoolDao;
@@ -31,3 +32,4 @@ pub use employee_dao::EmployeeDao;
 pub use employee_form_template_dao::EmployeeFormTemplateDao;
 pub use employee_form_assignment_dao::EmployeeFormAssignmentDao;
 pub use employee_form_submission_dao::EmployeeFormSubmissionDao;
+pub use request_dao::RequestDao;

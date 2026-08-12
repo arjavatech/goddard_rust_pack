@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
@@ -15,6 +16,21 @@ export class RustLambdaStack extends cdk.Stack {
 
     const { stage } = props;
     const stageName = stage.toUpperCase();
+
+    // S3 bucket for product image uploads
+    const uploadsBucket = new s3.Bucket(this, `Goddard${stageName}UploadsBucket`, {
+      bucketName: `goddard-uploads-${stage}`,
+      publicReadAccess: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ACLS,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+        },
+      ],
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
 
     // Lambda function for Rust code
     // Using ARM64 architecture for up to 34% better price performance and 19% better performance
@@ -31,6 +47,8 @@ export class RustLambdaStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(30),
       environment: {
         RUST_LOG: 'info',
+        S3_UPLOAD_BUCKET: uploadsBucket.bucketName,
+        S3_BASE_URL: `https://${uploadsBucket.bucketRegionalDomainName}`,
       },
       logGroup: new logs.LogGroup(this, `Goddard${stageName}LambdaLogGroup`, {
         logGroupName: `/aws/lambda/goddard-${stage}`,
@@ -39,6 +57,9 @@ export class RustLambdaStack extends cdk.Stack {
       }),
       description: `Goddard ${stageName} - Backend Lambda function with API endpoints`,
     });
+
+    // Grant Lambda write access to the uploads bucket
+    uploadsBucket.grantPut(rustLambda);
 
     // API Gateway
     const api = new apigateway.RestApi(this, `Goddard${stageName}Api`, {
@@ -108,6 +129,18 @@ export class RustLambdaStack extends cdk.Stack {
       value: rustLambda.functionArn,
       description: `${stageName} Lambda Function ARN`,
       exportName: `Goddard${stageName}LambdaFunctionArn`,
+    });
+
+    new cdk.CfnOutput(this, 'UploadsBucketName', {
+      value: uploadsBucket.bucketName,
+      description: `${stageName} S3 Uploads Bucket Name`,
+      exportName: `Goddard${stageName}UploadsBucketName`,
+    });
+
+    new cdk.CfnOutput(this, 'UploadsBucketUrl', {
+      value: `https://${uploadsBucket.bucketRegionalDomainName}`,
+      description: `${stageName} S3 Uploads Bucket Base URL`,
+      exportName: `Goddard${stageName}UploadsBucketUrl`,
     });
   }
 }

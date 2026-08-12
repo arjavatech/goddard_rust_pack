@@ -8,21 +8,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 /// Maps to the Supabase "Confirm Sign Up" template used for parent enrollment invitations.
 pub fn parent_invite_html(first_name: &str, last_name: &str, confirmation_url: &str) -> String {
     format!(
-        r#"<html>
-  <body style="font-family: Arial, sans-serif; line-height: 1; color: #333;">
-    <div style="max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-      <p>Dear {first_name} {last_name},</p>
-      <p>We hope this message finds you well. We are pleased to inform you that your enrollment request at <strong>The Goddard School</strong>
-has been received and approved for the next stage of the admission process.</p>
-      <p style="text-align: center;">
-        <a href="{url}" style="display: inline-block; padding: 10px 20px; margin: 10px 0; background-color: #4CAF50; color:
-white; text-decoration: none; border-radius: 5px;">Confirm Your Email</a>
-      </p>
-      <p>Thank you for choosing <strong>The Goddard School</strong>.</p>
-      <p>Warm regards,<br>Admin Team,<br><strong>The Goddard School</strong></p>
-    </div>
-  </body>
-</html>"#,
+        r#"<html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:0;background-color:#f9f9f9;"><div style="max-width:600px;margin:0 auto;padding:30px 20px;"><div style="background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;padding:32px;"><div style="height:4px;background:#3498db;border-radius:4px;margin-bottom:24px;"></div><h2 style="color:#2c3e50;margin:0 0 16px 0;font-size:20px;">Welcome to The Goddard School</h2><p style="margin:0 0 12px 0;">Dear {first_name} {last_name},</p><p style="margin:0 0 12px 0;">We hope this message finds you well. We are pleased to inform you that your enrollment request at <strong>The Goddard School</strong> has been received and approved for the next stage of the admission process.</p><p style="margin:0 0 12px 0;">Please confirm your email address to continue with the enrollment process.</p><p style="text-align:center;margin:28px 0;"><a href="{url}" style="display:inline-block;padding:15px 30px;background:#3498db;color:#ffffff;text-decoration:none;border-radius:5px;font-weight:bold;font-size:16px;">Confirm Your Email</a></p><hr style="border:none;border-top:1px solid #e0e0e0;margin:28px 0;"><p style="margin:0;">Thank you for choosing <strong>The Goddard School</strong>.<br><br>Warm regards,<br><strong>Admin Team, The Goddard School</strong></p></div><p style="text-align:center;color:#999;font-size:12px;margin-top:16px;">This is an automated message. Please do not reply to this email.</p></div></body></html>"#,
         first_name = first_name,
         last_name = last_name,
         url = confirmation_url,

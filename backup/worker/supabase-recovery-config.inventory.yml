@@ -1,0 +1,16 @@
+# This file is bundled with every recovery point. Keep it current when a
+# Supabase dashboard setting changes. Do not put secret values in this file.
+manual_recovery_configuration:
+  auth:
+    - Configure the target project JWT/API signing configuration from AWS Secrets Manager.
+    - Configure SMTP, email templates, redirect URLs, and enabled OAuth/SMS providers.
+    - Recreate custom database-role passwords; managed exports never include them.
+  database:
+    - Re-enable required Realtime publications after restore.
+    - Apply any custom auth/storage schema migration not represented by the standard CLI dump.
+    - Verify required extensions are available in the target project.
+  functions_and_secrets:
+    - Deploy backend/Edge Function code from the approved release artifact.
+    - Configure function and third-party service secrets from AWS Secrets Manager.
+  validation:
+    - Verify auth.users count, representative password login, key table counts, RLS behavior, triggers, and uploaded files.

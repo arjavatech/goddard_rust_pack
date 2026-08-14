@@ -1,0 +1,9 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - chmod +x scripts/create-backup.sh scripts/restore.sh
+  build:
+    commands:
+      - ./scripts/create-backup.sh

@@ -19,8 +19,17 @@ NC=\033[0m # No Color
 
 # AWS Profile Configuration
 AWS_PROFILE ?= Arjava
+AWS_REGION ?= us-west-1
+DEV_SUPABASE_PROJECT_REF ?= fxsjcrwsnnowlovcnddz
+PROD_SUPABASE_PROJECT_REF ?= cmiyjnagetztzibtuywx
+# The CDK app explicitly defines both Goddard stacks in us-west-1. Keep backup
+# deployments aligned even when a local .env sets AWS_REGION for another tool.
+BACKUP_AWS_REGION := us-west-1
+# Backup infrastructure is deployed through the configured `arjava` profile,
+# independent of AWS_PROFILE values loaded from .env for application tooling.
+BACKUP_AWS_PROFILE := arjava
 
-.PHONY: help install build test test-local deploy deploy-dev deploy-prod deploy-env deploy-env-dev deploy-env-prod destroy clean synth db-setup db-reset db-status env-setup
+.PHONY: help install build test test-local deploy deploy-dev deploy-prod deploy-env deploy-env-dev deploy-env-prod backup-deploy-dev backup-deploy-prod destroy clean synth db-setup db-reset db-status env-setup
 
 # Default target
 .DEFAULT_GOAL := help
@@ -95,6 +104,23 @@ deploy-env-prod: ## ⚙️  Push .env.production variables to goddard-prod Lambd
 	chmod +x scripts/set-lambda-env.sh
 	AWS_PROFILE=$(AWS_PROFILE) LAMBDA_FUNCTION_NAME=goddard-prod ENV_FILE=.env.production \
 		AWS_REGION=us-west-1 ./scripts/set-lambda-env.sh
+
+backup-deploy-dev: ## 💾 Deploy Dev backup API and recovery pipeline only
+	@echo "$(BLUE)💾 Deploying Dev Supabase backup API...$(NC)"
+	cd infrastructure && AWS_PROFILE=$(BACKUP_AWS_PROFILE) npx cdk deploy GoddardDevStack \
+		--profile $(BACKUP_AWS_PROFILE) \
+		--region $(BACKUP_AWS_REGION) \
+		--require-approval never \
+		--parameters DevSupabaseProjectRef=$(DEV_SUPABASE_PROJECT_REF)
+
+backup-deploy-prod: ## 💾 Deploy Production backup API and recovery pipeline only [confirmation required]
+	@echo "$(RED)⚠️  This deploys the Production backup API and recovery pipeline.$(NC)"
+	@read -p "Type 'yes' to continue: " confirm; [ "$$confirm" = "yes" ] || (echo "$(BLUE)Deployment cancelled.$(NC)" && exit 1)
+	cd infrastructure && AWS_PROFILE=$(BACKUP_AWS_PROFILE) npx cdk deploy GoddardProdStack \
+		--profile $(BACKUP_AWS_PROFILE) \
+		--region $(BACKUP_AWS_REGION) \
+		--require-approval never \
+		--parameters ProdSupabaseProjectRef=$(PROD_SUPABASE_PROJECT_REF)
 
 deploy-flyio-dev: ## 🚀 Deploy to Fly.io Development
 	@./scripts/deploy-flyio-dev.sh

@@ -155,7 +155,7 @@ fn details_card(rows: &[(&str, String)]) -> String {
     )
 }
 
-fn html_escape(input: impl AsRef<str>) -> String {
+pub(crate) fn html_escape(input: impl AsRef<str>) -> String {
     input
         .as_ref()
         .replace('&', "&amp;")
@@ -163,6 +163,36 @@ fn html_escape(input: impl AsRef<str>) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+/// Renders the shared bulk-form-reminder template. Arguments may be provider
+/// merge placeholders (for example, `{{parent_name}}`) so one batch request
+/// can personalize every recipient.
+pub fn bulk_form_reminder_html(
+    parent_name: &str,
+    introduction: &str,
+    children_html: &str,
+    closing: &str,
+    login_url: &str,
+) -> String {
+    let accent = "#3498db";
+    let headline = "Forms need your attention";
+    let preheader = "You have one or more outstanding forms to complete.";
+    let cta = cta_button("Go to Login", login_url, accent);
+    let body = format!(
+        r#"<p>Dear <strong>{parent_name}</strong>,</p>
+          <p>{introduction}</p>
+          {children_html}
+          <p style="margin-top:20px;">{closing}</p>
+          <p>Please log in to the system and complete the required forms.</p>
+          {cta}
+          <p style="margin:16px 0 0;color:#666;font-size:14px;">If the button does not work, copy and paste this link into your browser:</p>
+          <p style="margin:6px 0 0;word-break:break-all;"><a href="{login_url}" style="color:#3498db;text-decoration:underline;">{login_url}</a></p>
+          <p>If you have any questions, please contact our school management team.</p>
+          <p>Thank you.</p>"#,
+    );
+
+    render_shell(accent, headline, preheader, &body, "")
 }
 
 fn fmt_datetime(dt: DateTime<Utc>) -> String {
@@ -401,7 +431,11 @@ pub fn form_assigned_html(payload: &FormAssignedNotification) -> String {
         Some(date) => date.format("%B %d, %Y").to_string(),
         None => "At your earliest convenience".to_string(),
     };
-    let requirement_text = if payload.is_required { "Required" } else { "Optional" };
+    let requirement_text = if payload.is_required {
+        "Required"
+    } else {
+        "Optional"
+    };
 
     let details = details_card(&[
         ("Form", payload.form_name.clone()),
@@ -445,7 +479,10 @@ pub fn bulk_import_welcome_html(
     dashboard_url: &str,
 ) -> String {
     let accent = "#2ecc71"; // welcoming green
-    let headline = format!("Welcome to {} — Your Account Is Ready", html_escape(school_name));
+    let headline = format!(
+        "Welcome to {} — Your Account Is Ready",
+        html_escape(school_name)
+    );
     let preheader = format!(
         "Your Goddard School parent account at {} has been created. Find your login details inside.",
         school_name
@@ -523,10 +560,18 @@ pub fn child_archived_html(payload: &ChildArchivedNotification) -> String {
 // Employee lifecycle notification templates
 // =====================================================
 
-pub fn employee_invite_html(first_name: &str, last_name: &str, invite_link: &str, school_name: &str) -> String {
+pub fn employee_invite_html(
+    first_name: &str,
+    last_name: &str,
+    invite_link: &str,
+    school_name: &str,
+) -> String {
     let accent = "#2980b9";
     let headline = format!("Welcome to {} — Employee Access", html_escape(school_name));
-    let preheader = format!("You've been added as an employee at {}. Set up your account to get started.", school_name);
+    let preheader = format!(
+        "You've been added as an employee at {}. Set up your account to get started.",
+        school_name
+    );
 
     let body = format!(
         r#"<p>Dear {first_name} {last_name},</p>
@@ -541,17 +586,26 @@ pub fn employee_invite_html(first_name: &str, last_name: &str, invite_link: &str
     render_shell(accent, &headline, &preheader, &body, &cta)
 }
 
-pub fn employee_form_assigned_html(employee_name: &str, form_name: &str, due_date: &str, dashboard_url: &str) -> String {
+pub fn employee_form_assigned_html(
+    employee_name: &str,
+    form_name: &str,
+    due_date: &str,
+    dashboard_url: &str,
+) -> String {
     let accent = "#27ae60";
     let headline = format!("New form assigned: {}", html_escape(form_name));
-    let preheader = format!("A new form has been assigned to you. Please complete {} by {}.", form_name, due_date);
+    let preheader = format!(
+        "A new form has been assigned to you. Please complete {} by {}.",
+        form_name, due_date
+    );
 
-    let due = if due_date.is_empty() { "at your earliest convenience".to_string() } else { html_escape(due_date) };
+    let due = if due_date.is_empty() {
+        "at your earliest convenience".to_string()
+    } else {
+        html_escape(due_date)
+    };
 
-    let details = details_card(&[
-        ("Form", form_name.to_string()),
-        ("Due Date", due.clone()),
-    ]);
+    let details = details_card(&[("Form", form_name.to_string()), ("Due Date", due.clone())]);
 
     let body = format!(
         r#"<p>Dear {name},</p>
@@ -594,10 +648,16 @@ pub fn employee_form_approved_html(employee_name: &str, form_name: &str, notes: 
 pub fn employee_form_rejected_html(employee_name: &str, form_name: &str, notes: &str) -> String {
     let accent = "#e74c3c";
     let headline = format!("Action needed: {} requires updates", html_escape(form_name));
-    let preheader = format!("Your submission for {} has been returned for revision.", form_name);
+    let preheader = format!(
+        "Your submission for {} has been returned for revision.",
+        form_name
+    );
 
     let notes_line = if !notes.is_empty() {
-        format!("<p><strong>Reviewer notes:</strong> {}</p>", html_escape(notes))
+        format!(
+            "<p><strong>Reviewer notes:</strong> {}</p>",
+            html_escape(notes)
+        )
     } else {
         String::new()
     };
@@ -615,12 +675,24 @@ pub fn employee_form_rejected_html(employee_name: &str, form_name: &str, notes: 
     render_shell(accent, &headline, &preheader, &body, "")
 }
 
-pub fn employee_form_reminder_html(employee_name: &str, form_name: &str, due_date: &str, dashboard_url: &str) -> String {
+pub fn employee_form_reminder_html(
+    employee_name: &str,
+    form_name: &str,
+    due_date: &str,
+    dashboard_url: &str,
+) -> String {
     let accent = "#e67e22";
     let headline = format!("Reminder: {} is due soon", html_escape(form_name));
-    let preheader = format!("Friendly reminder: please complete {} by {}.", form_name, due_date);
+    let preheader = format!(
+        "Friendly reminder: please complete {} by {}.",
+        form_name, due_date
+    );
 
-    let due = if due_date.is_empty() { "soon".to_string() } else { html_escape(due_date) };
+    let due = if due_date.is_empty() {
+        "soon".to_string()
+    } else {
+        html_escape(due_date)
+    };
 
     let body = format!(
         r#"<p>Dear {name},</p>

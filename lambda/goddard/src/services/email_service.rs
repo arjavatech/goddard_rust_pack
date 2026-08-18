@@ -1,14 +1,33 @@
 use crate::{
-    error::{AppError, ApiResult},
+    error::{ApiResult, AppError},
     models::email::{
         BulkEmailResponse, ChildAddedNotification, ChildArchivedNotification,
         FormApprovedNotification, FormAssignedNotification, FormRejectedNotification,
         ParentDeactivatedNotification, ParentFormReminder,
     },
-    services::{email_provider::{EmailProvider, SmtpProvider}, email_templates},
+    services::{
+        email_provider::{BatchRecipient, EmailProvider, SmtpProvider, ZeptoMailProvider},
+        email_templates,
+    },
 };
-use chrono::NaiveDate;
-use std::sync::Arc;
+use chrono::{NaiveDate, Utc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
+
+#[derive(Default)]
+struct ParentReminderGroup {
+    parent_name: String,
+    children: BTreeMap<String, ChildReminderGroup>,
+}
+
+#[derive(Default)]
+struct ChildReminderGroup {
+    student_name: String,
+    class_name: String,
+    forms: BTreeSet<(String, String, bool)>,
+}
 
 pub struct EmailService {
     provider: Arc<dyn EmailProvider>,
@@ -16,9 +35,13 @@ pub struct EmailService {
 
 impl EmailService {
     pub fn new() -> Self {
-        Self {
-            provider: Arc::new(SmtpProvider::new()),
-        }
+        let provider: Arc<dyn EmailProvider> =
+            if std::env::var("EMAIL_PROVIDER").ok().as_deref() == Some("zeptomail") {
+                Arc::new(ZeptoMailProvider::new().expect("Invalid ZeptoMail configuration"))
+            } else {
+                Arc::new(SmtpProvider::new())
+            };
+        Self { provider }
     }
 
     /// Dispatch a single email. Accepts comma-separated recipients in `to`.
@@ -47,6 +70,12 @@ impl EmailService {
 
     /// Convert DD-MM-YYYY to "December 25, 2025" format
     fn convert_date_format(dd_mm_yyyy: &str) -> Result<String, AppError> {
+        Ok(Self::parse_due_date(dd_mm_yyyy)?
+            .format("%B %d, %Y")
+            .to_string())
+    }
+
+    fn parse_due_date(dd_mm_yyyy: &str) -> Result<NaiveDate, AppError> {
         let parts: Vec<&str> = dd_mm_yyyy.split('-').collect();
         if parts.len() != 3 {
             return Err(AppError::Validation(
@@ -67,7 +96,7 @@ impl EmailService {
         let date = NaiveDate::from_ymd_opt(year, month, day)
             .ok_or_else(|| AppError::Validation("Invalid date values".to_string()))?;
 
-        Ok(date.format("%B %d, %Y").to_string())
+        Ok(date)
     }
 
     fn generate_html_body(
@@ -108,7 +137,10 @@ impl EmailService {
         )
     }
 
-    async fn send_form_reminder_email(&self, reminder: &ParentFormReminder) -> Result<(), AppError> {
+    async fn send_form_reminder_email(
+        &self,
+        reminder: &ParentFormReminder,
+    ) -> Result<(), AppError> {
         println!("[EmailService] Sending email to: {}", reminder.parent_email);
 
         let formatted_due_date = if reminder.due_date.trim().is_empty() {
@@ -130,7 +162,10 @@ impl EmailService {
         );
 
         let subject = if reminder.due_date.trim().is_empty() {
-            format!("Reminder: {} for {}", reminder.form_name, reminder.student_name)
+            format!(
+                "Reminder: {} for {}",
+                reminder.form_name, reminder.student_name
+            )
         } else {
             format!(
                 "Reminder: {} for {} - Due {}",
@@ -138,7 +173,8 @@ impl EmailService {
             )
         };
 
-        self.dispatch(&reminder.parent_email, &subject, &html_body).await
+        self.dispatch(&reminder.parent_email, &subject, &html_body)
+            .await
     }
 
     pub async fn send_bulk_form_reminders(
@@ -146,38 +182,113 @@ impl EmailService {
         reminders: Vec<ParentFormReminder>,
     ) -> ApiResult<BulkEmailResponse> {
         println!(
-            "[EmailService] Starting bulk email send: {} emails",
+            "[EmailService] Starting bulk reminder consolidation: {} form rows",
             reminders.len()
         );
 
-        let mut total_sent = 0;
-        let mut total_failed = 0;
-        let mut failed_emails = Vec::new();
+        let form_rows = reminders.len();
+        let mut parent_groups: BTreeMap<String, ParentReminderGroup> = BTreeMap::new();
 
         for reminder in reminders {
-            match self.send_form_reminder_email(&reminder).await {
-                Ok(_) => {
-                    total_sent += 1;
+            let (due_date, is_overdue) = if reminder.due_date.trim().is_empty() {
+                ("at your earliest convenience".to_string(), false)
+            } else {
+                let due_date = Self::parse_due_date(&reminder.due_date)?;
+                (
+                    due_date.format("%B %d, %Y").to_string(),
+                    due_date < Utc::now().date_naive(),
+                )
+            };
+            let student_name = reminder.student_name.trim().to_string();
+            let class_name = reminder.class_name.trim().to_string();
+            let child_key = format!(
+                "{}\u{1f}{}",
+                student_name.to_lowercase(),
+                class_name.to_lowercase()
+            );
+
+            // The current client payload permits a comma-separated value. Each
+            // address receives its own consolidated message without changing
+            // the API contract.
+            for email in reminder.parent_email.split(',') {
+                let email = email.trim().to_lowercase();
+                if email.is_empty() {
+                    continue;
                 }
-                Err(e) => {
-                    println!(
-                        "[EmailService] Failed to send to {}: {:?}",
-                        reminder.parent_email, e
-                    );
-                    total_failed += 1;
-                    failed_emails.push(reminder.parent_email.clone());
+
+                let parent = parent_groups
+                    .entry(email)
+                    .or_insert_with(|| ParentReminderGroup {
+                        parent_name: reminder.parent_name.trim().to_string(),
+                        children: BTreeMap::new(),
+                    });
+                if parent.parent_name.is_empty() && !reminder.parent_name.trim().is_empty() {
+                    parent.parent_name = reminder.parent_name.trim().to_string();
                 }
+
+                let child = parent.children.entry(child_key.clone()).or_insert_with(|| {
+                    ChildReminderGroup {
+                        student_name: student_name.clone(),
+                        class_name: class_name.clone(),
+                        forms: BTreeSet::new(),
+                    }
+                });
+                child
+                    .forms
+                    .insert((reminder.form_name.trim().to_string(), due_date.clone(), is_overdue));
             }
         }
 
-        let message = if total_failed == 0 {
-            format!("Successfully sent {} emails", total_sent)
-        } else {
-            format!(
-                "Sent {} emails successfully, {} failed",
-                total_sent, total_failed
-            )
-        };
+        if parent_groups.is_empty() {
+            return Err(AppError::Validation(
+                "No recipient email addresses provided".to_string(),
+            ));
+        }
+
+        let total_sent = parent_groups.len();
+        let recipients = parent_groups
+            .into_iter()
+            .map(|(email, parent)| {
+                let children_html = Self::render_bulk_reminder_children(&parent.children);
+                let child_count = parent.children.len();
+                let form_count = parent
+                    .children
+                    .values()
+                    .map(|child| child.forms.len())
+                    .sum::<usize>();
+                let parent_name = if parent.parent_name.trim().is_empty() {
+                    "Parent".to_string()
+                } else {
+                    parent.parent_name
+                };
+                let (introduction, closing) = Self::bulk_reminder_copy(child_count, form_count);
+                BatchRecipient {
+                    address: email,
+                    name: parent_name.clone(),
+                    merge_info: serde_json::json!({
+                        "parent_name": email_templates::html_escape(&parent_name),
+                        "introduction": introduction,
+                        "children_html": children_html,
+                        "closing": closing,
+                    }),
+                }
+            })
+            .collect::<Vec<_>>();
+        let subject = "Reminder: Forms need your attention".to_string();
+        let html = email_templates::bulk_form_reminder_html(
+            "{{parent_name}}",
+            "{{introduction}}",
+            "{{children_html}}",
+            "{{closing}}",
+            &parent_dashboard_url(),
+        );
+        self.provider.send_batch(subject, html, recipients).await?;
+        let total_failed = 0;
+        let failed_emails = Vec::new();
+        let message = format!(
+            "{} consolidated reminder emails accepted for delivery, covering {} form rows",
+            total_sent, form_rows
+        );
 
         println!("[EmailService] Bulk send complete: {}", message);
 
@@ -187,6 +298,67 @@ impl EmailService {
             failed_emails,
             message,
         })
+    }
+
+    fn render_bulk_reminder_children(children: &BTreeMap<String, ChildReminderGroup>) -> String {
+        children
+            .values()
+            .map(|child| {
+                let forms = child
+                    .forms
+                    .iter()
+                    .map(|(form_name, due_date, is_overdue)| {
+                        let overdue = if *is_overdue {
+                            r#" <span style="display:inline-block;margin-left:6px;padding:2px 7px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:10px;font-size:12px;font-weight:bold;">Overdue</span>"#
+                        } else {
+                            ""
+                        };
+                        format!(
+                            r#"<li style="margin:0 0 8px;color:#333;"><strong>{}</strong> <span style="color:#64748b;">— Due {}</span>{}</li>"#,
+                            email_templates::html_escape(form_name),
+                            email_templates::html_escape(due_date),
+                            overdue,
+                        )
+                    })
+                    .collect::<String>();
+                let classroom = if child.class_name.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        r#"<p style="margin:4px 0 10px;color:#64748b;font-size:14px;">Classroom: {}</p>"#,
+                        email_templates::html_escape(&child.class_name),
+                    )
+                };
+
+                format!(
+                    r#"<div style="margin:20px 0;padding:16px;background:#f7f9fb;border-left:4px solid #3498db;border-radius:4px;">
+                          <p style="margin:0;color:#2c3e50;font-size:16px;"><strong>{}</strong></p>
+                          {}
+                          <ul style="margin:0;padding-left:20px;">{}</ul>
+                        </div>"#,
+                    email_templates::html_escape(&child.student_name),
+                    classroom,
+                    forms,
+                )
+            })
+            .collect()
+    }
+
+    fn bulk_reminder_copy(child_count: usize, form_count: usize) -> (&'static str, &'static str) {
+        match (child_count, form_count) {
+            (1, 1) => (
+                "Please complete the following form for your child:",
+                "Please complete the required form at your earliest convenience.",
+            ),
+            (1, _) => (
+                "Please complete the following forms for your child:",
+                "Please complete the required forms at your earliest convenience.",
+            ),
+            _ => (
+                "Please complete the following forms for your children:",
+                "Please complete the required forms for each child at your earliest convenience.",
+            ),
+        }
     }
 
     // =====================================================

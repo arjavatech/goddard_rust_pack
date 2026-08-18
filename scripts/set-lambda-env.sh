@@ -42,6 +42,34 @@ fi
 RESERVED_VARS=("AWS_REGION" "AWS_DEFAULT_REGION" "AWS_PROFILE" "_AWS_XRAY_TRACE_ID" "AWS_XRAY_CONTEXT_MISSING" "AWS_XRAY_DEBUG_MODE" "AWS_LAMBDA_FUNCTION_NAME" "AWS_LAMBDA_FUNCTION_MEMORY_SIZE" "AWS_LAMBDA_FUNCTION_VERSION" "AWS_LAMBDA_LOG_GROUP_NAME" "AWS_LAMBDA_LOG_STREAM_NAME" "AWS_LAMBDA_RUNTIME_API" "LAMBDA_TASK_ROOT" "LAMBDA_RUNTIME_DIR" "_HANDLER" "AWS_EXECUTION_ENV" "TZ")
 
 # Convert .env file to JSON format for AWS Lambda
+# Lambda limits the combined size of all environment variable keys and values to
+# 4 KB. Keep local/Fly-only configuration in .env, but deploy only the variables
+# the Rust Lambda reads at runtime. The final occurrence of a duplicate key wins,
+# matching normal .env loading behaviour.
+LAMBDA_RUNTIME_KEYS="|API_BASE_URL|CORS_ORIGINS|DATABASE_URL|EMAIL_FROM|EMAIL_PROVIDER|ZEPTOMAIL_SEND_MAIL_TOKEN|FCM_PROJECT_ID|FCM_CLIENT_EMAIL|FCM_PRIVATE_KEY|FILLOUT_API_BASE_URL|FILLOUT_API_KEY|JWT_SECRET|LOG_LEVEL|OWNER_API_KEY|PARENT_DASHBOARD_URL|PORT|RUST_LOG|S3_UPLOAD_BUCKET|S3_BASE_URL|SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY|"
+
+runtime_env_lines() {
+    awk -v allowed="$LAMBDA_RUNTIME_KEYS" '
+        !/^[[:space:]]*#/ && NF {
+            equals = index($0, "=")
+            if (equals == 0) next
+            key = substr($0, 1, equals - 1)
+            value = substr($0, equals + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            if (index(allowed, "|" key "|") == 0) next
+            if (!(key in seen)) order[++count] = key
+            seen[key] = 1
+            values[key] = value
+        }
+        END {
+            for (i = 1; i <= count; i++) {
+                key = order[i]
+                print key "=" values[key]
+            }
+        }
+    ' "$ENV_FILE"
+}
+
 convert_env_to_lambda_json() {
     local json_content='{"Variables":{'
     local first=true
@@ -88,7 +116,7 @@ convert_env_to_lambda_json() {
         json_content+="\"$key\":\"$value\""
         first=false
 
-    done < "$ENV_FILE"
+    done < <(runtime_env_lines)
 
     json_content+='}}'
     echo "$json_content"

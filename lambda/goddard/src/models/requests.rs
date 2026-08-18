@@ -14,6 +14,7 @@ pub struct Request {
     pub item: String,
     pub quantity: i32,
     pub category: Option<String>,
+    pub location: Option<String>,
     pub scope: Option<String>,
     pub classroom_id: Option<Uuid>,
     pub classroom_name: Option<String>,
@@ -29,6 +30,7 @@ pub struct Request {
     pub purchase_date: Option<NaiveDate>,
     pub payment_notes: Option<String>,
     pub bill_image: Option<String>,
+    pub expected_completion_date: Option<NaiveDate>,
     pub created_at: Option<NaiveDateTime>,
 }
 
@@ -44,6 +46,7 @@ pub struct CreateRequestBody {
     pub item: String,
     pub quantity: i32,
     pub category: Option<String>,
+    pub location: Option<String>,
     pub scope: String,
     pub classroom_id: Option<Uuid>,
     pub classroom_name: Option<String>,
@@ -59,8 +62,36 @@ pub struct CreateRequestBody {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateRequestStatusBody {
     pub status: String,
+    pub expected_completion_date: Option<NaiveDate>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateExpectedCompletionDateBody {
+    pub expected_completion_date: NaiveDate,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRequestBody {
+    pub item: Option<String>,
+    pub quantity: Option<i32>,
+    pub category: Option<String>,
+    pub location: Option<String>,
+    pub scope: Option<String>,
+    pub classroom_id: Option<Uuid>,
+    pub classroom_name: Option<String>,
+    pub teacher_id: Option<Uuid>,
+    pub teacher_name: Option<String>,
+    pub product_link: Option<String>,
+    pub product_image: Option<String>,
+    pub notes: Option<String>,
+    pub image_base64: Option<String>,
+    pub image_name: Option<String>,
+    pub image_content_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

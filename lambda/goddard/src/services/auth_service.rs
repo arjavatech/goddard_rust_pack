@@ -813,6 +813,8 @@ impl AuthService {
                 name: school.name,
                 subdomain: school.subdomain,
                 settings: school.settings,
+                request_categories: school.request_categories,
+                location: school.location,
                 created_at: school.created_at,
                 updated_at: school.updated_at,
             }),

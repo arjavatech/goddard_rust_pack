@@ -34,7 +34,8 @@ use controllers::{
         resend_admin_invite
     },
     school_controller::{
-        create_school, get_all_schools, update_school, delete_school, create_school_with_owner, get_school_with_owner, get_all_schools_with_owners
+        create_school, get_all_schools, update_school, delete_school, create_school_with_owner, get_school_with_owner, get_all_schools_with_owners,
+        get_request_settings, update_request_settings
     },
     classroom_controller::{
         create_classroom, get_classrooms_by_school, update_classroom, delete_classroom
@@ -91,7 +92,7 @@ use controllers::{
         employee_form_submission_webhook, send_bulk_employee_form_reminders,
     },
     request_controller::{
-        list_requests, create_request, update_request_status, pay_request, delete_request,
+        list_requests, create_request, update_request_status, update_expected_completion_date, update_request, pay_request, delete_request,
     },
     expense_controller::{
         list_expenses, create_expense,
@@ -280,6 +281,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/schools", get(get_all_schools)) // Public
         .route("/schools", put(update_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/schools/:id", delete(delete_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/schools/:id/request-settings", get(get_request_settings).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/schools/:id/request-settings", patch(update_request_settings).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(school_service)
 
         // Classroom Management APIs (Admin JWT or API Key)
@@ -419,8 +422,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/requests", get(list_requests).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/requests", post(create_request).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/requests/:id/status", patch(update_request_status).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/requests/:id/expected-completion-date", patch(update_expected_completion_date).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/requests/:id", patch(update_request).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/requests/:id/pay", post(pay_request).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
-        .route("/requests/:id", delete(delete_request).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/requests/:id", delete(delete_request).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/expenses", get(list_expenses).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .route("/expenses", post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .with_state(request_service)

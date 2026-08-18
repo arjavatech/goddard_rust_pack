@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     response::IntoResponse,
     Json,
 };
@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use crate::{
     services::SchoolService,
-    models::school::{CreateSchoolRequest, UpdateSchoolRequest, CreateSchoolWithOwnerRequest, SchoolWithOwnerResponse},
+    models::school::{CreateSchoolRequest, UpdateSchoolRequest, CreateSchoolWithOwnerRequest, SchoolWithOwnerResponse, UpdateRequestSettingsRequest},
+    middleware::auth::{check_permission_admin_or_superadmin, AuthContext},
     utils::ResponseUtils,
     error::AppError,
 };
@@ -22,6 +23,27 @@ pub async fn create_school(
     // This endpoint is protected by API key middleware, no need for JWT auth
     let response = school_service.create_school(payload).await?;
     Ok(ResponseUtils::success(response))
+}
+
+/// GET /schools/:id/request-settings
+pub async fn get_request_settings(
+    State(school_service): State<Arc<SchoolService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(school_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(ResponseUtils::success(school_service.get_request_settings(school_id).await?))
+}
+
+/// PATCH /schools/:id/request-settings
+pub async fn update_request_settings(
+    State(school_service): State<Arc<SchoolService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(school_id): Path<Uuid>,
+    Json(payload): Json<UpdateRequestSettingsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(ResponseUtils::success(school_service.update_request_settings(school_id, payload).await?))
 }
 
 /// GET /schools

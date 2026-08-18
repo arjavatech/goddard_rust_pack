@@ -435,7 +435,7 @@ async fn verify_jwt_with_supabase(jwt_token: &str) -> Result<AuthContext, AppErr
         "Admin" => UserRole::Admin,
         "SuperAdmin" => UserRole::SuperAdmin,
         "Parent" => UserRole::Parent,
-        "Teacher" => UserRole::Teacher,
+        "Teacher" | "Employee" => UserRole::Teacher,
         _ => {
             println!("[WARN] Unknown role in JWT: {}", role_str);
             UserRole::Parent // Default to Parent for safety

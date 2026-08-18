@@ -6,7 +6,7 @@ use axum::{
 use std::sync::Arc;
 use uuid::Uuid;
 use crate::middleware::auth::AuthContext;
-use crate::models::requests::{CreateRequestBody, UpdateRequestStatusBody, PayRequestBody, ListRequestsParams};
+use crate::models::requests::{CreateRequestBody, UpdateRequestStatusBody, UpdateExpectedCompletionDateBody, UpdateRequestBody, PayRequestBody, ListRequestsParams};
 use crate::services::request_service::RequestService;
 use crate::utils::response::ResponseUtils;
 use crate::error::error_types::AppError;
@@ -37,6 +37,24 @@ pub async fn update_request_status(
 ) -> Result<impl IntoResponse, AppError> {
     let result = service.update_request_status(&auth, id, body).await?;
     Ok(ResponseUtils::success(result))
+}
+
+pub async fn update_expected_completion_date(
+    State(service): State<Arc<RequestService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateExpectedCompletionDateBody>,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(ResponseUtils::success(service.update_expected_completion_date(&auth, id, body).await?))
+}
+
+pub async fn update_request(
+    State(service): State<Arc<RequestService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateRequestBody>,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(ResponseUtils::success(service.update_request(&auth, id, body).await?))
 }
 
 pub async fn pay_request(

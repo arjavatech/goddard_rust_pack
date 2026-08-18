@@ -2,9 +2,10 @@ use deadpool_postgres::Pool;
 use uuid::Uuid;
 use chrono::NaiveDate;
 use crate::models::requests::{
-    Request, CreateRequestBody, CreateExpenseBody,
+    Request, CreateRequestBody, CreateExpenseBody, UpdateRequestBody,
     ExpenseSummary, CategoryBreakdown, ScopeBreakdown,
 };
+use crate::models::school::RequestSettingOption;
 use crate::error::error_types::AppError;
 
 #[derive(Clone)]
@@ -27,6 +28,7 @@ impl RequestDao {
             item: row.get("item"),
             quantity: row.get("quantity"),
             category: row.get("category"),
+            location: row.get("location"),
             scope: row.get("scope"),
             classroom_id: row.get("classroom_id"),
             classroom_name: row.get("classroom_name"),
@@ -42,6 +44,7 @@ impl RequestDao {
             purchase_date: row.get("purchase_date"),
             payment_notes: row.get("payment_notes"),
             bill_image: row.get("bill_image"),
+            expected_completion_date: row.get("expected_completion_date"),
             created_at: row.get("created_at"),
         }
     }
@@ -64,9 +67,9 @@ impl RequestDao {
 
         let rows = client.query(
             "SELECT id, school_id, requester_id, requester_name, requester_role,
-                    item, quantity, category, scope, classroom_id, classroom_name,
+                    item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
                     COUNT(*) OVER() AS total_count,
                     COUNT(*) FILTER (WHERE status = 'Pending') OVER() AS pending_count,
                     COUNT(*) FILTER (WHERE status = 'In Progress') OVER() AS in_progress_count,
@@ -98,21 +101,21 @@ impl RequestDao {
         let row = client.query_one(
             "INSERT INTO requests (
                 id, school_id, requester_id, requester_name, requester_role,
-                item, quantity, category, scope, classroom_id, classroom_name,
+                item, quantity, category, location, scope, classroom_id, classroom_name,
                 teacher_id, teacher_name, product_link, product_image, notes,
                 status, source, created_at
              ) VALUES (
                 gen_random_uuid(), $1, $2, $3, $4,
-                $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15,
+                $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, $14, $15, $16,
                 'Pending', 'request', NOW()
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
-                         item, quantity, category, scope, classroom_id, classroom_name,
+                         item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
             &[
                 &body.school_id, &body.requester_id, &body.requester_name, &body.requester_role,
-                &body.item, &body.quantity, &body.category, &body.scope,
+                &body.item, &body.quantity, &body.category, &body.location, &body.scope,
                 &body.classroom_id, &body.classroom_name,
                 &body.teacher_id, &body.teacher_name,
                 &body.product_link, &body.product_image, &body.notes,
@@ -122,15 +125,56 @@ impl RequestDao {
         Ok(self.row_to_request(&row))
     }
 
+    pub async fn validate_request_settings(
+        &self,
+        school_id: Uuid,
+        category: Option<&str>,
+        location: Option<&str>,
+        requires_location: bool,
+    ) -> Result<(), AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let row = client.query_one(
+            "SELECT request_categories, location FROM schools WHERE id = $1",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to load request settings: {}", e)))?;
+
+        Self::validate_configured_option(row.get("request_categories"), category, "category")?;
+        if requires_location {
+            if location.is_none_or(|value| value.trim().is_empty()) {
+                return Err(AppError::Validation("location is required for a school request".to_string()));
+            }
+            Self::validate_configured_option(row.get("location"), location, "location")?;
+        }
+        Ok(())
+    }
+
+    fn validate_configured_option(
+        config: Option<serde_json::Value>,
+        value: Option<&str>,
+        field: &str,
+    ) -> Result<(), AppError> {
+        let options: Vec<RequestSettingOption> = config
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default();
+        if !options.is_empty() {
+            let value = value.ok_or_else(|| AppError::Validation(format!("{} is required by this school's settings", field)))?;
+            if !options.iter().any(|option| option.label.eq_ignore_ascii_case(value.trim())) {
+                return Err(AppError::Validation(format!("{} is not configured for this school", field)));
+            }
+        }
+        Ok(())
+    }
+
     pub async fn get_request_by_id(&self, id: Uuid) -> Result<Option<Request>, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let row = client.query_opt(
             "SELECT id, school_id, requester_id, requester_name, requester_role,
-                    item, quantity, category, scope, classroom_id, classroom_name,
+                    item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at
              FROM requests WHERE id = $1",
             &[&id],
         ).await.map_err(|e| AppError::Database(format!("Failed to get request: {}", e)))?;
@@ -138,18 +182,18 @@ impl RequestDao {
         Ok(row.map(|r| self.row_to_request(&r)))
     }
 
-    pub async fn update_request_status(&self, id: Uuid, status: &str) -> Result<Request, AppError> {
+    pub async fn update_request_status(&self, id: Uuid, status: &str, expected_completion_date: Option<NaiveDate>) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let row = client.query_one(
-            "UPDATE requests SET status = $2
+            "UPDATE requests SET status = $2, expected_completion_date = $3
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,
-                       item, quantity, category, scope, classroom_id, classroom_name,
+                       item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
-            &[&id, &status],
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+            &[&id, &status, &expected_completion_date],
         ).await.map_err(|e| AppError::Database(format!("Failed to update request status: {}", e)))?;
 
         Ok(self.row_to_request(&row))
@@ -170,12 +214,12 @@ impl RequestDao {
         let row = client.query_one(
             "UPDATE requests
              SET status = 'Completed', amount_spent = $2, payment_method = $3,
-                 purchase_date = $4, payment_notes = $5, bill_image = $6
+                 purchase_date = $4, payment_notes = $5, bill_image = $6, expected_completion_date = NULL
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,
-                       item, quantity, category, scope, classroom_id, classroom_name,
+                       item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
             &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes, &bill_image],
         ).await.map_err(|e| AppError::Database(format!("Failed to pay request: {}", e)))?;
 
@@ -197,6 +241,43 @@ impl RequestDao {
         Ok(())
     }
 
+    pub async fn update_expected_completion_date(&self, id: Uuid, expected_completion_date: NaiveDate) -> Result<Request, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let row = client.query_one(
+            "UPDATE requests SET expected_completion_date = $2 WHERE id = $1 AND status = 'In Progress'
+             RETURNING id, school_id, requester_id, requester_name, requester_role,
+                       item, quantity, category, location, scope, classroom_id, classroom_name,
+                       teacher_id, teacher_name, product_link, product_image, notes,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+            &[&id, &expected_completion_date],
+        ).await.map_err(|e| AppError::Database(format!("Failed to update expected completion date: {}", e)))?;
+        Ok(self.row_to_request(&row))
+    }
+
+    pub async fn update_request(&self, id: Uuid, body: &UpdateRequestBody) -> Result<Request, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let row = client.query_one(
+            "UPDATE requests SET
+                item = COALESCE($2, item), quantity = COALESCE($3, quantity),
+                category = COALESCE($4, category), location = COALESCE($5, location),
+                scope = COALESCE($6, scope), classroom_id = COALESCE($7, classroom_id),
+                classroom_name = COALESCE($8, classroom_name), teacher_id = COALESCE($9, teacher_id),
+                teacher_name = COALESCE($10, teacher_name), product_link = COALESCE($11, product_link),
+                product_image = COALESCE($12, product_image), notes = COALESCE($13, notes)
+             WHERE id = $1
+             RETURNING id, school_id, requester_id, requester_name, requester_role,
+                       item, quantity, category, location, scope, classroom_id, classroom_name,
+                       teacher_id, teacher_name, product_link, product_image, notes,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+            &[&id, &body.item, &body.quantity, &body.category, &body.location, &body.scope,
+              &body.classroom_id, &body.classroom_name, &body.teacher_id, &body.teacher_name,
+              &body.product_link, &body.product_image, &body.notes],
+        ).await.map_err(|e| AppError::Database(format!("Failed to update request: {}", e)))?;
+        Ok(self.row_to_request(&row))
+    }
+
     // ── Expenses (completed entries from both request workflow and manual) ─────
 
     pub async fn list_expenses(
@@ -214,9 +295,9 @@ impl RequestDao {
 
         let rows = client.query(
             "SELECT id, school_id, requester_id, requester_name, requester_role,
-                    item, quantity, category, scope, classroom_id, classroom_name,
+                    item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
                     COUNT(*) OVER() AS total_count
              FROM requests
              WHERE status = 'Completed'
@@ -305,9 +386,9 @@ impl RequestDao {
                 $4, $5, $6, $7, $8, $9,
                 'Completed', 'manual', $10, $11, $12, $13, NOW()
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
-                         item, quantity, category, scope, classroom_id, classroom_name,
+                         item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, created_at",
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
             &[
                 &body.school_id, &body.requester_name, &body.requester_role,
                 &body.item, &body.quantity, &body.category, &body.scope,

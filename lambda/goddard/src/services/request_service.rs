@@ -4,7 +4,7 @@ use crate::dao::request_dao::RequestDao;
 use crate::middleware::auth::AuthContext;
 use crate::models::schema::UserRole;
 use crate::models::requests::{
-    CreateRequestBody, UpdateRequestStatusBody, PayRequestBody, CreateExpenseBody,
+    CreateRequestBody, UpdateRequestStatusBody, UpdateExpectedCompletionDateBody, UpdateRequestBody, PayRequestBody, CreateExpenseBody,
     ListRequestsParams, ListExpensesParams,
     RequestsListResponse, RequestStatusCounts, ExpensesListResponse, Request,
 };
@@ -87,6 +87,12 @@ impl RequestService {
         if body.quantity < 1 {
             return Err(AppError::Validation("Quantity must be at least 1".to_string()));
         }
+        self.dao.validate_request_settings(
+            body.school_id,
+            body.category.as_deref(),
+            body.location.as_deref(),
+            body.scope == "school",
+        ).await?;
 
         // If frontend sent image as base64, decode and upload to S3
         if let (Some(b64), Some(name), Some(ct)) = (
@@ -137,7 +143,68 @@ impl RequestService {
             }
         }
 
-        self.dao.update_request_status(id, &body.status).await
+        let expected_completion_date = if body.status == "In Progress" {
+            Some(body.expected_completion_date.ok_or_else(|| AppError::Validation(
+                "expectedCompletionDate is required when moving a request to In Progress".to_string()
+            ))?)
+        } else {
+            None
+        };
+
+        self.dao.update_request_status(id, &body.status, expected_completion_date).await
+    }
+
+    pub async fn update_expected_completion_date(
+        &self,
+        auth: &AuthContext,
+        id: Uuid,
+        body: UpdateExpectedCompletionDateBody,
+    ) -> Result<Request, AppError> {
+        let req = self.authorize_admin_request(auth, id).await?;
+        if req.status != "In Progress" {
+            return Err(AppError::Validation("Expected completion date can only be updated for an In Progress request".to_string()));
+        }
+        self.dao.update_expected_completion_date(id, body.expected_completion_date).await
+    }
+
+    pub async fn update_request(
+        &self,
+        auth: &AuthContext,
+        id: Uuid,
+        mut body: UpdateRequestBody,
+    ) -> Result<Request, AppError> {
+        let existing = self.authorize_request_editor(auth, id).await?;
+        if let Some(item) = &body.item {
+            if item.trim().is_empty() {
+                return Err(AppError::Validation("Item name cannot be empty".to_string()));
+            }
+        }
+        if let Some(quantity) = body.quantity {
+            if quantity < 1 {
+                return Err(AppError::Validation("Quantity must be at least 1".to_string()));
+            }
+        }
+        let effective_scope = body.scope.as_deref()
+            .or(existing.scope.as_deref())
+            .unwrap_or("school");
+        self.dao.validate_request_settings(
+            existing.school_id,
+            body.category.as_deref().or(existing.category.as_deref()),
+            body.location.as_deref().or(existing.location.as_deref()),
+            effective_scope == "school",
+        ).await?;
+        if let (Some(base64), Some(name), Some(content_type)) = (
+            body.image_base64.take(),
+            body.image_name.take(),
+            body.image_content_type.take(),
+        ) {
+            use base64::{engine::general_purpose::STANDARD, Engine};
+            let bytes = STANDARD.decode(&base64)
+                .map_err(|error| AppError::Validation(format!("Invalid product image: {}", error)))?;
+            let uploaded = self.upload_service.upload_image(&name, &content_type, bytes).await?;
+            body.product_image = Some(uploaded.s3_url);
+        }
+        self.dao.update_request(id, &body).await
     }
 
     pub async fn pay_request(&self, id: Uuid, mut body: PayRequestBody) -> Result<Request, AppError> {
@@ -172,26 +239,37 @@ impl RequestService {
     }
 
     pub async fn delete_request(&self, auth: &AuthContext, id: Uuid) -> Result<(), AppError> {
+        self.authorize_request_editor(auth, id).await?;
+        self.dao.delete_request(id).await
+    }
+
+    async fn authorize_request_editor(&self, auth: &AuthContext, id: Uuid) -> Result<Request, AppError> {
         let req = self.dao.get_request_by_id(id).await?
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
-
         match auth.role {
-            UserRole::SuperAdmin => {}
-            UserRole::Admin => {
-                if req.school_id != auth.school_id {
-                    return Err(AppError::Authorization(
-                        "Cannot delete a request from a different school".to_string(),
-                    ));
+            UserRole::SuperAdmin => Ok(req),
+            UserRole::Admin if req.school_id == auth.school_id => Ok(req),
+            UserRole::Admin => Err(AppError::Authorization("Cannot modify a request from a different school".to_string())),
+            UserRole::Teacher if req.school_id == auth.school_id && req.requester_id == Some(auth.user_id) => {
+                if req.status != "Pending" {
+                    return Err(AppError::Validation("Employees can only edit or delete Pending requests".to_string()));
                 }
+                Ok(req)
             }
-            _ => {
-                return Err(AppError::Authorization(
-                    "Only admin or superadmin can delete requests".to_string(),
-                ));
-            }
+            UserRole::Teacher => Err(AppError::Authorization("Employees can only modify their own requests".to_string())),
+            _ => Err(AppError::Authorization("Only authorized request owners can modify requests".to_string())),
         }
+    }
 
-        self.dao.delete_request(id).await
+    async fn authorize_admin_request(&self, auth: &AuthContext, id: Uuid) -> Result<Request, AppError> {
+        let req = self.dao.get_request_by_id(id).await?
+            .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
+        match auth.role {
+            UserRole::SuperAdmin => Ok(req),
+            UserRole::Admin if req.school_id == auth.school_id => Ok(req),
+            UserRole::Admin => Err(AppError::Authorization("Cannot update a request from a different school".to_string())),
+            _ => Err(AppError::Authorization("Only admin or superadmin can update requests".to_string())),
+        }
     }
 
     // ── Expenses ──────────────────────────────────────────────────────────────

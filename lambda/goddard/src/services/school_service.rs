@@ -6,6 +6,7 @@ use crate::{
         SchoolResponse, SchoolListItem, DeleteSchoolResponse,
         CreateSchoolWithOwnerRequest, CreateSchoolWithOwnerResponse, OwnerCreatedResponse,
         SchoolWithOwnerResponse, OwnerDetailsResponse,
+        SchoolRequestSettingsResponse, UpdateRequestSettingsRequest,
     },
     services::{SupabaseClient, supabase_client::UserMetadata},
     utils::ValidationUtils,
@@ -152,6 +153,18 @@ impl SchoolService {
             message: "School successfully deleted".to_string(),
             school_id: *school_id,
         })
+    }
+
+    pub async fn get_request_settings(&self, school_id: Uuid) -> ApiResult<SchoolRequestSettingsResponse> {
+        self.dao.get_request_settings(school_id).await
+    }
+
+    pub async fn update_request_settings(
+        &self,
+        school_id: Uuid,
+        request: UpdateRequestSettingsRequest,
+    ) -> ApiResult<SchoolRequestSettingsResponse> {
+        self.dao.update_request_settings(school_id, &request.operations).await
     }
 
     pub async fn create_school_with_owner(

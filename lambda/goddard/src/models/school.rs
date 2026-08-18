@@ -9,6 +9,8 @@ pub struct School {
     pub name: String,
     pub subdomain: String,
     pub settings: Option<Value>,
+    pub request_categories: Option<Value>,
+    pub location: Option<Value>,
     pub is_active: Option<bool>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
@@ -35,6 +37,8 @@ pub struct SchoolResponse {
     pub name: String,
     pub subdomain: String,
     pub settings: Option<Value>,
+    pub request_categories: Option<Value>,
+    pub location: Option<Value>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
@@ -59,10 +63,43 @@ impl From<School> for SchoolResponse {
             name: school.name,
             subdomain: school.subdomain,
             settings: school.settings,
+            request_categories: school.request_categories,
+            location: school.location,
             created_at: school.created_at,
             updated_at: school.updated_at,
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestSettingOption {
+    pub id: Uuid,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchoolRequestSettingsResponse {
+    pub school_id: Uuid,
+    pub request_categories: Vec<RequestSettingOption>,
+    pub location: Vec<RequestSettingOption>,
+    pub csv_fields: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestSettingsOperation {
+    pub operation: String,
+    pub setting: String,
+    pub option_id: Option<Uuid>,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRequestSettingsRequest {
+    pub operations: Vec<RequestSettingsOperation>,
 }
 
 impl From<School> for SchoolListItem {

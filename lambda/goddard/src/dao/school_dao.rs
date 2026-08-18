@@ -3,7 +3,7 @@ use tokio_postgres::Row;
 use uuid::Uuid;
 use crate::{
     error::{AppError, ApiResult},
-    models::school::{School, CreateSchoolRequest, UpdateSchoolRequest},
+    models::school::{School, CreateSchoolRequest, UpdateSchoolRequest, RequestSettingOption, RequestSettingsOperation, SchoolRequestSettingsResponse},
 };
 use std::time::Duration;
 
@@ -57,6 +57,8 @@ impl SchoolDao {
             name: row.get("name"),
             subdomain: row.get("subdomain"),
             settings: row.get("settings"),
+            request_categories: row.get("request_categories"),
+            location: row.get("location"),
             is_active: row.get("is_active"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
@@ -83,7 +85,7 @@ impl SchoolDao {
                 r#"
                 INSERT INTO schools (id, name, subdomain, settings, is_active, created_at)
                 VALUES (gen_random_uuid(), '{}', '{}', {}, true, NOW())
-                RETURNING id, name, subdomain, settings, is_active, created_at, updated_at
+                RETURNING id, name, subdomain, settings, NULL::jsonb AS request_categories, NULL::jsonb AS location, is_active, created_at, updated_at
                 "#,
                 name.replace('\'', "''"),
                 subdomain.replace('\'', "''"),
@@ -105,9 +107,11 @@ impl SchoolDao {
                         name: row.get(1).unwrap().to_string(),
                         subdomain: row.get(2).unwrap().to_string(),
                         settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                        is_active: row.get(4).and_then(|s| s.parse().ok()),
-                        created_at: row.get(5).and_then(|s| s.parse().ok()),
-                        updated_at: row.get(6).and_then(|s| s.parse().ok()),
+                        request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                        location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                        is_active: row.get(6).and_then(|s| s.parse().ok()),
+                        created_at: row.get(7).and_then(|s| s.parse().ok()),
+                        updated_at: row.get(8).and_then(|s| s.parse().ok()),
                     };
                     println!("[SchoolDao] School object created successfully: id={}", school.id);
                     return Ok(school);
@@ -122,7 +126,7 @@ impl SchoolDao {
         self.execute_with_connection(|client| async move {
             let result = client.simple_query(
                 r#"
-                SELECT id, name, subdomain, settings, is_active, created_at, updated_at
+                SELECT id, name, subdomain, settings, request_categories, location, is_active, created_at, updated_at
                 FROM schools
                 WHERE (is_active = true OR is_active IS NULL)
                 ORDER BY created_at DESC
@@ -138,9 +142,11 @@ impl SchoolDao {
                         name: row.get(1).unwrap().to_string(),
                         subdomain: row.get(2).unwrap().to_string(),
                         settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                        is_active: row.get(4).and_then(|s| s.parse().ok()),
-                        created_at: row.get(5).and_then(|s| s.parse().ok()),
-                        updated_at: row.get(6).and_then(|s| s.parse().ok()),
+                        request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                        location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                        is_active: row.get(6).and_then(|s| s.parse().ok()),
+                        created_at: row.get(7).and_then(|s| s.parse().ok()),
+                        updated_at: row.get(8).and_then(|s| s.parse().ok()),
                     };
                     schools.push(school);
                 }
@@ -155,7 +161,7 @@ impl SchoolDao {
         self.execute_with_connection(|client| async move {
             let query = format!(
                 r#"
-                SELECT id, name, subdomain, settings, is_active, created_at, updated_at
+                SELECT id, name, subdomain, settings, request_categories, location, is_active, created_at, updated_at
                 FROM schools
                 WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
                 "#,
@@ -172,9 +178,11 @@ impl SchoolDao {
                         name: row.get(1).unwrap().to_string(),
                         subdomain: row.get(2).unwrap().to_string(),
                         settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                        is_active: row.get(4).and_then(|s| s.parse().ok()),
-                        created_at: row.get(5).and_then(|s| s.parse().ok()),
-                        updated_at: row.get(6).and_then(|s| s.parse().ok()),
+                        request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                        location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                        is_active: row.get(6).and_then(|s| s.parse().ok()),
+                        created_at: row.get(7).and_then(|s| s.parse().ok()),
+                        updated_at: row.get(8).and_then(|s| s.parse().ok()),
                     };
                     return Ok(Some(school));
                 }
@@ -195,7 +203,7 @@ impl SchoolDao {
                 subdomain = '{}',
                 updated_at = NOW()
             WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
-            RETURNING id, name, subdomain, settings, is_active, created_at, updated_at
+            RETURNING id, name, subdomain, settings, request_categories, location, is_active, created_at, updated_at
             "#,
             request.name.replace('\'', "''"),
             request.subdomain.replace('\'', "''"),
@@ -215,9 +223,11 @@ impl SchoolDao {
                     name: row.get(1).unwrap().to_string(),
                     subdomain: row.get(2).unwrap().to_string(),
                     settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                    is_active: row.get(4).and_then(|s| s.parse().ok()),
-                    created_at: row.get(5).and_then(|s| s.parse().ok()),
-                    updated_at: row.get(6).and_then(|s| s.parse().ok()),
+                    request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                    location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                    is_active: row.get(6).and_then(|s| s.parse().ok()),
+                    created_at: row.get(7).and_then(|s| s.parse().ok()),
+                    updated_at: row.get(8).and_then(|s| s.parse().ok()),
                 };
                 return Ok(school);
             }
@@ -306,5 +316,141 @@ impl SchoolDao {
             tracing::info!("✅ [SchoolDao] Successfully fetched school name: '{}' for school_id: {}", name, school_id);
             Ok(name)
         }).await
+    }
+
+    pub async fn get_request_settings(&self, school_id: Uuid) -> ApiResult<SchoolRequestSettingsResponse> {
+        let client = self.get_connection().await?;
+        let row = client.query_opt(
+            "SELECT request_categories, location FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to get request settings: {}", e)))?
+            .ok_or_else(|| AppError::NotFound("School not found".to_string()))?;
+
+        Ok(Self::request_settings_from_values(
+            school_id,
+            row.get("request_categories"),
+            row.get("location"),
+        ))
+    }
+
+    pub async fn update_request_settings(
+        &self,
+        school_id: Uuid,
+        operations: &[RequestSettingsOperation],
+    ) -> ApiResult<SchoolRequestSettingsResponse> {
+        if operations.is_empty() {
+            return Err(AppError::Validation("At least one settings operation is required".to_string()));
+        }
+
+        let mut client = self.get_connection().await?;
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start request settings transaction: {}", e)))?;
+        let row = transaction.query_opt(
+            "SELECT request_categories, location FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL) FOR UPDATE",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to lock school request settings: {}", e)))?
+            .ok_or_else(|| AppError::NotFound("School not found".to_string()))?;
+
+        let mut categories = Self::options_from_value(row.get("request_categories"));
+        let mut locations = Self::options_from_value(row.get("location"));
+
+        for operation in operations {
+            let options = match operation.setting.as_str() {
+                "request_categories" => &mut categories,
+                "location" => &mut locations,
+                _ => return Err(AppError::Validation("setting must be request_categories or location".to_string())),
+            };
+
+            match operation.operation.as_str() {
+                "add" => {
+                    let label = Self::validated_label(operation.label.as_deref())?;
+                    Self::ensure_unique_label(options, &label, None)?;
+                    options.push(RequestSettingOption { id: Uuid::new_v4(), label });
+                }
+                "update" => {
+                    let option_id = operation.option_id.ok_or_else(|| AppError::Validation("optionId is required for update".to_string()))?;
+                    let label = Self::validated_label(operation.label.as_deref())?;
+                    let index = options.iter().position(|item| item.id == option_id)
+                        .ok_or_else(|| AppError::NotFound("Request setting option not found".to_string()))?;
+                    let old_label = options[index].label.clone();
+                    Self::ensure_unique_label(options, &label, Some(option_id))?;
+                    options[index].label = label.clone();
+                    let column = if operation.setting == "request_categories" { "category" } else { "location" };
+                    let query = format!("UPDATE requests SET {} = $3 WHERE school_id = $1 AND {} = $2", column, column);
+                    transaction.execute(&query, &[&school_id, &old_label, &label]).await
+                        .map_err(|e| AppError::Database(format!("Failed to rename request setting values: {}", e)))?;
+                }
+                "delete" => {
+                    if operation.label.is_some() {
+                        return Err(AppError::Validation("label must be empty for delete".to_string()));
+                    }
+                    let option_id = operation.option_id.ok_or_else(|| AppError::Validation("optionId is required for delete".to_string()))?;
+                    let index = options.iter().position(|item| item.id == option_id)
+                        .ok_or_else(|| AppError::NotFound("Request setting option not found".to_string()))?;
+                    let old_label = options.remove(index).label;
+                    let column = if operation.setting == "request_categories" { "category" } else { "location" };
+                    let query = format!("UPDATE requests SET {} = NULL WHERE school_id = $1 AND {} = $2", column, column);
+                    transaction.execute(&query, &[&school_id, &old_label]).await
+                        .map_err(|e| AppError::Database(format!("Failed to clear deleted request setting values: {}", e)))?;
+                }
+                _ => return Err(AppError::Validation("operation must be add, update, or delete".to_string())),
+            }
+        }
+
+        let category_value = serde_json::to_value(&categories)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize categories: {}", e)))?;
+        let location_value = serde_json::to_value(&locations)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize locations: {}", e)))?;
+        transaction.execute(
+            "UPDATE schools SET request_categories = $2, location = $3, updated_at = NOW() WHERE id = $1",
+            &[&school_id, &category_value, &location_value],
+        ).await.map_err(|e| AppError::Database(format!("Failed to save request settings: {}", e)))?;
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit request settings: {}", e)))?;
+
+        Ok(Self::request_settings_from_options(school_id, categories, locations))
+    }
+
+    fn request_settings_from_values(
+        school_id: Uuid,
+        categories: Option<serde_json::Value>,
+        locations: Option<serde_json::Value>,
+    ) -> SchoolRequestSettingsResponse {
+        Self::request_settings_from_options(school_id, Self::options_from_value(categories), Self::options_from_value(locations))
+    }
+
+    fn request_settings_from_options(
+        school_id: Uuid,
+        request_categories: Vec<RequestSettingOption>,
+        location: Vec<RequestSettingOption>,
+    ) -> SchoolRequestSettingsResponse {
+        SchoolRequestSettingsResponse {
+            school_id,
+            request_categories,
+            location,
+            csv_fields: vec!["category".to_string(), "location".to_string()],
+        }
+    }
+
+    fn options_from_value(value: Option<serde_json::Value>) -> Vec<RequestSettingOption> {
+        value.and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+    }
+
+    fn validated_label(value: Option<&str>) -> ApiResult<String> {
+        let label = value.unwrap_or_default().trim();
+        if label.is_empty() {
+            return Err(AppError::Validation("label is required".to_string()));
+        }
+        if label.len() > 255 {
+            return Err(AppError::Validation("label must be at most 255 characters".to_string()));
+        }
+        Ok(label.to_string())
+    }
+
+    fn ensure_unique_label(options: &[RequestSettingOption], label: &str, exclude_id: Option<Uuid>) -> ApiResult<()> {
+        if options.iter().any(|item| Some(item.id) != exclude_id && item.label.eq_ignore_ascii_case(label)) {
+            return Err(AppError::Conflict("A setting with this label already exists".to_string()));
+        }
+        Ok(())
     }
 }

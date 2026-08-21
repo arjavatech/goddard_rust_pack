@@ -214,6 +214,22 @@ pub struct AssignEmployeeFormRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AssignEmployeeFormToSchoolRequest {
+    pub school_id: Uuid,
+    pub employee_form_template_id: Uuid,
+    pub is_required: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AssignEmployeeFormToSchoolResponse {
+    pub school_id: Uuid,
+    pub employee_form_template_id: Uuid,
+    pub total_active_employees: i64,
+    pub employees_already_assigned: i64,
+    pub newly_assigned: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ReviewEmployeeFormRequest {
     pub assignment_id: Uuid,
     pub school_id: Uuid,

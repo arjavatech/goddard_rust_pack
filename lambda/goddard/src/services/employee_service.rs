@@ -16,6 +16,7 @@ use crate::{
         EmployeeFormSubmission, AssignEmployeeFormRequest, ReviewEmployeeFormRequest,
         BulkEmployeeFormReminderRequest, BulkEmployeeReminderResponse,
         BulkCreateEmployeesRequest, BulkCreateEmployeesResponse, BulkCreatedEmployee,
+        AssignEmployeeFormToSchoolRequest, AssignEmployeeFormToSchoolResponse,
     },
     services::{SupabaseClient, EmailService, supabase_client::UserMetadata},
 };
@@ -345,6 +346,36 @@ impl EmployeeService {
         });
 
         Ok(assignment)
+    }
+
+    pub async fn assign_form_to_all_employees(
+        &self,
+        req: AssignEmployeeFormToSchoolRequest,
+        assigned_by: Uuid,
+    ) -> ApiResult<AssignEmployeeFormToSchoolResponse> {
+        let template = self.employee_form_template_dao
+            .get_template_by_id(req.employee_form_template_id, req.school_id).await?
+            .ok_or_else(|| AppError::NotFound("Employee form template not found".to_string()))?;
+
+        if template.status.as_deref() == Some("inactive") || template.is_active == Some(false) {
+            return Err(AppError::Validation("Cannot assign an inactive employee form template".to_string()));
+        }
+
+        let (total_active_employees, employees_already_assigned, newly_assigned) = self.employee_form_assignment_dao
+            .assign_template_to_school_employees(
+                req.school_id,
+                req.employee_form_template_id,
+                assigned_by,
+                req.is_required.unwrap_or(false),
+            ).await?;
+
+        Ok(AssignEmployeeFormToSchoolResponse {
+            school_id: req.school_id,
+            employee_form_template_id: req.employee_form_template_id,
+            total_active_employees,
+            employees_already_assigned,
+            newly_assigned,
+        })
     }
 
     pub async fn get_assignments_by_employee(&self, employee_id: Uuid) -> ApiResult<Vec<EmployeeFormAssignmentWithTemplate>> {

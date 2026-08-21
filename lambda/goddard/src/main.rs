@@ -87,7 +87,7 @@ use controllers::{
         deactivate_employee, activate_employee, get_employee_forms, get_current_employee,
         create_employee_form_template, get_employee_form_templates,
         update_employee_form_template, delete_employee_form_template,
-        assign_employee_form, get_employee_form_assignments,
+        assign_employee_form, assign_employee_form_to_school, get_employee_form_assignments,
         review_employee_form_assignment, delete_employee_form_assignment,
         employee_form_submission_webhook, send_bulk_employee_form_reminders,
     },
@@ -407,6 +407,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         // Employee Form Assignments (Admin manages; Employee reads)
         .route("/employee-form-assignments", post(assign_employee_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-assignments/assign-to-school", post(assign_employee_form_to_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employee-form-assignments", get(get_employee_form_assignments).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/employee-form-assignments", delete(delete_employee_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employee-form-assignments/review", put(review_employee_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))

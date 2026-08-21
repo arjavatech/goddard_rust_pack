@@ -88,6 +88,63 @@ impl EmployeeFormAssignmentDao {
         Ok(Self::row_to_assignment(&row))
     }
 
+    pub async fn assign_template_to_school_employees(
+        &self,
+        school_id: Uuid,
+        template_id: Uuid,
+        assigned_by: Uuid,
+        is_required: bool,
+    ) -> Result<(i64, i64, i64), AppError> {
+        let mut client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let transaction = client.transaction().await
+            .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
+
+        let total_row = transaction.query_one(
+            "SELECT COUNT(*) FROM employees WHERE school_id = $1 AND (is_active = true OR is_active IS NULL)",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to count active employees: {}", e)))?;
+        let total_active_employees: i64 = total_row.get(0);
+
+        let assigned_row = transaction.query_one(
+            "SELECT COUNT(DISTINCT e.id)
+             FROM employees e
+             JOIN employee_form_assignments a ON a.employee_id = e.id
+             WHERE e.school_id = $1
+               AND a.employee_form_template_id = $2
+               AND (e.is_active = true OR e.is_active IS NULL)
+               AND (a.is_active = true OR a.is_active IS NULL)",
+            &[&school_id, &template_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to count existing employee assignments: {}", e)))?;
+        let employees_already_assigned: i64 = assigned_row.get(0);
+
+        let rows = transaction.query(
+            "INSERT INTO employee_form_assignments
+             (id, school_id, employee_id, user_id, employee_form_template_id,
+              assignment_source, status, is_required, assigned_by, assigned_at, is_active, created_at, updated_at)
+             SELECT gen_random_uuid(), e.school_id, e.id, e.user_id, $2,
+                    'school_default', 'incomplete', $3, $4, NOW(), true, NOW(), NOW()
+             FROM employees e
+             WHERE e.school_id = $1
+               AND (e.is_active = true OR e.is_active IS NULL)
+               AND NOT EXISTS (
+                   SELECT 1 FROM employee_form_assignments a
+                   WHERE a.employee_id = e.id
+                     AND a.employee_form_template_id = $2
+                     AND (a.is_active = true OR a.is_active IS NULL)
+               )
+             ON CONFLICT (employee_id, employee_form_template_id) DO NOTHING
+             RETURNING id",
+            &[&school_id, &template_id, &is_required, &assigned_by],
+        ).await.map_err(|e| AppError::Database(format!("Failed to assign form to employees: {}", e)))?;
+
+        let newly_assigned = rows.len() as i64;
+        transaction.commit().await
+            .map_err(|e| AppError::Database(format!("Failed to commit employee form assignments: {}", e)))?;
+
+        Ok((total_active_employees, employees_already_assigned, newly_assigned))
+    }
+
     pub async fn get_assignments_by_employee(&self, employee_id: Uuid) -> Result<Vec<EmployeeFormAssignmentWithTemplate>, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

@@ -16,6 +16,7 @@ use crate::models::employee::{
     UpdateEmployeeFormTemplateRequest, AssignEmployeeFormRequest, ReviewEmployeeFormRequest,
     BulkEmployeeFormReminderRequest, EmployeeFormAssignmentQueryParams, EmployeeQueryParams,
     BulkCreateEmployeesRequest, BulkEmployeeInput,
+    AssignEmployeeFormToSchoolRequest,
     DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
 };
 use crate::services::employee_service::EmployeeService;
@@ -214,6 +215,16 @@ pub async fn assign_employee_form(
     let assigned_by = auth.user_id;
     let assignment = svc.assign_form(payload, assigned_by).await?;
     Ok((StatusCode::CREATED, Json(assignment)))
+}
+
+pub async fn assign_employee_form_to_school(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Json(payload): Json<AssignEmployeeFormToSchoolRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
+    let response = svc.assign_form_to_all_employees(payload, auth.user_id).await?;
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 pub async fn get_employee_form_assignments(

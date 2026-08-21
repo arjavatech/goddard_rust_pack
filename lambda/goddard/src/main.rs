@@ -97,17 +97,21 @@ use controllers::{
     expense_controller::{
         list_expenses, create_expense,
     },
+    newsletter_controller::{
+        list as list_newsletters, detail as newsletter_detail, create as create_newsletter,
+        publish as publish_newsletter, archive as archive_newsletter,
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao,
     EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
-    RequestDao,
+    RequestDao, NewsletterDao,
 };
 use services::{
     AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry,
-    EmployeeService, RequestService, UploadService,
+    EmployeeService, RequestService, UploadService, NewsletterService,
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -165,6 +169,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let employee_form_assignment_dao = EmployeeFormAssignmentDao::new(pool.clone());
     let employee_form_submission_dao = EmployeeFormSubmissionDao::new(pool.clone());
     let request_dao = RequestDao::new(pool.clone());
+    let newsletter_dao = NewsletterDao::new(pool.clone());
 
     // Initialize FCM service. Live when all three env vars are present; otherwise a
     // no-op stub that lets local dev / staging boot without Firebase configured.
@@ -225,6 +230,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let admin_service = Arc::new(AdminService::new(admin_dao));
     let upload_service = Arc::new(UploadService::new().await);
     let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone()));
+    let newsletter_service = Arc::new(NewsletterService::new(newsletter_dao, notification_service.clone()));
 
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
@@ -429,6 +435,14 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/expenses", get(list_expenses).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .route("/expenses", post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .with_state(request_service)
+
+        // News Pad — reads are role-filtered in the service; mutations are Super Admin only.
+        .route("/newsletters", get(list_newsletters).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/newsletters", post(create_newsletter).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/newsletters/:id", get(newsletter_detail).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/newsletters/:id/publish", post(publish_newsletter).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/newsletters/:id/archive", post(archive_newsletter).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .with_state(newsletter_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

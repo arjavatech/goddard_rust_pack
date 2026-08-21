@@ -1,0 +1,7 @@
+use std::sync::Arc; use axum::{extract::{Extension,Path,Query,State},response::IntoResponse,Json};use uuid::Uuid;
+use crate::{error::AppError,middleware::auth::AuthContext,models::newsletter::{ListNewslettersQuery,PublishNewsletterBody,UpsertNewsletterBody},services::NewsletterService,utils::ResponseUtils};
+pub async fn list(State(s):State<Arc<NewsletterService>>,Extension(a):Extension<AuthContext>,Query(q):Query<ListNewslettersQuery>)->Result<impl IntoResponse,AppError>{Ok(ResponseUtils::success(s.list(&a,q.school_id,q.limit.unwrap_or(20),q.offset.unwrap_or(0)).await?))}
+pub async fn detail(State(s):State<Arc<NewsletterService>>,Extension(a):Extension<AuthContext>,Path(id):Path<Uuid>)->Result<impl IntoResponse,AppError>{Ok(ResponseUtils::success(s.detail(&a,id).await?))}
+pub async fn create(State(s):State<Arc<NewsletterService>>,Extension(a):Extension<AuthContext>,Json(b):Json<UpsertNewsletterBody>)->Result<impl IntoResponse,AppError>{Ok(ResponseUtils::created(s.create(&a,b).await?))}
+pub async fn publish(State(s):State<Arc<NewsletterService>>,Extension(a):Extension<AuthContext>,Path(id):Path<Uuid>,Json(b):Json<PublishNewsletterBody>)->Result<impl IntoResponse,AppError>{Ok(ResponseUtils::success(s.publish(&a,id,b).await?))}
+pub async fn archive(State(s):State<Arc<NewsletterService>>,Extension(a):Extension<AuthContext>,Path(id):Path<Uuid>)->Result<impl IntoResponse,AppError>{s.archive(&a,id).await?;Ok(axum::http::StatusCode::NO_CONTENT)}

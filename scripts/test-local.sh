@@ -27,7 +27,11 @@ cd lambda/goddard
 # Load environment variables
 if [ -f "../../.env" ]; then
     echo -e "${BLUE}📋 Loading environment variables...${NC}"
-    export $(cat ../../.env | grep -v '^#' | xargs)
+    # Preserve quoted values and values containing spaces (for example,
+    # EMAIL_FROM="Goddard Schools <noreply@goddardschool.org>").
+    set -a
+    source ../../.env
+    set +a
 fi
 
 # Build the Lambda function for local testing

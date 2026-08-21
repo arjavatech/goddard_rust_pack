@@ -137,6 +137,10 @@ pub struct EmployeeInviteResponse {
     pub email_sent: bool,
     pub message: String,
 }
+#[derive(Debug, Deserialize)]
+pub struct ResendEmployeeInviteRequest { pub school_id: Uuid }
+#[derive(Debug, Serialize)]
+pub struct ResendEmployeeInviteResponse { pub employee_id: Uuid, pub email_sent: bool, pub message: String }
 
 #[derive(Debug, Deserialize)]
 pub struct BulkCreateEmployeesRequest {

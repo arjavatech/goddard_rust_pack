@@ -83,7 +83,7 @@ use controllers::{
         websocket_handler,
     },
     employee_controller::{
-        invite_employee, bulk_create_employees, get_employees, get_employee_by_id, update_employee,
+        invite_employee, bulk_create_employees, resend_employee_invite, get_employees, get_employee_by_id, update_employee,
         deactivate_employee, activate_employee, get_employee_forms, get_current_employee,
         create_employee_form_template, get_employee_form_templates,
         update_employee_form_template, delete_employee_form_template,
@@ -116,6 +116,19 @@ use std::sync::Arc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables
     dotenv::dotenv().ok();
+
+    // Log the effective, non-secret email routing configuration at boot. This is
+    // intentionally read after dotenv so it reveals values inherited from the
+    // process environment as well as those loaded from the env file.
+    let email_provider = std::env::var("EMAIL_PROVIDER").unwrap_or_else(|_| "smtp".to_string());
+    let email_from = std::env::var("EMAIL_FROM")
+        .unwrap_or_else(|_| "Goddard Schools <no-reply@arjavatech.com>".to_string());
+    let smtp_host = std::env::var("SMTP_HOST").unwrap_or_else(|_| "smtp.zoho.com".to_string());
+    let smtp_port = std::env::var("SMTP_PORT").unwrap_or_else(|_| "587".to_string());
+    println!(
+        "[EmailConfig] provider={} from=\"{}\" smtp_host={} smtp_port={}",
+        email_provider, email_from, smtp_host, smtp_port
+    );
 
     // Initialize database connection
     initialize_database().await?;
@@ -390,6 +403,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         // Employee Management APIs
         .route("/employees/invite", post(invite_employee).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/:employee_id/resend-invite", post(resend_employee_invite).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employees/bulk", post(bulk_create_employees).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employees/me", get(get_current_employee).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/employees", get(get_employees).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))

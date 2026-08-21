@@ -42,9 +42,10 @@ impl EmployeeDao {
         let rows = client.query(
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
-                    e.is_active, u.is_verified, e.created_at
+                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
+             LEFT JOIN auth.users au ON au.id = u.id
              WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)
              ORDER BY u.first_name ASC",
             &[&school_id],
@@ -60,9 +61,10 @@ impl EmployeeDao {
         let row = client.query_opt(
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
-                    e.is_active, u.is_verified, e.created_at
+                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
+             LEFT JOIN auth.users au ON au.id = u.id
              WHERE e.id = $1 AND e.school_id = $2",
             &[&employee_id, &school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employee: {}", e)))?;
@@ -118,9 +120,10 @@ impl EmployeeDao {
         let row = client.query_opt(
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
-                    e.is_active, u.is_verified, e.created_at
+                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
+             LEFT JOIN auth.users au ON au.id = u.id
              WHERE e.user_id = $1 AND e.school_id = $2",
             &[&user_id, &school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employee by user_id: {}", e)))?;

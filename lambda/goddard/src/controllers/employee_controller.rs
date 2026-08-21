@@ -17,6 +17,7 @@ use crate::models::employee::{
     BulkEmployeeFormReminderRequest, EmployeeFormAssignmentQueryParams, EmployeeQueryParams,
     BulkCreateEmployeesRequest, BulkEmployeeInput,
     AssignEmployeeFormToSchoolRequest,
+    ResendEmployeeInviteRequest,
     DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
 };
 use crate::services::employee_service::EmployeeService;
@@ -93,6 +94,10 @@ pub async fn bulk_create_employees(
     check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
     let response = svc.bulk_create_employees(payload).await?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+pub async fn resend_employee_invite(State(svc): State<Arc<EmployeeService>>, Path(employee_id): Path<Uuid>, axum::Extension(auth): axum::Extension<AuthContext>, Json(payload): Json<ResendEmployeeInviteRequest>) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
+    Ok((StatusCode::OK, Json(svc.resend_employee_invite(employee_id, payload.school_id).await?)))
 }
 
 pub async fn get_employees(

@@ -17,6 +17,7 @@ use crate::{
         BulkEmployeeFormReminderRequest, BulkEmployeeReminderResponse,
         BulkCreateEmployeesRequest, BulkCreateEmployeesResponse, BulkCreatedEmployee,
         AssignEmployeeFormToSchoolRequest, AssignEmployeeFormToSchoolResponse,
+        ResendEmployeeInviteResponse,
     },
     services::{SupabaseClient, EmailService, supabase_client::UserMetadata},
 };
@@ -165,6 +166,29 @@ impl EmployeeService {
                 "Employee record created. Invitation email could not be sent — please resend manually.".to_string()
             },
         })
+    }
+
+    pub async fn resend_employee_invite(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<ResendEmployeeInviteResponse> {
+        let employee = self.employee_dao.get_employee_by_id(employee_id, school_id).await?
+            .ok_or_else(|| AppError::NotFound("Employee not found".to_string()))?;
+        if employee.is_verified == Some(true) {
+            return Err(AppError::Conflict("Employee has already completed password setup".to_string()));
+        }
+        let school_name = self.school_dao.get_school_name(&school_id).await
+            .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+        let token = self.auth_dao.create_invite_token(&employee.email, "Employee", school_id).await?;
+        let link = format!("{}/enrollments/activate/{}", Self::api_base_url(), token);
+        let email_sent = match self.email_service
+            .send_employee_invite_email(&employee.email, &employee.first_name, &employee.last_name, &link, &school_name)
+            .await
+        {
+            Ok(_) => true,
+            Err(error) => {
+                tracing::error!("Employee resend invite email failed for {}: {}", employee.email, error);
+                false
+            }
+        };
+        Ok(ResendEmployeeInviteResponse { employee_id, email_sent, message: if email_sent { "Employee invitation resent".to_string() } else { "Employee invitation was created but email delivery failed".to_string() } })
     }
 
     pub async fn bulk_create_employees(&self, req: BulkCreateEmployeesRequest) -> ApiResult<BulkCreateEmployeesResponse> {

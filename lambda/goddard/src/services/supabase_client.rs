@@ -967,6 +967,22 @@ impl SupabaseClient {
         Ok(user_id.to_string())
     }
 
+    pub async fn delete_user_by_id(&self, user_id: Uuid) -> Result<(), AppError> {
+        let response = self.client
+            .delete(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to delete auth user during cleanup: {}", e)))?;
+
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!("Failed to delete auth user during cleanup: {}", body)));
+        }
+        Ok(())
+    }
+
     pub async fn send_bulk_import_welcome_email(
         &self,
         email: &str,

@@ -83,7 +83,7 @@ use controllers::{
         websocket_handler,
     },
     employee_controller::{
-        invite_employee, get_employees, get_employee_by_id, update_employee,
+        invite_employee, bulk_create_employees, get_employees, get_employee_by_id, update_employee,
         deactivate_employee, activate_employee, get_employee_forms, get_current_employee,
         create_employee_form_template, get_employee_form_templates,
         update_employee_form_template, delete_employee_form_template,
@@ -390,6 +390,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         // Employee Management APIs
         .route("/employees/invite", post(invite_employee).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employees/bulk", post(bulk_create_employees).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employees/me", get(get_current_employee).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/employees", get(get_employees).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employees/:employee_id", get(get_employee_by_id).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))

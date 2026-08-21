@@ -143,6 +143,15 @@ impl AuthDao {
         Ok(row.get("id"))
     }
 
+    pub async fn delete_user_by_id(&self, user_id: Uuid) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        client.execute("DELETE FROM users WHERE id = $1", &[&user_id]).await
+            .map_err(|e| AppError::Database(format!("Failed to delete user during cleanup: {}", e)))?;
+        Ok(())
+    }
+
     pub async fn user_needs_confirmation(&self, _email: &str) -> ApiResult<bool> {
         // TODO: Implement with tokio-postgres
         Ok(true)

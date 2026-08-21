@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use uuid::Uuid;
 use std::env;
+use std::collections::HashSet;
 
 use crate::{
     dao::{
@@ -14,6 +15,7 @@ use crate::{
         UpdateEmployeeFormTemplateRequest, EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate,
         EmployeeFormSubmission, AssignEmployeeFormRequest, ReviewEmployeeFormRequest,
         BulkEmployeeFormReminderRequest, BulkEmployeeReminderResponse,
+        BulkCreateEmployeesRequest, BulkCreateEmployeesResponse, BulkCreatedEmployee,
     },
     services::{SupabaseClient, EmailService, supabase_client::UserMetadata},
 };
@@ -162,6 +164,98 @@ impl EmployeeService {
                 "Employee record created. Invitation email could not be sent — please resend manually.".to_string()
             },
         })
+    }
+
+    pub async fn bulk_create_employees(&self, req: BulkCreateEmployeesRequest) -> ApiResult<BulkCreateEmployeesResponse> {
+        const DEFAULT_EMPLOYEE_PASSWORD: &str = "Keller@2026";
+
+        if req.employees.is_empty() {
+            return Err(AppError::Validation("employees must contain at least one employee".to_string()));
+        }
+
+        self.school_dao.get_school_name(&req.school_id).await
+            .map_err(|_| AppError::NotFound("School not found".to_string()))?;
+
+        let mut submitted_emails = HashSet::new();
+        for (index, employee) in req.employees.iter().enumerate() {
+            let row = index + 1;
+            if employee.first_name.trim().is_empty() {
+                return Err(AppError::Validation(format!("employees[{}].first_name is required", row)));
+            }
+            if employee.last_name.trim().is_empty() {
+                return Err(AppError::Validation(format!("employees[{}].last_name is required", row)));
+            }
+            let email = employee.email.trim();
+            if email.is_empty() || !email.contains('@') || !email.contains('.') {
+                return Err(AppError::Validation(format!("employees[{}].email is invalid", row)));
+            }
+
+            let normalized_email = email.to_lowercase();
+            if !submitted_emails.insert(normalized_email) {
+                return Err(AppError::Conflict(format!("Duplicate email in request: {}", email)));
+            }
+            if self.auth_dao.user_exists_by_email(email).await? {
+                return Err(AppError::Conflict(format!("User with email {} already exists", email)));
+            }
+        }
+
+        let mut created_user_ids = Vec::new();
+        let mut created_employees = Vec::with_capacity(req.employees.len());
+        for employee_input in req.employees {
+            let email = employee_input.email.trim().to_string();
+            let metadata = UserMetadata::new(
+                Some(req.school_id),
+                Some(employee_input.first_name.trim().to_string()),
+                Some(employee_input.last_name.trim().to_string()),
+                Some("Employee".to_string()),
+                employee_input.phone_number.clone(),
+                Some(true),
+            );
+
+            let user_id = match self.supabase_client
+                .create_user_with_password_in_supabase(&email, DEFAULT_EMPLOYEE_PASSWORD, metadata).await {
+                Ok(id) => match Uuid::parse_str(&id) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        self.cleanup_bulk_users(&created_user_ids).await;
+                        return Err(AppError::Internal("Invalid user ID returned by Supabase".to_string()));
+                    }
+                },
+                Err(error) => {
+                    self.cleanup_bulk_users(&created_user_ids).await;
+                    return Err(error);
+                }
+            };
+            created_user_ids.push(user_id);
+
+            let employee = match self.employee_dao.create_employee(
+                user_id, req.school_id, employee_input.phone_number.as_deref(), None, None, None,
+            ).await {
+                Ok(employee) => employee,
+                Err(error) => {
+                    self.cleanup_bulk_users(&created_user_ids).await;
+                    return Err(error);
+                }
+            };
+            created_employees.push(BulkCreatedEmployee { employee_id: employee.id, user_id, email });
+        }
+
+        Ok(BulkCreateEmployeesResponse {
+            school_id: req.school_id,
+            created_count: created_employees.len(),
+            employees: created_employees,
+        })
+    }
+
+    async fn cleanup_bulk_users(&self, user_ids: &[Uuid]) {
+        for user_id in user_ids.iter().rev() {
+            if let Err(error) = self.auth_dao.delete_user_by_id(*user_id).await {
+                tracing::error!("Failed to remove public user {} after bulk employee create failure: {}", user_id, error);
+            }
+            if let Err(error) = self.supabase_client.delete_user_by_id(*user_id).await {
+                tracing::error!("Failed to remove auth user {} after bulk employee create failure: {}", user_id, error);
+            }
+        }
     }
 
     pub async fn get_current_employee(&self, user_id: Uuid, school_id: Uuid) -> ApiResult<EmployeeWithUser> {

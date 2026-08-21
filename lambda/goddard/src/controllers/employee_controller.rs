@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -15,10 +15,11 @@ use crate::models::employee::{
     EmployeeInviteRequest, UpdateEmployeeRequest, CreateEmployeeFormTemplateRequest,
     UpdateEmployeeFormTemplateRequest, AssignEmployeeFormRequest, ReviewEmployeeFormRequest,
     BulkEmployeeFormReminderRequest, EmployeeFormAssignmentQueryParams, EmployeeQueryParams,
+    BulkCreateEmployeesRequest, BulkEmployeeInput,
     DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
 };
 use crate::services::employee_service::EmployeeService;
-use crate::middleware::auth::AuthContext;
+use crate::middleware::auth::{AuthContext, check_permission_admin_or_superadmin};
 
 // ─── Query params ─────────────────────────────────────────────────────────────
 
@@ -42,6 +43,55 @@ pub async fn invite_employee(
 ) -> Result<impl IntoResponse, AppError> {
     let resp = svc.invite_employee(payload).await?;
     Ok((StatusCode::CREATED, Json(resp)))
+}
+
+pub async fn bulk_create_employees(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    let mut school_id = None;
+    let mut csv_bytes = None;
+
+    while let Some(field) = multipart.next_field().await
+        .map_err(|e| AppError::Validation(format!("Failed to read multipart field: {}", e)))?
+    {
+        match field.name() {
+            Some("school_id") => {
+                let value = field.text().await
+                    .map_err(|e| AppError::Validation(format!("Failed to read school_id: {}", e)))?;
+                school_id = Some(Uuid::parse_str(value.trim())
+                    .map_err(|_| AppError::Validation("school_id must be a valid UUID".to_string()))?);
+            }
+            Some("file") => {
+                csv_bytes = Some(field.bytes().await
+                    .map_err(|e| AppError::Validation(format!("Failed to read CSV file: {}", e)))?
+                    .to_vec());
+            }
+            _ => {}
+        }
+    }
+
+    let school_id = school_id
+        .ok_or_else(|| AppError::Validation("Missing required field: school_id".to_string()))?;
+    let csv_bytes = csv_bytes
+        .ok_or_else(|| AppError::Validation("Missing required field: file".to_string()))?;
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .trim(csv::Trim::All)
+        .from_reader(csv_bytes.as_slice());
+    let mut employees = Vec::new();
+    for (index, row) in reader.deserialize::<BulkEmployeeInput>().enumerate() {
+        employees.push(row.map_err(|e| {
+            AppError::Validation(format!("CSV row {} is invalid: {}", index + 2, e))
+        })?);
+    }
+
+    let payload = BulkCreateEmployeesRequest { school_id, employees };
+    check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
+    let response = svc.bulk_create_employees(payload).await?;
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 pub async fn get_employees(

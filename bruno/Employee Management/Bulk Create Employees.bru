@@ -1,0 +1,61 @@
+meta {
+  name: Bulk Create Employees
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/employees/bulk
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:multipart-form {
+  school_id: {{school_id}}
+  file: @file(employees.csv)
+}
+
+docs {
+  # Bulk Create Employees
+
+  Creates active Employee accounts for one school from a CSV file. Each employee
+  receives the fixed default password `Keller@2026`; the password is not returned
+  or emailed.
+
+  **Authentication**: Admin/SuperAdmin bearer token. The authenticated admin
+  must belong to the supplied school. An `X-API-Key` header can also be used for
+  trusted SuperAdmin automation.
+
+  **Behavior**:
+  - Creates records in `auth.users`, `public.users`, and `public.employees`.
+  - Rejects the entire request if any employee is invalid or an email already exists.
+  - Rejects duplicate email addresses in the same request.
+
+  **Multipart fields**:
+  - `school_id` — UUID of the school
+  - `file` — CSV file with this required header row:
+    ```csv
+    first_name,last_name,phone_number,email
+    Jane,Doe,+1-555-0100,jane.doe@example.com
+    John,Smith,+1-555-0101,john.smith@example.com
+    ```
+
+  **Response 201**:
+  ```json
+  {
+    "school_id": "school-uuid",
+    "created_count": 2,
+    "employees": [
+      {
+        "employee_id": "employee-uuid",
+        "user_id": "user-uuid",
+        "email": "jane.doe@example.com"
+      }
+    ]
+  }
+  ```
+}

@@ -139,6 +139,34 @@ pub struct EmployeeInviteResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BulkCreateEmployeesRequest {
+    pub school_id: Uuid,
+    pub employees: Vec<BulkEmployeeInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkEmployeeInput {
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkCreatedEmployee {
+    pub employee_id: Uuid,
+    pub user_id: Uuid,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BulkCreateEmployeesResponse {
+    pub school_id: Uuid,
+    pub created_count: usize,
+    pub employees: Vec<BulkCreatedEmployee>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateEmployeeRequest {
     pub phone: Option<String>,
     pub address: Option<String>,

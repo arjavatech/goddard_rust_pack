@@ -19,6 +19,7 @@ use crate::{
         AssignEmployeeFormToSchoolRequest, AssignEmployeeFormToSchoolResponse,
         ResendEmployeeInviteResponse,
     },
+    models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
     services::{SupabaseClient, EmailService, supabase_client::UserMetadata},
 };
 
@@ -408,6 +409,26 @@ impl EmployeeService {
 
     pub async fn get_assignments_by_school(&self, school_id: Uuid) -> ApiResult<Vec<EmployeeFormAssignmentWithTemplate>> {
         self.employee_form_assignment_dao.get_assignments_by_school(school_id).await
+    }
+
+    pub async fn get_review_queue(&self, query: &FormReviewQueueQuery) -> ApiResult<Vec<EmployeeFormReviewQueueItem>> {
+        let mut items = self.employee_form_assignment_dao.get_review_queue(query.school_id).await?;
+        if let Some(form_template_id) = query.form_template_id {
+            items.retain(|item| item.form_template_id == form_template_id);
+        }
+        if let Some(search) = query.search.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            let needle = search.to_lowercase();
+            items.retain(|item| format!("{} {} {}", item.employee_first_name, item.employee_last_name, item.employee_email)
+                .to_lowercase().contains(&needle));
+        }
+        let ascending = query.sort_direction.as_deref().map(|value| value.eq_ignore_ascii_case("asc")).unwrap_or(false);
+        if query.sort_by.as_deref().map(|value| value.eq_ignore_ascii_case("name")).unwrap_or(false) {
+            items.sort_by_key(|item| format!("{} {}", item.employee_first_name.to_lowercase(), item.employee_last_name.to_lowercase()));
+        } else {
+            items.sort_by_key(|item| item.submitted_at);
+        }
+        if !ascending { items.reverse(); }
+        Ok(items)
     }
 
     pub async fn review_assignment(&self, req: ReviewEmployeeFormRequest, reviewer_id: Uuid) -> ApiResult<EmployeeFormAssignment> {

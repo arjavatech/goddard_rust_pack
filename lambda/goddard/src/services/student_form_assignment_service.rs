@@ -12,6 +12,7 @@ use crate::models::notification::{notification_type, CreateNotification};
 use crate::services::email_service::{parent_dashboard_url, EmailService};
 use crate::services::NotificationService;
 use crate::error::AppError;
+use crate::models::form_review_queue::{FormReviewQueueQuery, StudentFormReviewQueueItem};
 use uuid::Uuid;
 use std::collections::HashMap;
 use std::io::{Write, Cursor};
@@ -55,6 +56,29 @@ impl StudentFormAssignmentService {
         self.fire_form_assigned_email(assignment.id).await;
 
         Ok(assignment.into())
+    }
+
+    pub async fn get_review_queue(&self, query: &FormReviewQueueQuery) -> Result<Vec<StudentFormReviewQueueItem>, AppError> {
+        let mut items = self.dao.get_review_queue(query.school_id).await?;
+        if let Some(classroom_id) = query.classroom_id {
+            items.retain(|item| item.classroom_id == Some(classroom_id));
+        }
+        if let Some(form_template_id) = query.form_template_id {
+            items.retain(|item| item.form_template_id == form_template_id);
+        }
+        if let Some(search) = query.search.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            let needle = search.to_lowercase();
+            items.retain(|item| format!("{} {} {} {} {}", item.student_first_name, item.student_last_name, item.parent_first_name, item.parent_last_name, item.parent_email)
+                .to_lowercase().contains(&needle));
+        }
+        let ascending = query.sort_direction.as_deref().map(|value| value.eq_ignore_ascii_case("asc")).unwrap_or(false);
+        if query.sort_by.as_deref().map(|value| value.eq_ignore_ascii_case("name")).unwrap_or(false) {
+            items.sort_by_key(|item| format!("{} {}", item.student_first_name.to_lowercase(), item.student_last_name.to_lowercase()));
+        } else {
+            items.sort_by_key(|item| item.submitted_at);
+        }
+        if !ascending { items.reverse(); }
+        Ok(items)
     }
 
     /// Look up the recipient + form context for a freshly created assignment and
@@ -234,24 +258,6 @@ impl StudentFormAssignmentService {
                 };
                 let email_svc = self.email_service.clone();
 
-                // Capture identifiers we need for in-app dispatch BEFORE moving ctx fields
-                // into the email notification structs.
-                let parent_id = ctx.parent_id;
-                let secondary_parent_id = ctx.secondary_parent_id;
-                let school_id = ctx.school_id;
-                let child_id = ctx.child_id;
-                let child_name_for_inapp = ctx.child_full_name.clone();
-                let form_name_for_inapp = ctx.form_name.clone();
-                let notes_for_inapp = request.notes.clone();
-                let reviewer_name_for_inapp = reviewer_name.clone();
-                let parent_full_for_inapp = format!(
-                    "{} {}",
-                    ctx.parent_first_name.trim(),
-                    ctx.parent_last_name.trim()
-                )
-                .trim()
-                .to_string();
-
                 match request.status {
                     crate::models::student_form_assignment::StudentFormAssignmentStatus::Approved => {
                         let notification = FormApprovedNotification {
@@ -270,64 +276,8 @@ impl StudentFormAssignmentService {
                             }
                         });
 
-                        let note_suffix = match notes_for_inapp
-                            .as_ref()
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                        {
-                            Some(n) => format!(" Notes: {}", n),
-                            None => String::new(),
-                        };
-                        let body = format!(
-                            "{} approved \"{}\" for {}.{}",
-                            reviewer_name_for_inapp, form_name_for_inapp, child_name_for_inapp, note_suffix
-                        );
-                        self.notification_service.notify_user(
-                            parent_id,
-                            CreateNotification {
-                                school_id,
-                                notification_type: notification_type::FORM_APPROVED.to_string(),
-                                title: "Form Approved".to_string(),
-                                body: body.clone(),
-                                related_entity_id: Some(request.assignment_id),
-                                related_entity_type: Some("form_assignment".to_string()),
-                                action_url: Some("/dashboard".to_string()),
-                            },
-                        ).await;
-                        if let Some(sec_id) = secondary_parent_id {
-                            self.notification_service.notify_user(
-                                sec_id,
-                                CreateNotification {
-                                    school_id,
-                                    notification_type: notification_type::FORM_APPROVED.to_string(),
-                                    title: "Form Approved".to_string(),
-                                    body,
-                                    related_entity_id: Some(request.assignment_id),
-                                    related_entity_type: Some("form_assignment".to_string()),
-                                    action_url: Some("/dashboard".to_string()),
-                                },
-                            ).await;
-                        }
-
-                        self.notification_service.notify_school_admins(
-                            CreateNotification {
-                                school_id,
-                                notification_type: notification_type::FORM_APPROVED.to_string(),
-                                title: "Form Approved".to_string(),
-                                body: format!(
-                                    "{} approved \"{}\" for {} (parent: {}).{}",
-                                    reviewer_name_for_inapp,
-                                    form_name_for_inapp,
-                                    child_name_for_inapp,
-                                    parent_full_for_inapp,
-                                    note_suffix
-                                ),
-                                related_entity_id: Some(request.assignment_id),
-                                related_entity_type: Some("form_assignment".to_string()),
-                                action_url: None,
-                            },
-                            None,
-                        ).await;
+                        // In-app, WebSocket, and FCM review notifications are intentionally
+                        // disabled for now. Review emails above remain asynchronous.
                     }
                     crate::models::student_form_assignment::StudentFormAssignmentStatus::Rejected => {
                         let notification = FormRejectedNotification {
@@ -346,65 +296,11 @@ impl StudentFormAssignmentService {
                             }
                         });
 
-                        let note_text = notes_for_inapp
-                            .as_ref()
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or_else(|| "Please contact your school administrator.".to_string());
-                        let body = format!(
-                            "{} rejected \"{}\" for {}. Notes: {}",
-                            reviewer_name_for_inapp, form_name_for_inapp, child_name_for_inapp, note_text
-                        );
-                        self.notification_service.notify_user(
-                            parent_id,
-                            CreateNotification {
-                                school_id,
-                                notification_type: notification_type::FORM_REJECTED.to_string(),
-                                title: "Form Rejected".to_string(),
-                                body: body.clone(),
-                                related_entity_id: Some(request.assignment_id),
-                                related_entity_type: Some("form_assignment".to_string()),
-                                action_url: Some("/dashboard".to_string()),
-                            },
-                        ).await;
-                        if let Some(sec_id) = secondary_parent_id {
-                            self.notification_service.notify_user(
-                                sec_id,
-                                CreateNotification {
-                                    school_id,
-                                    notification_type: notification_type::FORM_REJECTED.to_string(),
-                                    title: "Form Rejected".to_string(),
-                                    body,
-                                    related_entity_id: Some(request.assignment_id),
-                                    related_entity_type: Some("form_assignment".to_string()),
-                                    action_url: Some("/dashboard".to_string()),
-                                },
-                            ).await;
-                        }
-
-                        self.notification_service.notify_school_admins(
-                            CreateNotification {
-                                school_id,
-                                notification_type: notification_type::FORM_REJECTED.to_string(),
-                                title: "Form Rejected".to_string(),
-                                body: format!(
-                                    "{} rejected \"{}\" for {} (parent: {}). Notes: {}",
-                                    reviewer_name_for_inapp,
-                                    form_name_for_inapp,
-                                    child_name_for_inapp,
-                                    parent_full_for_inapp,
-                                    note_text
-                                ),
-                                related_entity_id: Some(request.assignment_id),
-                                related_entity_type: Some("form_assignment".to_string()),
-                                action_url: None,
-                            },
-                            None,
-                        ).await;
+                        // In-app, WebSocket, and FCM review notifications are intentionally
+                        // disabled for now. Review emails above remain asynchronous.
                     }
                     _ => {}
                 }
-                let _ = child_id; // Reserved for future use (deep links per form).
             }
             Err(e) => {
                 println!(

@@ -7,7 +7,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::auth::{AuthContext, validate_parent_access};
+use crate::middleware::auth::{AuthContext, validate_parent_access, check_permission_admin_or_superadmin};
+use crate::models::form_review_queue::FormReviewQueueQuery;
 use crate::models::student_form_assignment::{
     CreateStudentFormAssignmentRequest, UpdateStudentFormAssignmentRequest,
     StudentFormAssignmentResponse, GetStudentFormAssignmentsQuery,
@@ -86,6 +87,15 @@ pub async fn get_assignments_by_school(
 
     println!("[DEBUG] GET Assignments: Query completed successfully, found {} assignments", assignments.len());
     Ok(Json(assignments))
+}
+
+pub async fn get_student_form_review_queue(
+    State(service): State<Arc<StudentFormAssignmentService>>,
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<FormReviewQueueQuery>,
+) -> Result<Json<Vec<crate::models::form_review_queue::StudentFormReviewQueueItem>>, AppError> {
+    check_permission_admin_or_superadmin(&auth, &query.school_id)?;
+    Ok(Json(service.get_review_queue(&query).await?))
 }
 
 // Update Student Form Assignment (Protected - Admin/SuperAdmin)

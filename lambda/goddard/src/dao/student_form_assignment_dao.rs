@@ -7,6 +7,7 @@ use crate::models::student_form_assignment_review::{
 };
 use crate::dao::enrollment_dao::{AssignmentNotificationContext, ReviewNotificationContext};
 use crate::error::AppError;
+use crate::models::form_review_queue::StudentFormReviewQueueItem;
 use uuid::Uuid;
 use chrono::{Utc, NaiveDateTime, DateTime};
 use deadpool_postgres::Pool;
@@ -114,6 +115,53 @@ impl StudentFormAssignmentDao {
         rows.into_iter()
             .map(|row| self.row_to_student_form_assignment(row))
             .collect()
+    }
+
+    pub async fn get_review_queue(&self, school_id: Uuid) -> Result<Vec<StudentFormReviewQueueItem>, AppError> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        let rows = client.query(
+            r#"
+            SELECT sfa.id AS assignment_id, sfa.school_id, sfa.enrollment_id, sfa.child_id,
+                   sfa.form_template_id, ft.form_name, ft.fillout_form_id, sfa.status,
+                   COALESCE(fs.submitted_at, sfa.updated_at, sfa.assigned_at) AS submitted_at,
+                   COALESCE(fs.edit_link, sfa.recent_edit_link) AS recent_edit_link,
+                   COALESCE(fs.pdf_link, sfa.recent_pdf_link) AS recent_pdf_link,
+                   c.first_name AS student_first_name, c.last_name AS student_last_name,
+                   parent.first_name AS parent_first_name, parent.last_name AS parent_last_name,
+                   parent.email AS parent_email, cl.id AS classroom_id, cl.name AS classroom_name
+            FROM student_form_assignments sfa
+            JOIN form_templates ft ON ft.id = sfa.form_template_id
+            JOIN children c ON c.id = sfa.child_id
+            JOIN users parent ON parent.id = c.parent_id
+            LEFT JOIN enrollments e ON e.id = sfa.enrollment_id
+            LEFT JOIN classrooms cl ON cl.id = e.classroom_id
+            LEFT JOIN LATERAL (
+                SELECT submitted_at, edit_link, pdf_link
+                FROM form_submissions
+                WHERE student_form_assignment_id = sfa.id
+                  AND (is_active = true OR is_active IS NULL)
+                ORDER BY submitted_at DESC
+                LIMIT 1
+            ) fs ON true
+            WHERE sfa.school_id = $1
+              AND sfa.status = 'in_progress'
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+            ORDER BY COALESCE(fs.submitted_at, sfa.updated_at, sfa.assigned_at) DESC
+            "#,
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(rows.into_iter().map(|row| StudentFormReviewQueueItem {
+            assignment_id: row.get("assignment_id"), school_id: row.get("school_id"),
+            enrollment_id: row.get("enrollment_id"), child_id: row.get("child_id"),
+            form_template_id: row.get("form_template_id"), form_name: row.get("form_name"),
+            fillout_form_id: row.get("fillout_form_id"), status: row.get("status"),
+            submitted_at: row.get("submitted_at"), recent_edit_link: row.get("recent_edit_link"),
+            recent_pdf_link: row.get("recent_pdf_link"), student_first_name: row.get("student_first_name"),
+            student_last_name: row.get("student_last_name"), parent_first_name: row.get("parent_first_name"),
+            parent_last_name: row.get("parent_last_name"), parent_email: row.get("parent_email"),
+            classroom_id: row.get("classroom_id"), classroom_name: row.get("classroom_name"),
+        }).collect())
     }
 
     pub async fn update_student_form_assignment(

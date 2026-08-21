@@ -57,7 +57,7 @@ use controllers::{
         get_form_submission_by_id, update_form_submission_status, get_form_resume_link
     },
     student_form_assignment_controller::{
-        create_student_form_assignment, get_assignments_by_school, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students, assign_form_to_class_students, download_enrollment_forms_zip
+        create_student_form_assignment, get_assignments_by_school, get_student_form_review_queue, update_student_form_assignment, delete_student_form_assignment, bulk_assign_forms_to_students, assign_form_to_school_students, assign_form_to_class_students, download_enrollment_forms_zip
     },
     student_form_assignment_review_controller::{
         review_student_form_assignment
@@ -87,7 +87,7 @@ use controllers::{
         deactivate_employee, activate_employee, get_employee_forms, get_current_employee,
         create_employee_form_template, get_employee_form_templates,
         update_employee_form_template, delete_employee_form_template,
-        assign_employee_form, assign_employee_form_to_school, get_employee_form_assignments,
+        assign_employee_form, assign_employee_form_to_school, get_employee_form_assignments, get_employee_form_review_queue,
         review_employee_form_assignment, delete_employee_form_assignment,
         employee_form_submission_webhook, send_bulk_employee_form_reminders,
     },
@@ -374,6 +374,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         // Student Form Assignments Management APIs (Admin JWT or API Key)
         .route("/student-form-assignments", post(create_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/student-form-assignments/review-queue", get(get_student_form_review_queue).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments", get(get_assignments_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments", put(update_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/student-form-assignments", delete(delete_student_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
@@ -421,6 +422,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
         // Employee Form Assignments (Admin manages; Employee reads)
         .route("/employee-form-assignments", post(assign_employee_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-assignments/review-queue", get(get_employee_form_review_queue).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employee-form-assignments/assign-to-school", post(assign_employee_form_to_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employee-form-assignments", get(get_employee_form_assignments).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .route("/employee-form-assignments", delete(delete_employee_form_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))

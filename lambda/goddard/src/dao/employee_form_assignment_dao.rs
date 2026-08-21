@@ -1,6 +1,7 @@
 use deadpool_postgres::Pool;
 use uuid::Uuid;
 use crate::models::employee::{EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate};
+use crate::models::form_review_queue::EmployeeFormReviewQueueItem;
 use crate::error::error_types::AppError;
 
 #[derive(Clone)]
@@ -185,6 +186,43 @@ impl EmployeeFormAssignmentDao {
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch assignments by school: {}", e)))?;
 
         Ok(rows.iter().map(Self::row_to_assignment_with_template).collect())
+    }
+
+    pub async fn get_review_queue(&self, school_id: Uuid) -> Result<Vec<EmployeeFormReviewQueueItem>, AppError> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let rows = client.query(
+            r#"
+            SELECT a.id AS assignment_id, a.school_id, a.employee_id, a.employee_form_template_id AS form_template_id,
+                   t.form_name, t.fillout_form_id, a.status,
+                   COALESCE(s.submitted_at, a.updated_at, a.assigned_at) AS submitted_at,
+                   COALESCE(s.edit_link, a.recent_edit_link) AS recent_edit_link,
+                   COALESCE(s.pdf_link, a.recent_pdf_link) AS recent_pdf_link,
+                   u.first_name AS employee_first_name, u.last_name AS employee_last_name, u.email AS employee_email
+            FROM employee_form_assignments a
+            JOIN employee_form_templates t ON t.id = a.employee_form_template_id
+            JOIN users u ON u.id = a.user_id
+            LEFT JOIN LATERAL (
+                SELECT submitted_at, edit_link, pdf_link
+                FROM employee_form_submissions
+                WHERE employee_form_assignment_id = a.id
+                  AND (is_active = true OR is_active IS NULL)
+                ORDER BY submitted_at DESC
+                LIMIT 1
+            ) s ON true
+            WHERE a.school_id = $1
+              AND a.status = 'in_progress'
+              AND (a.is_active = true OR a.is_active IS NULL)
+            ORDER BY COALESCE(s.submitted_at, a.updated_at, a.assigned_at) DESC
+            "#,
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to fetch employee review queue: {}", e)))?;
+        Ok(rows.into_iter().map(|row| EmployeeFormReviewQueueItem {
+            assignment_id: row.get("assignment_id"), school_id: row.get("school_id"), employee_id: row.get("employee_id"),
+            form_template_id: row.get("form_template_id"), form_name: row.get("form_name"), fillout_form_id: row.get("fillout_form_id"),
+            status: row.get("status"), submitted_at: row.get("submitted_at"), recent_edit_link: row.get("recent_edit_link"),
+            recent_pdf_link: row.get("recent_pdf_link"), employee_first_name: row.get("employee_first_name"),
+            employee_last_name: row.get("employee_last_name"), employee_email: row.get("employee_email"),
+        }).collect())
     }
 
     pub async fn update_assignment_status(

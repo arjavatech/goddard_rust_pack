@@ -20,6 +20,7 @@ use crate::models::employee::{
     ResendEmployeeInviteRequest,
     DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
 };
+use crate::models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery};
 use crate::services::employee_service::EmployeeService;
 use crate::middleware::auth::{AuthContext, check_permission_admin_or_superadmin};
 
@@ -245,6 +246,16 @@ pub async fn get_employee_form_assignments(
         return Ok((StatusCode::OK, Json(serde_json::to_value(assignments).unwrap_or_default())));
     }
     Err(AppError::Validation("Either school_id or employee_id is required".to_string()))
+}
+
+pub async fn get_employee_form_review_queue(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Query(query): Query<FormReviewQueueQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &query.school_id)?;
+    let items: Vec<EmployeeFormReviewQueueItem> = svc.get_review_queue(&query).await?;
+    Ok((StatusCode::OK, Json(items)))
 }
 
 pub async fn review_employee_form_assignment(

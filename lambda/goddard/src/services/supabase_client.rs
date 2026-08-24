@@ -385,7 +385,7 @@ impl SupabaseClient {
         self.create_user_invitation_with_template(email, Some(user_metadata), template_type).await
     }
 
-    pub async fn create_user_invitation_with_template(&self, email: &str, user_metadata: Option<serde_json::Value>, template_type: &str) -> Result<String, AppError> {
+    pub async fn create_user_invitation_with_template(&self, email: &str, user_metadata: Option<serde_json::Value>, _template_type: &str) -> Result<String, AppError> {
         // Note: template_type parameter is kept for backward compatibility but unused
         // The /auth/v1/invite endpoint always uses the "Invite User" template
 

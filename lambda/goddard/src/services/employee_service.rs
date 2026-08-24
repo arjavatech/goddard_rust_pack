@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::{
     dao::{
-        AuthDao, EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
+        AuthDao, EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao, TapTimeDao,
     },
     dao::school_dao::SchoolDao,
     error::{AppError, ApiResult},
@@ -32,6 +32,7 @@ pub struct EmployeeService {
     school_dao: SchoolDao,
     supabase_client: SupabaseClient,
     email_service: Arc<EmailService>,
+    tap_time_dao: TapTimeDao,
 }
 
 impl EmployeeService {
@@ -44,6 +45,7 @@ impl EmployeeService {
         school_dao: SchoolDao,
         supabase_client: SupabaseClient,
         email_service: Arc<EmailService>,
+        tap_time_dao: TapTimeDao,
     ) -> Self {
         Self {
             employee_dao,
@@ -54,6 +56,7 @@ impl EmployeeService {
             school_dao,
             supabase_client,
             email_service,
+            tap_time_dao,
         }
     }
 
@@ -123,6 +126,7 @@ impl EmployeeService {
             req.employee_type.as_deref(),
             req.joined_on,
         ).await?;
+        self.queue_tap_time_sync(req.school_id, employee.id, "employee_upsert").await;
 
         // Create 7-day invite token
         let invite_token = self.auth_dao
@@ -263,6 +267,7 @@ impl EmployeeService {
                     return Err(error);
                 }
             };
+            self.queue_tap_time_sync(req.school_id, employee.id, "employee_upsert").await;
             created_employees.push(BulkCreatedEmployee { employee_id: employee.id, user_id, email });
         }
 
@@ -299,15 +304,29 @@ impl EmployeeService {
     }
 
     pub async fn update_employee(&self, employee_id: Uuid, school_id: Uuid, req: UpdateEmployeeRequest) -> ApiResult<Employee> {
-        self.employee_dao.update_employee(employee_id, school_id, &req).await
+        let employee = self.employee_dao.update_employee(employee_id, school_id, &req).await?;
+        self.queue_tap_time_sync(school_id, employee_id, "employee_upsert").await;
+        Ok(employee)
     }
 
     pub async fn deactivate_employee(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<()> {
-        self.employee_dao.deactivate_employee(employee_id, school_id).await
+        self.employee_dao.deactivate_employee(employee_id, school_id).await?;
+        self.queue_tap_time_sync(school_id, employee_id, "employee_deactivate").await;
+        Ok(())
     }
 
     pub async fn activate_employee(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<()> {
-        self.employee_dao.activate_employee(employee_id, school_id).await
+        self.employee_dao.activate_employee(employee_id, school_id).await?;
+        self.queue_tap_time_sync(school_id, employee_id, "employee_upsert").await;
+        Ok(())
+    }
+
+    async fn queue_tap_time_sync(&self, school_id: Uuid, employee_id: Uuid, operation: &str) {
+        if let Err(error) = self.tap_time_dao.enqueue_employee_sync_if_connected(school_id, employee_id, operation).await {
+            // Goddard remains the HR source of truth. A later reconciliation/retry can
+            // recover this; PINs and profile values are deliberately not logged here.
+            tracing::error!(school_id = %school_id, employee_id = %employee_id, "Failed to queue Tap-Time employee sync: {error}");
+        }
     }
 
     // ─── Employee Form Templates ────────────────────────────────────────────────

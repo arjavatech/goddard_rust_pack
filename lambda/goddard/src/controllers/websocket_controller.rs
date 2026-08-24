@@ -43,7 +43,7 @@ async fn handle_socket(
     let (sender, mut receiver) = socket.split();
     
     // Create channel for sending messages
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     
     // Register this user's connection
     registry.register(user_id, tx).await;

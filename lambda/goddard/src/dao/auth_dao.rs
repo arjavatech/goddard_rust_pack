@@ -32,6 +32,7 @@ pub struct UserDetails {
     pub first_name: String,
     pub last_name: String,
     pub email: String,
+    pub phone_number: Option<String>,
     pub role: String,
     pub is_verified: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -184,7 +185,8 @@ impl AuthDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let query = r#"
-            SELECT u.id, u.school_id, u.first_name, u.last_name, u.email, u.role,
+            SELECT u.id, u.school_id, u.first_name, u.last_name, u.email,
+                   COALESCE(NULLIF(BTRIM(u.phone_number), ''), u.metadata->>'phone_number') AS phone_number, u.role,
                    CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
                    u.created_at
             FROM users u
@@ -207,6 +209,7 @@ impl AuthDao {
                 first_name: row.get("first_name"),
                 last_name: row.get("last_name"),
                 email: row.get("email"),
+                phone_number: row.get("phone_number"),
                 role: row.get("role"),
                 is_verified: row.get("is_verified"),
                 created_at,
@@ -236,9 +239,10 @@ impl AuthDao {
                         COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('phone_number', $4::text)
                     ELSE metadata
                 END,
+                phone_number = COALESCE($4::text, phone_number),
                 updated_at = NOW()
             WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
-            RETURNING id, school_id, first_name, last_name, email, role,
+            RETURNING id, school_id, first_name, last_name, email, phone_number, role,
                       COALESCE(is_verified, false) as is_verified, created_at
         "#;
 
@@ -253,6 +257,7 @@ impl AuthDao {
                     first_name: row.get("first_name"),
                     last_name: row.get("last_name"),
                     email: row.get("email"),
+                    phone_number: row.get("phone_number"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
                     created_at,
@@ -301,6 +306,7 @@ impl AuthDao {
                     first_name: row.get("first_name"),
                     last_name: row.get("last_name"),
                     email: row.get("email"),
+                    phone_number: None,
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
                     created_at,
@@ -327,6 +333,7 @@ impl AuthDao {
                     first_name: row.get("first_name"),
                     last_name: row.get("last_name"),
                     email: row.get("email"),
+                    phone_number: None,
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
                     created_at,
@@ -353,6 +360,7 @@ impl AuthDao {
                     first_name: row.get("first_name"),
                     last_name: row.get("last_name"),
                     email: row.get("email"),
+                    phone_number: None,
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
                     created_at,
@@ -379,6 +387,7 @@ impl AuthDao {
                     first_name: row.get("first_name"),
                     last_name: row.get("last_name"),
                     email: row.get("email"),
+                    phone_number: None,
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
                     created_at,

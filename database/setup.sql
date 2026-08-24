@@ -28,6 +28,7 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP,
     metadata JSONB,
+    phone_number VARCHAR(50),
     is_active BOOLEAN DEFAULT true
 );
 
@@ -248,6 +249,7 @@ BEGIN
         role,
         is_verified,
         created_at,
+        phone_number,
         metadata,
         is_active
     ) VALUES (
@@ -271,6 +273,7 @@ BEGIN
         ),
         COALESCE(NEW.email_confirmed_at IS NOT NULL, false),  -- Set verified based on email confirmation
         NOW(),
+        NULLIF(BTRIM(NEW.raw_user_meta_data->>'phone_number'), ''),
         NEW.raw_user_meta_data,  -- Store complete metadata
         true
     );
@@ -309,6 +312,7 @@ BEGIN
             role,
             is_verified,
             created_at,
+            phone_number,
             metadata,
             is_active
         ) VALUES (
@@ -332,6 +336,7 @@ BEGIN
             ),
             COALESCE(auth_user.email_confirmed_at IS NOT NULL, false),
             auth_user.created_at,
+            NULLIF(BTRIM(auth_user.raw_user_meta_data->>'phone_number'), ''),
             auth_user.raw_user_meta_data,
             true
         ) ON CONFLICT (id) DO NOTHING;
@@ -444,6 +449,7 @@ BEGIN
         role,
         is_verified,
         created_at,
+        phone_number,
         metadata,
         is_active
     ) VALUES (
@@ -475,6 +481,7 @@ BEGIN
             END
         ),
         NOW(),
+        NULLIF(BTRIM(NEW.raw_user_meta_data->>'phone_number'), ''),
         NEW.raw_user_meta_data,
         true
     );

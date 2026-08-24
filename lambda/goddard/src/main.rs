@@ -97,17 +97,18 @@ use controllers::{
     expense_controller::{
         list_expenses, create_expense,
     },
+    tap_time_controller::{get_tap_time_connection, connect_tap_time, disconnect_tap_time, retry_tap_time_sync, get_employee_tap_time_pin, set_employee_tap_time_pin, get_admin_tap_time_pin, set_admin_tap_time_pin, get_tap_time_pins, get_my_tap_time_pin, set_my_tap_time_pin, get_tap_time_reconciliation, get_tap_time_dashboard, confirm_tap_time_reconciliation, list_time_reports, list_time_report_people, create_time_report, get_time_report_overview, get_time_report_two_day, get_time_report_salary, get_consolidated_time_report, get_time_report_day_trends, get_my_daily_time_reports, update_time_report, delete_time_report, list_time_report_settings, create_time_report_setting, update_time_report_setting, delete_time_report_setting, get_consolidated_time_report_setting, update_consolidated_time_report_setting},
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
 use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao,
     EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
-    RequestDao,
+    RequestDao, TapTimeDao,
 };
 use services::{
     AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry,
-    EmployeeService, RequestService, UploadService,
+    EmployeeService, RequestService, UploadService, TapTimeService,
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -178,6 +179,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let employee_form_assignment_dao = EmployeeFormAssignmentDao::new(pool.clone());
     let employee_form_submission_dao = EmployeeFormSubmissionDao::new(pool.clone());
     let request_dao = RequestDao::new(pool.clone());
+    let tap_time_dao = TapTimeDao::new(pool.clone());
 
     // Initialize FCM service. Live when all three env vars are present; otherwise a
     // no-op stub that lets local dev / staging boot without Firebase configured.
@@ -238,6 +240,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let admin_service = Arc::new(AdminService::new(admin_dao));
     let upload_service = Arc::new(UploadService::new().await);
     let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone()));
+    let tap_time_service = Arc::new(TapTimeService::from_env(tap_time_dao));
 
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
@@ -248,6 +251,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         school_dao.clone(),
         supabase_client.clone(),
         email_service.clone(),
+        TapTimeDao::new(pool.clone()),
     ));
 
     // Initialize tracing
@@ -447,6 +451,37 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/expenses", get(list_expenses).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .route("/expenses", post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
         .with_state(request_service)
+
+        // Tap-Time integration connection management (Super Admin only).
+        .route("/tap-time/connections", get(get_tap_time_connection).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/tap-time/connections", post(connect_tap_time).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/tap-time/connections/:school_id", delete(disconnect_tap_time).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/tap-time/connections/:school_id/retry-sync", post(retry_tap_time_sync).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/tap-time/connections/:school_id/dashboard", get(get_tap_time_dashboard).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/tap-time/connections/:school_id/reconciliation", get(get_tap_time_reconciliation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/tap-time/connections/:school_id/reconciliation", post(confirm_tap_time_reconciliation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)))
+        .route("/employees/:employee_id/tap-time-pin", get(get_employee_tap_time_pin).post(set_employee_tap_time_pin).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/admins/:user_id/tap-time-pin", get(get_admin_tap_time_pin).post(set_admin_tap_time_pin).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/tap-time/pins", get(get_tap_time_pins).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/me/time-attendance/pin", get(get_my_tap_time_pin).post(set_my_tap_time_pin).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/me/time-attendance/daily", get(get_my_daily_time_reports).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/time-attendance/reports", get(list_time_reports).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/reports", post(create_time_report).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/report-people", get(list_time_report_people).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/overview", get(get_time_report_overview).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/two-day", get(get_time_report_two_day).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/salary", get(get_time_report_salary).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/consolidated", get(get_consolidated_time_report).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/day-trends", get(get_time_report_day_trends).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/reports/:report_id", patch(update_time_report).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/reports/:report_id", delete(delete_time_report).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/report-settings", get(list_time_report_settings).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/report-settings", post(create_time_report_setting).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/report-settings/:setting_id", patch(update_time_report_setting).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/report-settings/:setting_id", delete(delete_time_report_setting).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/consolidated-report-setting", get(get_consolidated_time_report_setting).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/time-attendance/consolidated-report-setting", put(update_consolidated_time_report_setting).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .with_state(tap_time_service)
 
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))

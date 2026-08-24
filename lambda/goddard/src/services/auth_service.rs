@@ -109,6 +109,7 @@ pub struct AdminUserResponse {
     pub first_name: String,
     pub last_name: String,
     pub email: String,
+    pub phone_number: Option<String>,
     pub role: String,
     pub is_verified: bool,
 }
@@ -181,6 +182,15 @@ pub struct AuthService {
 }
 
 impl AuthService {
+    fn validate_required_phone(phone_number: Option<&str>) -> ApiResult<String> {
+        let phone = phone_number.map(str::trim).filter(|value| !value.is_empty())
+            .ok_or_else(|| AppError::Validation("phone_number is required for administrators".to_string()))?;
+        let digits = phone.strip_prefix('+').unwrap_or(phone);
+        if !digits.bytes().all(|value| value.is_ascii_digit()) || !(7..=15).contains(&digits.len()) {
+            return Err(AppError::Validation("phone_number must be a valid international phone number".to_string()));
+        }
+        Ok(format!("+{digits}"))
+    }
     pub fn new(
         dao: AuthDao,
         school_dao: crate::dao::school_dao::SchoolDao,
@@ -452,6 +462,7 @@ impl AuthService {
     pub async fn create_invitation(&self, request: CreateInvitationRequest) -> ApiResult<CreateInvitationResponse> {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
+        let phone_number = Self::validate_required_phone(request.phone_number.as_deref())?;
 
         // Validate and parse school_id (required field)
         ValidationUtils::validate_uuid(&request.school_id)?;
@@ -476,6 +487,7 @@ impl AuthService {
         match self.dao.get_soft_deleted_user_by_email_and_school(&request.email, school_uuid).await {
             Ok(user) => {
                 self.dao.reactivate_user(user.id, &request.first_name, &request.last_name).await?;
+                self.dao.update_admin_user(user.id, None, None, Some(phone_number.clone())).await?;
                 self.supabase_client.resend_invitation(&user.email).await?;
                 let email_status = "unknown".to_string();
                 if matches!(email_status.as_str(), "suppressed" | "bounced") {
@@ -504,7 +516,7 @@ impl AuthService {
             Some(request.first_name.clone()),
             Some(request.last_name.clone()),
             Some("Admin".to_string()),
-            request.phone_number.clone(),
+            Some(phone_number),
             Some(true),
         )
         .with_school_name(school_name.clone());
@@ -706,11 +718,12 @@ impl AuthService {
             auth_user_id
         };
 
+        let phone_number = Self::validate_required_phone(request.phone_number.as_deref())?;
         let updated = self.dao.update_admin_user(
             target_user_id,
             request.first_name,
             request.last_name,
-            request.phone_number,
+            Some(phone_number),
         ).await?;
 
         Ok(AdminUserResponse {
@@ -719,6 +732,7 @@ impl AuthService {
             first_name: updated.first_name,
             last_name: updated.last_name,
             email: updated.email,
+            phone_number: updated.phone_number,
             role: updated.role,
             is_verified: updated.is_verified,
         })
@@ -775,6 +789,7 @@ impl AuthService {
             first_name: u.first_name,
             last_name: u.last_name,
             email: u.email,
+            phone_number: u.phone_number,
             role: u.role,
             is_verified: u.is_verified,
         }).collect())

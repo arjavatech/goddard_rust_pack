@@ -19,6 +19,7 @@ pub mod connection_registry;
 pub mod employee_service;
 pub mod request_service;
 pub mod upload_service;
+pub mod tap_time_service;
 
 pub use auth_service::AuthService;
 pub use supabase_client::SupabaseClient;
@@ -39,3 +40,4 @@ pub use connection_registry::ConnectionRegistry;
 pub use employee_service::EmployeeService;
 pub use request_service::RequestService;
 pub use upload_service::UploadService;
+pub use tap_time_service::TapTimeService;

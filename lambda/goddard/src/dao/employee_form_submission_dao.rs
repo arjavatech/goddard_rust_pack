@@ -43,16 +43,21 @@ impl EmployeeFormSubmissionDao {
         metadata: Option<&serde_json::Value>,
         edit_link: Option<&str>,
         pdf_link: Option<&str>,
+        source_submitted_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<EmployeeFormSubmission, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let source_submitted_at = source_submitted_at.unwrap_or_else(chrono::Utc::now);
+        let submitted_at: chrono::NaiveDateTime = client.query_one(
+            "SELECT to_school_local_time($1, $2)", &[&school_id, &source_submitted_at],
+        ).await.map_err(|e| AppError::Database(format!("Failed to resolve school-local submission time: {}", e)))?.get(0);
 
         let row = client.query_one(
             "INSERT INTO employee_form_submissions
              (id, school_id, employee_id, employee_form_assignment_id, employee_form_template_id,
               fillout_submission_id, form_data, metadata, status, edit_link, pdf_link,
               submitted_at, is_active, created_at, updated_at)
-             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'completed', $8, $9, NOW(), true, NOW(), NOW())
+             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'completed', $8, $9, $10, true, NOW(), NOW())
              ON CONFLICT (fillout_submission_id) DO UPDATE SET
                form_data = EXCLUDED.form_data, metadata = EXCLUDED.metadata,
                edit_link = COALESCE(EXCLUDED.edit_link, employee_form_submissions.edit_link),
@@ -63,7 +68,7 @@ impl EmployeeFormSubmissionDao {
                        fillout_submission_id, form_data, metadata, status, revision_number,
                        edit_link, pdf_link, submitted_at, created_at",
             &[&school_id, &employee_id, &assignment_id, &template_id,
-              &fillout_submission_id, &form_data, &metadata, &edit_link, &pdf_link],
+              &fillout_submission_id, &form_data, &metadata, &edit_link, &pdf_link, &submitted_at],
         ).await.map_err(|e| AppError::Database(format!("Failed to upsert employee form submission: {}", e)))?;
 
         Ok(Self::row_to_submission(&row))

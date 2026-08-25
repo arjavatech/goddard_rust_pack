@@ -14,6 +14,18 @@ use crate::{
 use uuid::Uuid;
 use std::time::Duration;
 
+const SCHOOL_TIMEZONES: &[&str] = &[
+    "EST", "CST", "MST", "PST", "AKST", "HST", "IST", "GMT", "CET", "EET", "GST", "PKT",
+    "BST", "ICT", "CST_CN", "JST", "KST", "WIB", "WITA", "WIT", "AEST", "ACST", "AWST",
+    "NZST", "BRT", "ART", "CLT", "SAST", "EAT", "WAT",
+];
+
+fn validate_school_timezone(timezone: Option<&str>) -> ApiResult<()> {
+    let code = timezone.unwrap_or("EST");
+    if SCHOOL_TIMEZONES.contains(&code) { Ok(()) }
+    else { Err(AppError::Validation(format!("Unsupported school timezone: {}", code))) }
+}
+
 pub struct SchoolService {
     dao: SchoolDao,
     supabase_client: SupabaseClient,
@@ -38,6 +50,8 @@ impl SchoolService {
             println!("[SchoolService] Validation failed: empty subdomain");
             return Err(AppError::Validation("Subdomain cannot be empty".to_string()));
         }
+
+        validate_school_timezone(request.timezone.as_deref())?;
 
         // Validate subdomain format (alphanumeric and hyphens only)
         if !request.subdomain.chars().all(|c| c.is_alphanumeric() || c == '-') {
@@ -121,6 +135,8 @@ impl SchoolService {
         if request.subdomain.trim().is_empty() {
             return Err(AppError::Validation("Subdomain cannot be empty".to_string()));
         }
+
+        validate_school_timezone(request.timezone.as_deref())?;
 
         // Validate subdomain format
         if !request.subdomain.chars().all(|c| c.is_alphanumeric() || c == '-') {
@@ -236,6 +252,7 @@ impl SchoolService {
         let create_school_request = CreateSchoolRequest {
             name: request.school.name.clone(),
             subdomain: request.school.subdomain.clone(),
+            timezone: request.school.timezone.clone(),
             settings: request.school.settings.clone(),
         };
 

@@ -812,6 +812,7 @@ impl AuthService {
                 id: school.id,
                 name: school.name,
                 subdomain: school.subdomain,
+                timezone: school.timezone,
                 settings: school.settings,
                 request_categories: school.request_categories,
                 location: school.location,

@@ -482,6 +482,7 @@ impl EmployeeService {
         metadata: Option<&serde_json::Value>,
         edit_link: Option<&str>,
         pdf_link: Option<&str>,
+        submitted_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> ApiResult<EmployeeFormSubmission> {
         let (school_id, employee_id, template_id) = self.employee_form_assignment_dao
             .get_assignment_details(assignment_id)
@@ -498,6 +499,7 @@ impl EmployeeService {
             metadata,
             edit_link,
             pdf_link,
+            submitted_at,
         ).await?;
 
         let _ = self.employee_form_assignment_dao.update_assignment_status(

@@ -9,6 +9,11 @@ CREATE TABLE schools (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) UNIQUE NOT NULL,  -- Globally unique school name
     subdomain VARCHAR(100) UNIQUE NOT NULL,  -- Globally unique subdomain
+    timezone VARCHAR(16) NOT NULL DEFAULT 'EST' CHECK (timezone IN (
+        'EST','CST','MST','PST','AKST','HST','IST','GMT','CET','EET','GST','PKT',
+        'BST','ICT','CST_CN','JST','KST','WIB','WITA','WIT','AEST','ACST','AWST',
+        'NZST','BRT','ART','CLT','SAST','EAT','WAT'
+    )),
     settings JSONB,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),

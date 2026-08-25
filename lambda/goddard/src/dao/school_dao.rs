@@ -56,6 +56,7 @@ impl SchoolDao {
             id: row.get("id"),
             name: row.get("name"),
             subdomain: row.get("subdomain"),
+            timezone: row.get("timezone"),
             settings: row.get("settings"),
             request_categories: row.get("request_categories"),
             location: row.get("location"),
@@ -70,6 +71,7 @@ impl SchoolDao {
 
         let name = request.name.clone();
         let subdomain = request.subdomain.clone();
+        let timezone = request.timezone.clone().unwrap_or_else(|| "EST".to_string());
         let settings = request.settings.clone();
 
         self.execute_with_connection(|client| async move {
@@ -83,12 +85,13 @@ impl SchoolDao {
 
             let query = format!(
                 r#"
-                INSERT INTO schools (id, name, subdomain, settings, is_active, created_at)
-                VALUES (gen_random_uuid(), '{}', '{}', {}, true, NOW())
-                RETURNING id, name, subdomain, settings, NULL::jsonb AS request_categories, NULL::jsonb AS location, is_active, created_at, updated_at
+                INSERT INTO schools (id, name, subdomain, timezone, settings, is_active, created_at)
+                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW())
+                RETURNING id, name, subdomain, timezone, settings, NULL::jsonb AS request_categories, NULL::jsonb AS location, is_active, created_at, updated_at
                 "#,
                 name.replace('\'', "''"),
                 subdomain.replace('\'', "''"),
+                timezone.replace('\'', "''"),
                 settings_json
             );
 
@@ -106,12 +109,13 @@ impl SchoolDao {
                         id: row.get(0).unwrap().parse().unwrap(),
                         name: row.get(1).unwrap().to_string(),
                         subdomain: row.get(2).unwrap().to_string(),
-                        settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                        request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
-                        location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
-                        is_active: row.get(6).and_then(|s| s.parse().ok()),
-                        created_at: row.get(7).and_then(|s| s.parse().ok()),
-                        updated_at: row.get(8).and_then(|s| s.parse().ok()),
+                        timezone: row.get(3).unwrap_or("EST").to_string(),
+                        settings: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                        request_categories: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                        location: row.get(6).and_then(|s| serde_json::from_str(s).ok()),
+                        is_active: row.get(7).and_then(|s| s.parse().ok()),
+                        created_at: row.get(8).and_then(|s| s.parse().ok()),
+                        updated_at: row.get(9).and_then(|s| s.parse().ok()),
                     };
                     println!("[SchoolDao] School object created successfully: id={}", school.id);
                     return Ok(school);
@@ -126,7 +130,7 @@ impl SchoolDao {
         self.execute_with_connection(|client| async move {
             let result = client.simple_query(
                 r#"
-                SELECT id, name, subdomain, settings, request_categories, location, is_active, created_at, updated_at
+                SELECT id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at
                 FROM schools
                 WHERE (is_active = true OR is_active IS NULL)
                 ORDER BY created_at DESC
@@ -141,12 +145,13 @@ impl SchoolDao {
                         id: row.get(0).unwrap().parse().unwrap(),
                         name: row.get(1).unwrap().to_string(),
                         subdomain: row.get(2).unwrap().to_string(),
-                        settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                        request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
-                        location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
-                        is_active: row.get(6).and_then(|s| s.parse().ok()),
-                        created_at: row.get(7).and_then(|s| s.parse().ok()),
-                        updated_at: row.get(8).and_then(|s| s.parse().ok()),
+                        timezone: row.get(3).unwrap_or("EST").to_string(),
+                        settings: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                        request_categories: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                        location: row.get(6).and_then(|s| serde_json::from_str(s).ok()),
+                        is_active: row.get(7).and_then(|s| s.parse().ok()),
+                        created_at: row.get(8).and_then(|s| s.parse().ok()),
+                        updated_at: row.get(9).and_then(|s| s.parse().ok()),
                     };
                     schools.push(school);
                 }
@@ -161,7 +166,7 @@ impl SchoolDao {
         self.execute_with_connection(|client| async move {
             let query = format!(
                 r#"
-                SELECT id, name, subdomain, settings, request_categories, location, is_active, created_at, updated_at
+                SELECT id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at
                 FROM schools
                 WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
                 "#,
@@ -177,12 +182,13 @@ impl SchoolDao {
                         id: row.get(0).unwrap().parse().unwrap(),
                         name: row.get(1).unwrap().to_string(),
                         subdomain: row.get(2).unwrap().to_string(),
-                        settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                        request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
-                        location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
-                        is_active: row.get(6).and_then(|s| s.parse().ok()),
-                        created_at: row.get(7).and_then(|s| s.parse().ok()),
-                        updated_at: row.get(8).and_then(|s| s.parse().ok()),
+                        timezone: row.get(3).unwrap_or("EST").to_string(),
+                        settings: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                        request_categories: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                        location: row.get(6).and_then(|s| serde_json::from_str(s).ok()),
+                        is_active: row.get(7).and_then(|s| s.parse().ok()),
+                        created_at: row.get(8).and_then(|s| s.parse().ok()),
+                        updated_at: row.get(9).and_then(|s| s.parse().ok()),
                     };
                     return Ok(Some(school));
                 }
@@ -201,12 +207,16 @@ impl SchoolDao {
             UPDATE schools
             SET name = '{}',
                 subdomain = '{}',
+                timezone = '{}',
+                settings = jsonb_set(COALESCE(settings, '{{}}'::jsonb), '{{timezone}}', to_jsonb('{}'::text), true),
                 updated_at = NOW()
             WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
-            RETURNING id, name, subdomain, settings, request_categories, location, is_active, created_at, updated_at
+            RETURNING id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at
             "#,
             request.name.replace('\'', "''"),
             request.subdomain.replace('\'', "''"),
+            request.timezone.clone().unwrap_or_else(|| "EST".to_string()).replace('\'', "''"),
+            request.timezone.clone().unwrap_or_else(|| "EST".to_string()).replace('\'', "''"),
             request.id
         );
 
@@ -222,12 +232,13 @@ impl SchoolDao {
                     id: row.get(0).unwrap().parse().unwrap(),
                     name: row.get(1).unwrap().to_string(),
                     subdomain: row.get(2).unwrap().to_string(),
-                    settings: row.get(3).and_then(|s| serde_json::from_str(s).ok()),
-                    request_categories: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
-                    location: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
-                    is_active: row.get(6).and_then(|s| s.parse().ok()),
-                    created_at: row.get(7).and_then(|s| s.parse().ok()),
-                    updated_at: row.get(8).and_then(|s| s.parse().ok()),
+                    timezone: row.get(3).unwrap_or("EST").to_string(),
+                    settings: row.get(4).and_then(|s| serde_json::from_str(s).ok()),
+                    request_categories: row.get(5).and_then(|s| serde_json::from_str(s).ok()),
+                    location: row.get(6).and_then(|s| serde_json::from_str(s).ok()),
+                    is_active: row.get(7).and_then(|s| s.parse().ok()),
+                    created_at: row.get(8).and_then(|s| s.parse().ok()),
+                    updated_at: row.get(9).and_then(|s| s.parse().ok()),
                 };
                 return Ok(school);
             }

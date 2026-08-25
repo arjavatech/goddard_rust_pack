@@ -286,6 +286,9 @@ pub struct EmployeeFormWebhookPayload {
     pub metadata: Option<serde_json::Value>,
     pub edit_link: Option<String>,
     pub pdf_link: Option<String>,
+    /// Fillout's original submission instant. The backend converts this to the
+    /// owning school's configured local wall-clock time before persisting it.
+    pub submitted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub async fn employee_form_submission_webhook(
@@ -312,6 +315,7 @@ pub async fn employee_form_submission_webhook(
         payload.metadata.as_ref(),
         payload.edit_link.as_deref(),
         payload.pdf_link.as_deref(),
+        payload.submitted_at,
     ).await?;
     Ok((StatusCode::OK, Json(submission)))
 }

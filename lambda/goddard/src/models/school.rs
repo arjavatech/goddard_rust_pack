@@ -8,6 +8,7 @@ pub struct School {
     pub id: Uuid,
     pub name: String,
     pub subdomain: String,
+    pub timezone: String,
     pub settings: Option<Value>,
     pub request_categories: Option<Value>,
     pub location: Option<Value>,
@@ -20,6 +21,7 @@ pub struct School {
 pub struct CreateSchoolRequest {
     pub name: String,
     pub subdomain: String,
+    pub timezone: Option<String>,
     pub settings: Option<Value>,
 }
 
@@ -28,6 +30,7 @@ pub struct UpdateSchoolRequest {
     pub id: Uuid,
     pub name: String,
     pub subdomain: String,
+    pub timezone: Option<String>,
     pub settings: Option<Value>,
 }
 
@@ -36,6 +39,7 @@ pub struct SchoolResponse {
     pub id: Uuid,
     pub name: String,
     pub subdomain: String,
+    pub timezone: String,
     pub settings: Option<Value>,
     pub request_categories: Option<Value>,
     pub location: Option<Value>,
@@ -48,6 +52,7 @@ pub struct SchoolListItem {
     pub id: Uuid,
     pub name: String,
     pub subdomain: String,
+    pub timezone: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +67,7 @@ impl From<School> for SchoolResponse {
             id: school.id,
             name: school.name,
             subdomain: school.subdomain,
+            timezone: school.timezone,
             settings: school.settings,
             request_categories: school.request_categories,
             location: school.location,
@@ -108,6 +114,7 @@ impl From<School> for SchoolListItem {
             id: school.id,
             name: school.name,
             subdomain: school.subdomain,
+            timezone: school.timezone,
         }
     }
 }
@@ -118,6 +125,7 @@ impl From<School> for SchoolListItem {
 pub struct SchoolInfo {
     pub name: String,
     pub subdomain: String,
+    pub timezone: Option<String>,
     pub settings: Option<Value>,
 }
 

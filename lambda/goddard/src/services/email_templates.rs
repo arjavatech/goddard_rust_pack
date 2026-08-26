@@ -195,6 +195,27 @@ pub fn bulk_form_reminder_html(
     render_shell(accent, headline, preheader, &body, "")
 }
 
+pub fn bulk_document_reminder_html(
+    recipient_name: &str,
+    introduction: &str,
+    documents_html: &str,
+    login_url: &str,
+) -> String {
+    let accent = "#1e4b83";
+    let headline = "Documents need your attention";
+    let preheader = "You have one or more outstanding document requests.";
+    let cta = cta_button("View Documents", login_url, accent);
+    let body = format!(
+        r#"<p>Dear <strong>{recipient_name}</strong>,</p>
+          <p>{introduction}</p>
+          {documents_html}
+          <p style="margin-top:20px;">Please log in to upload or re-upload the required document.</p>
+          {cta}
+          <p style="margin-top:16px;color:#666;font-size:14px;">If you have questions, please contact your school management team.</p>"#,
+    );
+    render_shell(accent, headline, preheader, &body, "")
+}
+
 fn fmt_datetime(dt: DateTime<Utc>) -> String {
     dt.format("%B %d, %Y at %I:%M %p UTC").to_string()
 }

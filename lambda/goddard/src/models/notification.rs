@@ -19,6 +19,10 @@ pub mod notification_type {
     pub const CLASSROOM_DELETED: &str = "classroom_deleted";
     pub const FORM_TEMPLATE_ADDED: &str = "form_template_added";
     pub const FORM_TEMPLATE_DELETED: &str = "form_template_deleted";
+    pub const DOCUMENT_REQUESTED: &str = "document_requested";
+    pub const DOCUMENT_SUBMITTED: &str = "document_submitted";
+    pub const DOCUMENT_APPROVED: &str = "document_approved";
+    pub const DOCUMENT_REJECTED: &str = "document_rejected";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

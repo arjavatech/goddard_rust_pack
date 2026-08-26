@@ -5,6 +5,7 @@ use crate::{
         FormApprovedNotification, FormAssignedNotification, FormRejectedNotification,
         ParentDeactivatedNotification, ParentFormReminder,
     },
+    models::document_request::DocumentReminder,
     services::{
         email_provider::{BatchRecipient, EmailProvider, SmtpProvider, ZeptoMailProvider},
         email_templates,
@@ -27,6 +28,12 @@ struct ChildReminderGroup {
     student_name: String,
     class_name: String,
     forms: BTreeSet<(String, String, bool)>,
+}
+
+#[derive(Default)]
+struct DocumentReminderGroup {
+    recipient_name: String,
+    reminders: Vec<DocumentReminder>,
 }
 
 pub struct EmailService {
@@ -298,6 +305,47 @@ impl EmailService {
             failed_emails,
             message,
         })
+    }
+
+    pub async fn send_bulk_document_reminders(&self, reminders: Vec<DocumentReminder>) -> ApiResult<BulkEmailResponse> {
+        let reminder_rows = reminders.len();
+        let mut groups: BTreeMap<String, DocumentReminderGroup> = BTreeMap::new();
+        for reminder in reminders {
+            let email = reminder.recipient_email.trim().to_lowercase();
+            if email.is_empty() { continue; }
+            let group = groups.entry(email).or_default();
+            if group.recipient_name.is_empty() { group.recipient_name = reminder.recipient_name.trim().to_string(); }
+            group.reminders.push(reminder);
+        }
+        if groups.is_empty() { return Err(AppError::Validation("No recipient email addresses are available for the selected documents".into())); }
+
+        let recipients = groups.into_iter().map(|(email, group)| {
+            let name = if group.recipient_name.is_empty() { "Recipient".to_string() } else { group.recipient_name };
+            let documents_html = Self::render_document_reminders(&group.reminders);
+            let introduction = if group.reminders.len() == 1 { "A document requires your attention." } else { "The following documents require your attention." };
+            BatchRecipient { address: email, name: name.clone(), merge_info: serde_json::json!({
+                "recipient_name": email_templates::html_escape(&name),
+                "introduction": introduction,
+                "documents_html": documents_html,
+            }) }
+        }).collect::<Vec<_>>();
+        let total_sent = recipients.len();
+        let html = email_templates::bulk_document_reminder_html("{{recipient_name}}", "{{introduction}}", "{{documents_html}}", &parent_dashboard_url());
+        self.provider.send_batch("Reminder: Documents need your attention".to_string(), html, recipients).await?;
+        Ok(BulkEmailResponse { total_sent, total_failed: 0, failed_emails: Vec::new(), message: format!("{} reminder email(s) accepted for delivery, covering {} document assignment(s)", total_sent, reminder_rows) })
+    }
+
+    fn render_document_reminders(reminders: &[DocumentReminder]) -> String {
+        let rows = reminders.iter().map(|reminder| {
+            let due = reminder.due_date.map(|date| date.format("%B %d, %Y").to_string()).unwrap_or_else(|| "at your earliest convenience".to_string());
+            let status = if reminder.rejection_reason.as_deref().unwrap_or("").trim().is_empty() {
+                if reminder.is_overdue { "Overdue".to_string() } else { "Pending upload".to_string() }
+            } else { "Re-upload required".to_string() };
+            let person = if reminder.audience == "student" { format!("{}{}", email_templates::html_escape(&reminder.subject_name), reminder.classroom_name.as_deref().map(|classroom| format!(" · {}", email_templates::html_escape(classroom))).unwrap_or_default()) } else { email_templates::html_escape(&reminder.subject_name) };
+            let rejection = reminder.rejection_reason.as_deref().filter(|reason| !reason.trim().is_empty()).map(|reason| format!("<br/><span style=\"color:#b42318;\"><strong>Re-upload instruction:</strong> {}</span>", email_templates::html_escape(reason))).unwrap_or_default();
+            format!("<li style=\"margin:0 0 14px;\"><strong>{}</strong><br/><span style=\"color:#555;\">{} · Due {}</span><br/><span style=\"color:#1e4b83;\">{}</span>{}</li>", email_templates::html_escape(&reminder.document_name), person, due, status, rejection)
+        }).collect::<Vec<_>>().join("");
+        format!("<ul style=\"padding-left:20px;margin:18px 0;\">{}</ul>", rows)
     }
 
     fn render_bulk_reminder_children(children: &BTreeMap<String, ChildReminderGroup>) -> String {

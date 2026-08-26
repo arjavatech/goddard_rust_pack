@@ -97,6 +97,12 @@ use controllers::{
     expense_controller::{
         list_expenses, create_expense,
     },
+    document_request_controller::{
+        create_document_request, publish_document_request, list_document_requests, document_recipients,
+        list_document_assignments, send_document_reminders, document_review_queue, my_document_assignments,
+        document_upload_intent, complete_document_upload, review_document_assignment,
+        document_file_url, document_assignment_history,
+    },
 };
 use middleware::{request_id::request_id_middleware, cors::add_cors_headers};
 use config::database::{initialize_database, get_db_pool};
@@ -104,10 +110,12 @@ use dao::{
     AuthDao, SchoolDao, ClassroomDao, FormTemplateDao, ClassFormOverrideDao, EnrollmentDao, FormSubmissionDao, StudentFormAssignmentDao, PortalDao, AdminDao, NotificationDao, DeviceTokenDao,
     EmployeeDao, EmployeeFormTemplateDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
     RequestDao,
+    DocumentRequestDao,
 };
 use services::{
     AuthService, SupabaseClient, SchoolService, ClassroomService, FormTemplateService, ClassFormOverrideService, EnrollmentService, FormSubmissionService, StudentFormAssignmentService, PortalService, FilloutService, AdminService, EmailService, NotificationService, FcmService, ConnectionRegistry,
     EmployeeService, RequestService, UploadService,
+    DocumentRequestService,
 };
 use middleware::auth::{api_key_middleware, jwt_or_api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_superadmin_only};
 use std::sync::Arc;
@@ -178,6 +186,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let employee_form_assignment_dao = EmployeeFormAssignmentDao::new(pool.clone());
     let employee_form_submission_dao = EmployeeFormSubmissionDao::new(pool.clone());
     let request_dao = RequestDao::new(pool.clone());
+    let document_request_dao = DocumentRequestDao::new(pool.clone());
 
     // Initialize FCM service. Live when all three env vars are present; otherwise a
     // no-op stub that lets local dev / staging boot without Firebase configured.
@@ -238,6 +247,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let admin_service = Arc::new(AdminService::new(admin_dao));
     let upload_service = Arc::new(UploadService::new().await);
     let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone()));
+    let document_request_service = Arc::new(DocumentRequestService::new(document_request_dao, upload_service.clone(), notification_service.clone(), email_service.clone()));
 
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
@@ -384,6 +394,22 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/student-form-assignments/assign-to-class", post(assign_form_to_class_students).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/enrollments/:enrollment_id/forms/download-zip", get(download_enrollment_forms_zip).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
         .with_state(student_form_assignment_service)
+
+        // Document Requests: secure parent/employee upload and admin review workflow.
+        .route("/document-requests", post(create_document_request).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-requests", get(list_document_requests).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-request-recipients", get(document_recipients).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-requests/:id/publish", post(publish_document_request).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-assignments", get(list_document_assignments).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-assignments/reminders", post(send_document_reminders).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-assignments/review-queue", get(document_review_queue).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/my-document-assignments", get(my_document_assignments).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/document-assignments/:id/upload-intent", post(document_upload_intent).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/document-assignments/:id/complete-upload", post(complete_document_upload).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/document-assignments/:id/review", post(review_document_assignment).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/document-assignments/:id/history", get(document_assignment_history).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .route("/document-submissions/:id/file", get(document_file_url).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))
+        .with_state(document_request_service)
 
         // Section 10 Portal APIs (JWT or API Key with parent isolation for JWT)
         .route("/parents/:parent_id/children", get(get_parent_children).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)))

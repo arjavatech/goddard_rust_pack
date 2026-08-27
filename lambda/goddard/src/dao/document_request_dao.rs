@@ -92,7 +92,23 @@ impl DocumentRequestDao {
 
     pub async fn recipients(&self, school_id: Uuid, audience: &str) -> ApiResult<Vec<DocumentRecipient>> {
         let client=self.pool.get().await.map_err(|e|AppError::Database(e.to_string()))?;
-        let rows=if audience=="student" { client.query("SELECT c.id, c.first_name || ' ' || c.last_name, p.email, cl.name FROM children c LEFT JOIN users p ON p.id=c.parent_id LEFT JOIN enrollments e ON e.child_id=c.id LEFT JOIN classrooms cl ON cl.id=e.classroom_id WHERE c.school_id=$1 AND COALESCE(c.is_active,true)=true ORDER BY c.first_name,c.last_name", &[&school_id]).await } else { client.query("SELECT e.id, u.first_name || ' ' || u.last_name, u.email, NULL::text FROM employees e JOIN users u ON u.id=e.user_id WHERE e.school_id=$1 AND COALESCE(e.is_active,true)=true ORDER BY u.first_name,u.last_name", &[&school_id]).await }.map_err(|e|AppError::Database(e.to_string()))?;
+        let rows=if audience=="student" {
+            client.query(
+                "SELECT c.id, c.first_name || ' ' || c.last_name, p.email, cl.name
+                 FROM enrollments e
+                 JOIN children c ON c.id=e.child_id
+                 JOIN users p ON p.id=c.parent_id
+                 LEFT JOIN classrooms cl ON cl.id=e.classroom_id
+                 WHERE e.school_id=$1
+                   AND COALESCE(e.is_active,true)=true
+                   AND COALESCE(c.is_active,true)=true
+                   AND COALESCE(p.is_active,true)=true
+                 ORDER BY c.first_name,c.last_name",
+                &[&school_id],
+            ).await
+        } else {
+            client.query("SELECT e.id, u.first_name || ' ' || u.last_name, u.email, NULL::text FROM employees e JOIN users u ON u.id=e.user_id WHERE e.school_id=$1 AND COALESCE(e.is_active,true)=true ORDER BY u.first_name,u.last_name", &[&school_id]).await
+        }.map_err(|e|AppError::Database(e.to_string()))?;
         Ok(rows.into_iter().map(|row|DocumentRecipient{id:row.get(0),name:row.get(1),email:row.get(2),classroom_name:row.get(3)}).collect())
     }
 

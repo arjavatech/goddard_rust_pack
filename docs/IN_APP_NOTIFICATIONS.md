@@ -7,7 +7,11 @@ and parent surfaces. Implementation lives in:
 - `lambda/goddard/src/dao/notification_dao.rs`
 - `lambda/goddard/src/services/notification_service.rs`
 - `lambda/goddard/src/controllers/notification_controller.rs`
+- `lambda/goddard/src/services/fcm_service.rs`
+- `lambda/goddard/src/dao/device_token_dao.rs`
+- `lambda/goddard/src/dao/notification_push_outbox_dao.rs`
 - `database/migrations/004_notifications.sql`
+- `database/migrations/019_notification_push_outbox.sql`
 
 Companion to `docs/EMAIL_NOTIFICATIONS.md`. Email + in-app are sibling channels fired off the
 same event hooks; either channel can fail without affecting the other or the originating API
@@ -34,12 +38,21 @@ call.
 
 ## Architecture
 
-- Pure HTTP — no WebSocket / SSE / Supabase Realtime today. Frontend polls
-  `/notifications/unread-count` every 30s; refetches the list on drawer open.
-- All inserts are dispatched via `tokio::spawn` (fire-and-forget) so the originating API
-  request never blocks on DB latency or downtime. Errors are logged but never propagated.
-- Tenant isolation: every read query is scoped to `auth.user_id` from the middleware-injected
-  `AuthContext`. One user can never see another user's notifications.
+- Notification rows remain the source of truth for the bell and drawer. Browser push never
+  replaces the stored in-app notification.
+- Web push is FCM-only. A registration belongs to a **user + browser/device token**, not to a
+  `users` column, so one account can use multiple browsers and tokens can rotate safely.
+- The Profile page asks for permission only after an explicit user action. FCM foreground
+  messages refresh the bell; the service worker is the sole background renderer.
+- Browser push is limited to action-required form and document events. Informational events
+  remain in the in-app bell only.
+- `notification_push_outbox` is written in the same transaction as an eligible notification.
+  The scheduled worker leases entries with `FOR UPDATE SKIP LOCKED`, sends through FCM, and
+  retries transient failures with exponential backoff. This avoids Lambda background tasks
+  being frozen after an API response.
+- REST refreshes on login, foreground FCM arrival, and when the user opens the bell drawer.
+  There is no polling and no WebSocket.
+- Every read and token deletion is scoped to the middleware-injected `auth.user_id`.
 
 ## Schema
 
@@ -116,12 +129,44 @@ Mark a single notification as read. Idempotent. Returns `204 No Content`.
 Mark every unread notification belonging to the current user as read. Returns
 `{ "updated": <n> }`.
 
+## Browser push registration
+
+### `POST /device-tokens`
+Registers this authenticated browser/device:
+```json
+{ "token": "fcm-registration-token", "platform": "web" }
+```
+
+### `DELETE /device-tokens`
+Removes the current user's browser/device registration:
+```json
+{ "token": "fcm-registration-token" }
+```
+
+The token is sent in the body rather than the URL so it is not exposed through browser history
+or access logs.
+
+## FCM delivery worker
+
+`database/migrations/019_notification_push_outbox.sql` adds the durable queue. The API Lambda
+never waits for a browser push: it commits the bell row and any eligible device-token deliveries
+in one transaction. `goddard-<stage>-notification-push-worker` runs once per minute through an
+EventBridge rule and processes up to 50 leased rows per invocation.
+
+- success → `sent` with `sent_at`;
+- invalid/unregistered token → deleted from `device_tokens`, delivery marked `failed`;
+- temporary FCM/network error → retried after 30s, 60s, 120s … up to one hour, with at most 8
+  attempts;
+- FCM configuration is read only from `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, and
+  `FCM_PRIVATE_KEY`, supplied to both Lambdas by `scripts/deploy-aws-dev.sh` /
+  `scripts/deploy-aws-prod.sh`.
+
 ## Trigger wiring
 
 In every existing service method below, immediately AFTER the DB mutation succeeds we call
 the relevant `notification_service.notify_user(...)` and / or
-`notification_service.notify_school_admins(...)`. These calls themselves spawn detached tasks
-so the API response is never delayed.
+`notification_service.notify_school_admins(...)`. The row is durable even if FCM cannot reach
+a device; provider failures are logged and do not fail the originating business operation.
 
 | File | Function | Calls |
 |---|---|---|
@@ -141,8 +186,9 @@ so the API response is never delayed.
 
 See the matching FE PR. Summary:
 
-- `useUnreadNotificationCount()` polls `/notifications/unread-count` every 30s; pauses when
-  the tab is hidden (`document.visibilityState`).
+- `NotificationsProvider` owns the REST list and FCM foreground handler. It does not open a
+  WebSocket, run a timer, or call `new Notification()` directly.
+- The service worker is the only background browser-notification renderer.
 - `<NotificationBell />` lives in three layouts: `Header.tsx` (parent), `AdminLayout.tsx`,
   `SuperAdminLayout.tsx`. Bell shows the badge (capped at "99+").
 - Click → opens `<NotificationDrawer />` (Radix Dialog as a right-side panel, 420px wide
@@ -167,13 +213,13 @@ See the matching FE PR. Summary:
    - Add an admin → other admins.
    - Create / delete classroom and form template → admins.
    - Submit a form via the Fillout webhook → admins.
-4. FE: bell badge increments within 30s, drawer opens correctly, filters work, mark-read
-   updates the badge immediately.
+4. Enable browser notifications from Profile. Verify a form/document action sends one FCM
+   browser notification in the background and refreshes the bell in the foreground.
+5. Sign out and verify the current device token is deregistered using `DELETE /device-tokens`.
 
 ## Out of scope (deferred)
 
 - Supabase Realtime channel (replaces polling).
 - Per-user notification preferences (mute / snooze).
-- Web Push / browser push.
 - Notification grouping ("5 forms assigned to Kavin").
 - Notification audit log (who-marked-what-when beyond `read_at`).

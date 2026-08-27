@@ -4,9 +4,7 @@ use tokio_postgres::Row;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::notification::{
-    CreateNotification, Notification, NotificationFilter,
-};
+use crate::models::notification::{CreateNotification, Notification, NotificationFilter};
 
 pub struct NotificationDao {
     pool: Pool,
@@ -22,14 +20,18 @@ impl NotificationDao {
         &self,
         user_id: Uuid,
         payload: &CreateNotification,
+        enqueue_push: bool,
     ) -> Result<Notification, AppError> {
-        let client = self
+        let mut client = self
             .pool
             .get()
             .await
             .map_err(|e| AppError::Database(format!("Failed to get db connection: {}", e)))?;
 
-        let row = client
+        let tx = client.transaction().await.map_err(|e| {
+            AppError::Database(format!("Failed to start notification transaction: {}", e))
+        })?;
+        let row = tx
             .query_one(
                 r#"
                 INSERT INTO notifications (
@@ -55,25 +57,39 @@ impl NotificationDao {
             .await
             .map_err(|e| AppError::Database(format!("Failed to insert notification: {}", e)))?;
 
-        Ok(Self::row_to_notification(&row))
+        let notification = Self::row_to_notification(&row);
+        if enqueue_push {
+            Self::enqueue_push_for_notification(&tx, &notification).await?;
+        }
+        tx.commit().await.map_err(|e| {
+            AppError::Database(format!("Failed to commit notification transaction: {}", e))
+        })?;
+        Ok(notification)
     }
 
     /// Fan out one notification per active admin / superadmin of the given school in a
-    /// single INSERT … SELECT round-trip. Returns the recipient user_ids so callers can
-    /// drive a follow-up FCM dispatch against the same set.
+    /// single INSERT … SELECT round-trip. Returns the durable notification rows so every
+    /// recipient's FCM payload can carry its own notification ID.
     pub async fn insert_many_for_school_admins(
         &self,
         school_id: Uuid,
         payload: &CreateNotification,
         exclude_user_id: Option<Uuid>,
-    ) -> Result<Vec<Uuid>, AppError> {
-        let client = self
+        enqueue_push: bool,
+    ) -> Result<Vec<Notification>, AppError> {
+        let mut client = self
             .pool
             .get()
             .await
             .map_err(|e| AppError::Database(format!("Failed to get db connection: {}", e)))?;
 
-        let rows = client
+        let tx = client.transaction().await.map_err(|e| {
+            AppError::Database(format!(
+                "Failed to start admin notification transaction: {}",
+                e
+            ))
+        })?;
+        let rows = tx
             .query(
                 r#"
                 INSERT INTO notifications (
@@ -86,7 +102,9 @@ impl NotificationDao {
                   AND u.role IN ('Admin', 'SuperAdmin')
                   AND COALESCE(u.is_active, true) = true
                   AND ($8::uuid IS NULL OR u.id <> $8)
-                RETURNING user_id
+                RETURNING id, user_id, school_id, notification_type, title, body,
+                          related_entity_id, related_entity_type, action_url,
+                          is_read, read_at, created_at
                 "#,
                 &[
                     &school_id,
@@ -104,7 +122,19 @@ impl NotificationDao {
                 AppError::Database(format!("Failed to fan out admin notifications: {}", e))
             })?;
 
-        Ok(rows.into_iter().map(|r| r.get::<_, Uuid>("user_id")).collect())
+        let notifications: Vec<Notification> = rows.iter().map(Self::row_to_notification).collect();
+        if enqueue_push {
+            for notification in &notifications {
+                Self::enqueue_push_for_notification(&tx, notification).await?;
+            }
+        }
+        tx.commit().await.map_err(|e| {
+            AppError::Database(format!(
+                "Failed to commit admin notification transaction: {}",
+                e
+            ))
+        })?;
+        Ok(notifications)
     }
 
     /// Page through a user's notifications. Returns items + total + unread_count in two
@@ -190,11 +220,7 @@ impl NotificationDao {
 
     /// Mark a single notification as read. Scoped by user_id to prevent cross-user access.
     /// Returns true if a row was updated, false if no matching unread notification existed.
-    pub async fn mark_read(
-        &self,
-        notification_id: Uuid,
-        user_id: Uuid,
-    ) -> Result<bool, AppError> {
+    pub async fn mark_read(&self, notification_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
         let client = self
             .pool
             .get()
@@ -244,5 +270,24 @@ impl NotificationDao {
             read_at: row.get::<_, Option<DateTime<Utc>>>("read_at"),
             created_at: row.get::<_, DateTime<Utc>>("created_at"),
         }
+    }
+
+    async fn enqueue_push_for_notification(
+        tx: &tokio_postgres::Transaction<'_>,
+        notification: &Notification,
+    ) -> Result<(), AppError> {
+        tx.execute(
+            r#"
+            INSERT INTO notification_push_outbox (notification_id, user_id, device_token)
+            SELECT $1, $2, token
+            FROM device_tokens
+            WHERE user_id = $2
+            ON CONFLICT (notification_id, device_token) DO NOTHING
+            "#,
+            &[&notification.id, &notification.user_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(format!("Failed to enqueue notification push: {}", e)))?;
+        Ok(())
     }
 }

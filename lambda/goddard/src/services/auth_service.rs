@@ -339,7 +339,7 @@ impl AuthService {
                 ),
                 related_entity_id: parsed_id,
                 related_entity_type: Some("user".to_string()),
-                action_url: None,
+                action_url: Some("/admin/admin-management".to_string()),
             },
             parsed_id,
         ).await;
@@ -752,7 +752,7 @@ impl AuthService {
                     ),
                     related_entity_id: Some(d.id),
                     related_entity_type: Some("user".to_string()),
-                    action_url: None,
+                    action_url: Some("/admin/admin-management".to_string()),
                 },
                 Some(user_uuid),
             ).await;

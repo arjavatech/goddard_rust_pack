@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -7,9 +7,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
-    dao::DeviceTokenDao,
-    error::AppError,
-    middleware::auth::AuthContext,
+    dao::DeviceTokenDao, error::AppError, middleware::auth::AuthContext, utils::ResponseUtils,
 };
 
 #[derive(Deserialize)]
@@ -17,6 +15,11 @@ pub struct RegisterDeviceTokenRequest {
     pub token: String,
     #[serde(default)]
     pub platform: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UnregisterDeviceTokenRequest {
+    pub token: String,
 }
 
 /// POST /device-tokens
@@ -53,13 +56,20 @@ pub async fn register_device_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// DELETE /device-tokens/:token
+/// DELETE /device-tokens
+///
+/// Tokens are bearer credentials and must not be included in a URL, where they
+/// can be retained in browser history, proxies, or access logs.
 pub async fn unregister_device_token(
     Extension(auth): Extension<AuthContext>,
     State(dao): State<Arc<DeviceTokenDao>>,
-    Path(token): Path<String>,
+    Json(body): Json<UnregisterDeviceTokenRequest>,
 ) -> Result<StatusCode, AppError> {
-    dao.delete_token_for_user(&token, auth.user_id).await?;
+    let token = body.token.trim();
+    if token.is_empty() {
+        return Err(AppError::Validation("token is required".to_string()));
+    }
+    dao.delete_token_for_user(token, auth.user_id).await?;
 
     println!(
         "[DeviceTokenController] deleted token (user={})",
@@ -67,4 +77,17 @@ pub async fn unregister_device_token(
     );
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET /device-tokens/status
+///
+/// Returns only registration metadata for the authenticated user. FCM tokens
+/// are never exposed to a browser after registration.
+pub async fn device_token_status(
+    Extension(auth): Extension<AuthContext>,
+    State(dao): State<Arc<DeviceTokenDao>>,
+) -> Result<impl axum::response::IntoResponse, AppError> {
+    Ok(ResponseUtils::success(
+        dao.status_for_user(auth.user_id).await?,
+    ))
 }

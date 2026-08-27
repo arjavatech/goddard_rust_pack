@@ -216,7 +216,7 @@ impl FormSubmissionService {
                     body: admin_body,
                     related_entity_id: Some(student_form_assignment_id),
                     related_entity_type: Some("form_assignment".to_string()),
-                    action_url: None,
+                    action_url: Some("/admin/forms/review".to_string()),
                 },
                 None,
             ).await;

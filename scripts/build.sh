@@ -14,7 +14,7 @@ fi
 
 # Build the Lambda function
 echo "🔨 Building Lambda function for ARM64..."
-cargo lambda build --release --arm64
+cargo lambda build --release --arm64 --bins
 
 echo "✅ Rust Lambda build complete!"
 

@@ -12,6 +12,7 @@ AWS_PROFILE="arjava"
 AWS_REGION="us-west-1"
 STACK_NAME="GoddardDevStack"
 LAMBDA_FUNCTION_NAME="goddard-dev"
+NOTIFICATION_WORKER_FUNCTION_NAME="goddard-dev-notification-push-worker"
 ENV_FILE=".env.dev"
 
 echo -e "${BLUE}🚀 Deploying Goddard Dev to AWS Lambda${NC}"
@@ -43,6 +44,13 @@ cd ..
 # Set env vars
 echo -e "${BLUE}⚙️  Pushing environment variables...${NC}"
 LAMBDA_FUNCTION_NAME=$LAMBDA_FUNCTION_NAME \
+    ENV_FILE=$ENV_FILE \
+    AWS_PROFILE=$AWS_PROFILE \
+    AWS_REGION=$AWS_REGION \
+    ./scripts/set-lambda-env.sh
+
+LAMBDA_FUNCTION_NAME=$NOTIFICATION_WORKER_FUNCTION_NAME \
+    ENV_SCOPE=notification_worker \
     ENV_FILE=$ENV_FILE \
     AWS_PROFILE=$AWS_PROFILE \
     AWS_REGION=$AWS_REGION \

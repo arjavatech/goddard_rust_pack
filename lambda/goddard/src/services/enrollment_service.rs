@@ -367,7 +367,7 @@ impl EnrollmentService {
                 ),
                 related_entity_id: Some(response.parent_id),
                 related_entity_type: Some("parent".to_string()),
-                action_url: None,
+                action_url: Some("/admin/parents".to_string()),
             },
             None,
         ).await;
@@ -739,7 +739,7 @@ impl EnrollmentService {
                 ),
                 related_entity_id: Some(response.details.child.id),
                 related_entity_type: Some("child".to_string()),
-                action_url: None,
+                action_url: Some("/admin/students".to_string()),
             },
             None,
         ).await;
@@ -978,7 +978,7 @@ impl EnrollmentService {
                     ),
                     related_entity_id: Some(user.id),
                     related_entity_type: Some("parent".to_string()),
-                    action_url: None,
+                    action_url: Some("/dashboard".to_string()),
                 },
             ).await;
             self.notification_service.notify_school_admins(
@@ -995,7 +995,7 @@ impl EnrollmentService {
                     ),
                     related_entity_id: Some(user.id),
                     related_entity_type: Some("parent".to_string()),
-                    action_url: None,
+                    action_url: Some("/admin/parents".to_string()),
                 },
                 None,
             ).await;
@@ -1071,7 +1071,7 @@ impl EnrollmentService {
                             body: parent_body.clone(),
                             related_entity_id: Some(child_id),
                             related_entity_type: Some("child".to_string()),
-                            action_url: None,
+                            action_url: Some("/dashboard".to_string()),
                         },
                     ).await;
                     if let Some(secondary_id) = ctx.secondary_parent_id {
@@ -1084,7 +1084,7 @@ impl EnrollmentService {
                                 body: parent_body,
                                 related_entity_id: Some(child_id),
                                 related_entity_type: Some("child".to_string()),
-                                action_url: None,
+                                action_url: Some("/dashboard".to_string()),
                             },
                         ).await;
                     }
@@ -1099,7 +1099,7 @@ impl EnrollmentService {
                             ),
                             related_entity_id: Some(child_id),
                             related_entity_type: Some("child".to_string()),
-                            action_url: None,
+                            action_url: Some("/admin/students".to_string()),
                         },
                         None,
                     ).await;

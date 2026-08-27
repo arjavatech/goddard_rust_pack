@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use deadpool_postgres::Pool;
 use uuid::Uuid;
 
@@ -5,6 +6,13 @@ use crate::error::AppError;
 
 pub struct DeviceTokenDao {
     pool: Pool,
+}
+
+#[derive(serde::Serialize)]
+pub struct DeviceTokenStatus {
+    pub registered_devices: i64,
+    pub web_devices: i64,
+    pub last_seen_at: Option<DateTime<Utc>>,
 }
 
 impl DeviceTokenDao {
@@ -60,37 +68,40 @@ impl DeviceTokenDao {
             .await
             .map_err(|e| AppError::Database(format!("Failed to load device tokens: {}", e)))?;
 
-        Ok(rows.into_iter().map(|r| r.get::<_, String>("token")).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| r.get::<_, String>("token"))
+            .collect())
     }
 
-    /// Batched fetch used by admin fan-out — one query for N user_ids returning
-    /// (user_id, token) tuples.
-    pub async fn tokens_for_users(
-        &self,
-        user_ids: &[Uuid],
-    ) -> Result<Vec<(Uuid, String)>, AppError> {
-        if user_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
+    /// Safe registration diagnostics for the current user. Deliberately never
+    /// returns bearer-like FCM tokens.
+    pub async fn status_for_user(&self, user_id: Uuid) -> Result<DeviceTokenStatus, AppError> {
         let client = self
             .pool
             .get()
             .await
             .map_err(|e| AppError::Database(format!("Failed to get db connection: {}", e)))?;
-
-        let rows = client
-            .query(
-                "SELECT user_id, token FROM device_tokens WHERE user_id = ANY($1)",
-                &[&user_ids],
+        let row = client
+            .query_one(
+                r#"
+            SELECT COUNT(*)::BIGINT AS registered_devices,
+                   COUNT(*) FILTER (WHERE platform = 'web')::BIGINT AS web_devices,
+                   MAX(last_seen_at) AS last_seen_at
+            FROM device_tokens
+            WHERE user_id = $1
+            "#,
+                &[&user_id],
             )
             .await
-            .map_err(|e| AppError::Database(format!("Failed to load device tokens: {}", e)))?;
-
-        Ok(rows
-            .into_iter()
-            .map(|r| (r.get::<_, Uuid>("user_id"), r.get::<_, String>("token")))
-            .collect())
+            .map_err(|e| {
+                AppError::Database(format!("Failed to load device token status: {}", e))
+            })?;
+        Ok(DeviceTokenStatus {
+            registered_devices: row.get("registered_devices"),
+            web_devices: row.get("web_devices"),
+            last_seen_at: row.get("last_seen_at"),
+        })
     }
 
     /// Unconditional delete — used when FCM returns UNREGISTERED for a token, since
@@ -112,11 +123,7 @@ impl DeviceTokenDao {
 
     /// User-scoped delete — used by the logout endpoint so a stolen JWT can't wipe
     /// someone else's tokens.
-    pub async fn delete_token_for_user(
-        &self,
-        token: &str,
-        user_id: Uuid,
-    ) -> Result<(), AppError> {
+    pub async fn delete_token_for_user(&self, token: &str, user_id: Uuid) -> Result<(), AppError> {
         let client = self
             .pool
             .get()

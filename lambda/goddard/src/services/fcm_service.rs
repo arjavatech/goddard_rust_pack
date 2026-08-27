@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -21,6 +20,13 @@ use crate::dao::DeviceTokenDao;
 /// instance — the lambda still runs locally without Firebase configured.
 pub struct FcmService {
     inner: FcmInner,
+}
+
+#[derive(Debug)]
+pub enum PushDeliveryResult {
+    Delivered,
+    RetryableFailure(String),
+    PermanentFailure(String),
 }
 
 enum FcmInner {
@@ -85,142 +91,65 @@ impl FcmService {
         matches!(self.inner, FcmInner::Live(_))
     }
 
-    /// Send to every token registered for `user_id`. Errors logged, never propagated.
-    pub async fn send_to_user(
+    /// Send one durable outbox record. The caller owns retry policy; this method
+    /// only classifies the FCM result and removes tokens that FCM has retired.
+    pub async fn send_to_token(
         &self,
-        user_id: Uuid,
+        token: &str,
         title: &str,
         body: &str,
         action_url: Option<&str>,
-        related_entity_id: Option<Uuid>,
+        notification_id: Uuid,
         notification_type: &str,
-    ) {
+    ) -> PushDeliveryResult {
         let live = match &self.inner {
             FcmInner::Live(l) => l.as_ref(),
-            FcmInner::Disabled => return,
-        };
-
-        let tokens = match live.device_token_dao.tokens_for_user(user_id).await {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("[FcmService] tokens_for_user({}) failed: {:?}", user_id, e);
-                return;
+            FcmInner::Disabled => {
+                return PushDeliveryResult::RetryableFailure("FCM is not configured".to_string())
             }
         };
-
-        if tokens.is_empty() {
-            return;
-        }
-
-        live.fan_out(tokens, title, body, action_url, related_entity_id, notification_type)
-            .await;
-    }
-
-    /// Send to every token registered for any of `user_ids`. Batched DB read +
-    /// concurrent HTTP fan-out.
-    pub async fn send_to_users(
-        &self,
-        user_ids: &[Uuid],
-        title: &str,
-        body: &str,
-        action_url: Option<&str>,
-        related_entity_id: Option<Uuid>,
-        notification_type: &str,
-    ) {
-        let live = match &self.inner {
-            FcmInner::Live(l) => l.as_ref(),
-            FcmInner::Disabled => return,
-        };
-
-        if user_ids.is_empty() {
-            return;
-        }
-
-        let pairs = match live.device_token_dao.tokens_for_users(user_ids).await {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("[FcmService] tokens_for_users failed: {:?}", e);
-                return;
-            }
-        };
-
-        if pairs.is_empty() {
-            return;
-        }
-
-        let tokens: Vec<String> = pairs.into_iter().map(|(_, t)| t).collect();
-        live.fan_out(tokens, title, body, action_url, related_entity_id, notification_type)
-            .await;
+        live.send_one(
+            token,
+            title,
+            body,
+            action_url,
+            notification_id,
+            notification_type,
+        )
+        .await
     }
 }
 
 impl LiveFcm {
-    async fn fan_out(
+    async fn send_one(
         &self,
-        tokens: Vec<String>,
+        token: &str,
         title: &str,
         body: &str,
         action_url: Option<&str>,
-        related_entity_id: Option<Uuid>,
+        notification_id: Uuid,
         notification_type: &str,
-    ) {
+    ) -> PushDeliveryResult {
         let access_token = match self.access_token().await {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("[FcmService] could not obtain access token: {}", e);
-                return;
+                return PushDeliveryResult::RetryableFailure(e);
             }
         };
-
-        let mut data = HashMap::new();
-        if let Some(id) = related_entity_id {
-            data.insert("notification_id".to_string(), id.to_string());
-        }
-        data.insert("type".to_string(), notification_type.to_string());
-        if let Some(url) = action_url {
-            data.insert("action_url".to_string(), url.to_string());
-        }
-
-        let mut ok = 0usize;
-        let total = tokens.len();
-        let mut handles = Vec::with_capacity(total);
-
-        for token in tokens {
-            let http = self.http.clone();
-            let access = access_token.clone();
-            let project_id = self.project_id.clone();
-            let dao = self.device_token_dao.clone();
-            let title = title.to_string();
-            let body = body.to_string();
-            let action_url_owned = action_url.map(|s| s.to_string());
-            let data = data.clone();
-
-            handles.push(tokio::spawn(async move {
-                send_one(
-                    &http,
-                    &access,
-                    &project_id,
-                    &dao,
-                    &token,
-                    &title,
-                    &body,
-                    action_url_owned.as_deref(),
-                    &data,
-                )
-                .await
-            }));
-        }
-
-        for h in handles {
-            if let Ok(true) = h.await {
-                ok += 1;
-            }
-        }
-
-        println!(
-            "[FcmService] sent {}/{} (type={})",
-            ok, total, notification_type
-        );
+        send_one(
+            &self.http,
+            &access_token,
+            &self.project_id,
+            &self.device_token_dao,
+            token,
+            title,
+            body,
+            action_url,
+            notification_id,
+            notification_type,
+        )
+        .await
     }
 
     async fn access_token(&self) -> Result<String, String> {
@@ -288,8 +217,9 @@ async fn send_one(
     title: &str,
     body: &str,
     action_url: Option<&str>,
-    data: &HashMap<String, String>,
-) -> bool {
+    notification_id: Uuid,
+    notification_type: &str,
+) -> PushDeliveryResult {
     let url = format!(
         "https://fcm.googleapis.com/v1/projects/{}/messages:send",
         project_id
@@ -300,13 +230,24 @@ async fn send_one(
     // background AND our service worker's onBackgroundMessage also calls
     // showNotification() — the user sees the same alert twice. With data-only,
     // the SW is the sole renderer and we get exactly one popup.
-    let mut data_with_text = data.clone();
-    data_with_text.insert("title".to_string(), title.to_string());
-    data_with_text.insert("body".to_string(), body.to_string());
+    let mut data_with_text = serde_json::Map::new();
+    data_with_text.insert(
+        "notification_id".to_string(),
+        json!(notification_id.to_string()),
+    );
+    data_with_text.insert("type".to_string(), json!(notification_type));
+    data_with_text.insert("title".to_string(), json!(title));
+    data_with_text.insert("body".to_string(), json!(body));
+    if let Some(action_url) = action_url {
+        data_with_text.insert("action_url".to_string(), json!(action_url));
+    }
 
     let mut webpush_fcm_options = serde_json::Map::new();
     if let Some(link) = action_url {
-        webpush_fcm_options.insert("link".to_string(), serde_json::Value::String(link.to_string()));
+        webpush_fcm_options.insert(
+            "link".to_string(),
+            serde_json::Value::String(link.to_string()),
+        );
     }
 
     let payload = json!({
@@ -328,14 +269,18 @@ async fn send_one(
     {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("[FcmService] HTTP send failed for token {}…: {}", short(token), e);
-            return false;
+            eprintln!(
+                "[FcmService] HTTP send failed for token {}…: {}",
+                short(token),
+                e
+            );
+            return PushDeliveryResult::RetryableFailure(e.to_string());
         }
     };
 
     let status = resp.status();
     if status.is_success() {
-        return true;
+        return PushDeliveryResult::Delivered;
     }
 
     let body_text = resp.text().await.unwrap_or_default();
@@ -356,6 +301,7 @@ async fn send_one(
         if let Err(e) = dao.delete_token(token).await {
             eprintln!("[FcmService] failed to delete dead token: {:?}", e);
         }
+        return PushDeliveryResult::PermanentFailure(format!("FCM rejected token: {}", status));
     } else {
         eprintln!(
             "[FcmService] send failed ({}): {}",
@@ -363,7 +309,11 @@ async fn send_one(
             body_text.chars().take(300).collect::<String>()
         );
     }
-    false
+    PushDeliveryResult::RetryableFailure(format!(
+        "FCM send failed ({}): {}",
+        status,
+        body_text.chars().take(300).collect::<String>()
+    ))
 }
 
 fn short(token: &str) -> String {

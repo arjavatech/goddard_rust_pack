@@ -61,7 +61,7 @@ impl ClassroomService {
                 body,
                 related_entity_id: Some(classroom.id),
                 related_entity_type: Some("classroom".to_string()),
-                action_url: None,
+                action_url: Some("/admin/classrooms".to_string()),
             },
             None,
         ).await;
@@ -111,7 +111,7 @@ impl ClassroomService {
                 body,
                 related_entity_id: Some(classroom_id),
                 related_entity_type: Some("classroom".to_string()),
-                action_url: None,
+                action_url: Some("/admin/classrooms".to_string()),
             },
             None,
         ).await;

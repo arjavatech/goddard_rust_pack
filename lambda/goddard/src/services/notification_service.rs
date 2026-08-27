@@ -1,28 +1,72 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::dao::NotificationDao;
+use crate::dao::{NotificationDao, SchoolDao};
 use crate::error::AppError;
 use crate::models::notification::{
     CreateNotification, NotificationFilter, NotificationListResponse,
 };
-use crate::services::{FcmService, ConnectionRegistry};
+use crate::services::NotificationPushTrigger;
 
-/// Wraps the NotificationDao and provides fire-and-forget helpers used by the rest of the
-/// service layer. See docs/IN_APP_NOTIFICATIONS.md.
+/// Wraps the NotificationDao and records notification work transactionally for the rest of the
+/// service layer. Eligible browser pushes are queued durably for the scheduled FCM worker.
 pub struct NotificationService {
     dao: Arc<NotificationDao>,
-    fcm: Arc<FcmService>,
-    registry: Arc<ConnectionRegistry>,
+    school_dao: SchoolDao,
+    push_trigger: Option<Arc<NotificationPushTrigger>>,
 }
 
 impl NotificationService {
-    pub fn new(dao: NotificationDao, fcm: Arc<FcmService>, registry: Arc<ConnectionRegistry>) -> Self {
+    pub fn new(
+        dao: NotificationDao,
+        school_dao: SchoolDao,
+        push_trigger: Option<NotificationPushTrigger>,
+    ) -> Self {
         Self {
             dao: Arc::new(dao),
-            fcm,
-            registry,
+            school_dao,
+            push_trigger: push_trigger.map(Arc::new),
         }
+    }
+
+    /// Notification routes must always include the school's public subdomain.
+    /// Producers intentionally supply application-relative paths (for example
+    /// `/admin/forms/review`); resolving them here keeps every delivery channel
+    /// (bell, FCM foreground, and service-worker click) on the same route.
+    async fn with_school_scoped_action(&self, mut payload: CreateNotification) -> CreateNotification {
+        let Some(action_url) = payload.action_url.clone() else {
+            return payload;
+        };
+
+        // Only scope internal, root-relative application routes. External URLs
+        // remain untouched should they be introduced in a future notification.
+        if !action_url.starts_with('/') || action_url.starts_with("//") {
+            return payload;
+        }
+
+        match self.school_dao.get_school_by_id(&payload.school_id).await {
+            Ok(Some(school)) if !school.subdomain.trim().is_empty() => {
+                let trimmed_path = action_url.trim_start_matches('/');
+                let slug = school.subdomain.trim();
+                if trimmed_path != slug && !trimmed_path.starts_with(&format!("{slug}/")) {
+                    payload.action_url = Some(format!("/{slug}/{trimmed_path}"));
+                }
+            }
+            Ok(Some(_)) => eprintln!(
+                "[NotificationService] school {} has no subdomain; leaving action URL unscoped",
+                payload.school_id
+            ),
+            Ok(None) => eprintln!(
+                "[NotificationService] school {} not found; leaving action URL unscoped",
+                payload.school_id
+            ),
+            Err(error) => eprintln!(
+                "[NotificationService] unable to resolve school route for {}: {:?}",
+                payload.school_id, error
+            ),
+        }
+
+        payload
     }
 
     // ---- Read APIs (used by controller) ----
@@ -34,8 +78,10 @@ impl NotificationService {
         limit: i64,
         offset: i64,
     ) -> Result<NotificationListResponse, AppError> {
-        let (items, total, unread_count) =
-            self.dao.list_for_user(user_id, filter, limit, offset).await?;
+        let (items, total, unread_count) = self
+            .dao
+            .list_for_user(user_id, filter, limit, offset)
+            .await?;
         Ok(NotificationListResponse {
             items,
             total,
@@ -47,16 +93,7 @@ impl NotificationService {
         self.dao.count_unread(user_id).await
     }
 
-    /// Public method for WebSocket handler to fetch unread count
-    pub async fn count_unread_ws(&self, user_id: Uuid) -> Result<i64, AppError> {
-        self.count_unread(user_id).await
-    }
-
-    pub async fn mark_read(
-        &self,
-        notification_id: Uuid,
-        user_id: Uuid,
-    ) -> Result<bool, AppError> {
+    pub async fn mark_read(&self, notification_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
         self.dao.mark_read(notification_id, user_id).await
     }
 
@@ -64,73 +101,57 @@ impl NotificationService {
         self.dao.mark_all_read(user_id).await
     }
 
-    // ---- Synchronous fire helpers (used by sibling services) ----
-    //
-    // The DB insert runs inline (single SQL round trip), so the notification row is
-    // guaranteed to exist before the API response is sent. The HTTP-bound FCM dispatch
-    // is detached via `tokio::spawn` after the DB write — Lambda-safe because the row
-    // is already durable by the time the API handler returns; the OS push is best-effort.
-    //
-    // Errors at either layer are logged but never propagated — the originating API call
-    // still succeeds.
+    // ---- Notification delivery helpers (used by sibling services) ----
+    // Notification rows remain the source of truth for the in-app bell. Browser push is
+    // deliberately limited to action-required events; informational events stay in-app.
+    fn should_send_push(notification_type: &str) -> bool {
+        matches!(
+            notification_type,
+            "form_assigned"
+                | "form_submitted"
+                | "form_approved"
+                | "form_rejected"
+                | "document_requested"
+                | "document_submitted"
+                | "document_approved"
+                | "document_rejected"
+        )
+    }
 
-    /// Broadcast a notification to a user via WebSocket if they're connected
-    async fn broadcast_to_websocket(&self, user_id: Uuid, notification: &crate::models::notification::Notification) {
-        let msg = serde_json::json!({
-            "id": notification.id,
-            "notification_type": notification.notification_type,
-            "title": notification.title,
-            "body": notification.body,
-            "is_read": notification.is_read,
-            "created_at": notification.created_at,
-            "related_entity_id": notification.related_entity_id,
-            "related_entity_type": notification.related_entity_type,
-            "action_url": notification.action_url,
-        });
-
-        let server_msg = crate::models::websocket_message::ServerMessage::new_notification(msg);
-        let json_msg = serde_json::to_string(&server_msg).unwrap_or_default();
-
-        let sent = self.registry.send_to_user(user_id, json_msg).await;
-        if sent {
-            println!(
-                "[NotificationService] Broadcast to WebSocket for user: {} (type={})",
-                user_id, notification.notification_type
-            );
+    /// Wake the outbox worker without adding an AWS invocation round-trip to
+    /// the request that generated the notification. The scheduled worker is
+    /// still the durable recovery path if this best-effort wake-up fails.
+    fn wake_push_worker(&self) {
+        if let Some(trigger) = self.push_trigger.clone() {
+            tokio::spawn(async move {
+                trigger.wake().await;
+            });
         }
     }
 
     pub async fn notify_user(&self, user_id: Uuid, payload: CreateNotification) {
-        match self.dao.insert_one(user_id, &payload).await {
+        let payload = self.with_school_scoped_action(payload).await;
+        let enqueue_push = Self::should_send_push(&payload.notification_type);
+        match self.dao.insert_one(user_id, &payload, enqueue_push).await {
             Ok(notification) => {
                 println!(
                     "[NotificationService] inserted notification (user={}, type={})",
                     user_id, payload.notification_type
                 );
 
-                // ✅ NEW: Broadcast immediately via WebSocket
-                self.broadcast_to_websocket(user_id, &notification).await;
-
-                let fcm = self.fcm.clone();
-                let title = payload.title.clone();
-                let body = payload.body.clone();
-                let action_url = payload.action_url.clone();
-                let related_id = payload.related_entity_id;
-                let ntype = payload.notification_type.clone();
-                tokio::spawn(async move {
-                    fcm.send_to_user(
-                        user_id,
-                        &title,
-                        &body,
-                        action_url.as_deref(),
-                        related_id,
-                        &ntype,
-                    )
-                    .await;
-                });
+                if enqueue_push {
+                    println!(
+                        "[NotificationService] queued push delivery (notification={})",
+                        notification.id
+                    );
+                    self.wake_push_worker();
+                }
             }
             Err(e) => {
-                eprintln!("[NotificationService] notify_user failed (non-fatal): {:?}", e);
+                eprintln!(
+                    "[NotificationService] notify_user failed (non-fatal): {:?}",
+                    e
+                );
             }
         }
     }
@@ -143,9 +164,16 @@ impl NotificationService {
         payload: CreateNotification,
         exclude_user_id: Option<Uuid>,
     ) {
+        let payload = self.with_school_scoped_action(payload).await;
+        let enqueue_push = Self::should_send_push(&payload.notification_type);
         match self
             .dao
-            .insert_many_for_school_admins(payload.school_id, &payload, exclude_user_id)
+            .insert_many_for_school_admins(
+                payload.school_id,
+                &payload,
+                exclude_user_id,
+                enqueue_push,
+            )
             .await
         {
             Ok(recipients) => {
@@ -160,34 +188,13 @@ impl NotificationService {
                     return;
                 }
 
-                // ✅ NEW: Broadcast to each admin's WebSocket
-                // Fetch the created notifications to broadcast
-                for recipient_id in &recipients {
-                    // For each recipient, we need to fetch their notification to broadcast
-                    if let Ok((notifications, _, _)) = self.dao.list_for_user(*recipient_id, NotificationFilter::All, 1, 0).await {
-                        if let Some(notif) = notifications.first() {
-                            self.broadcast_to_websocket(*recipient_id, notif).await;
-                        }
-                    }
+                if enqueue_push {
+                    println!(
+                        "[NotificationService] queued {} admin push deliveries",
+                        recipients.len()
+                    );
+                    self.wake_push_worker();
                 }
-
-                let fcm = self.fcm.clone();
-                let title = payload.title.clone();
-                let body = payload.body.clone();
-                let action_url = payload.action_url.clone();
-                let related_id = payload.related_entity_id;
-                let ntype = payload.notification_type.clone();
-                tokio::spawn(async move {
-                    fcm.send_to_users(
-                        &recipients,
-                        &title,
-                        &body,
-                        action_url.as_deref(),
-                        related_id,
-                        &ntype,
-                    )
-                    .await;
-                });
             }
             Err(e) => {
                 eprintln!(

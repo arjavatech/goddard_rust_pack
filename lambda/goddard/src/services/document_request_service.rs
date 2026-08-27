@@ -61,7 +61,7 @@ impl DocumentRequestService {
         if request_status != "active" || !data.storage_key.starts_with(&format!("private/schools/{}/document-assignments/{}/",school_id,assignment_id)) { return Err(AppError::Validation("Invalid document upload".into())); }
         self.uploads.verify_document_object(&data.storage_key,&data.content_type,data.file_size_bytes).await?;
         let item=self.dao.complete_upload(assignment_id,user,data).await?;
-        self.notifications.notify_school_admins(CreateNotification{school_id,notification_type:"document_submitted".into(),title:"Document ready for review".into(),body:format!("{} was submitted for {}.",item.subject_name,item.document_name),related_entity_id:Some(assignment_id),related_entity_type:Some("document_assignment".into()),action_url:Some("/admin/documents/review".into())}, None).await;
+        self.notifications.notify_school_admins(CreateNotification{school_id,notification_type:"document_submitted".into(),title:"Document ready for review".into(),body:format!("{} was submitted for {}.",item.subject_name,item.document_name),related_entity_id:Some(assignment_id),related_entity_type:Some("document_assignment".into()),action_url:Some(if item.audience=="student" {"/admin/documents/review".into()} else {"/admin/employee-documents/review".into()})}, None).await;
         Ok(item)
     }
     pub async fn review(&self,assignment_id:Uuid,actor:Uuid,data:&ReviewDocumentAssignmentRequest)->ApiResult<DocumentAssignmentItem>{

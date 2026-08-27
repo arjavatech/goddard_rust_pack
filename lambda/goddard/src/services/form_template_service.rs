@@ -83,7 +83,7 @@ impl FormTemplateService {
                 body,
                 related_entity_id: Some(template.id),
                 related_entity_type: Some("form_template".to_string()),
-                action_url: None,
+                action_url: Some("/admin/forms".to_string()),
             },
             None,
         ).await;
@@ -139,7 +139,7 @@ impl FormTemplateService {
                 body,
                 related_entity_id: Some(form_id),
                 related_entity_type: Some("form_template".to_string()),
-                action_url: None,
+                action_url: Some("/admin/forms".to_string()),
             },
             None,
         ).await;

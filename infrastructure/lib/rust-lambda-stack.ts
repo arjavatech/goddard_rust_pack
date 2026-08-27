@@ -6,6 +6,8 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
@@ -67,6 +69,36 @@ export class RustLambdaStack extends cdk.Stack {
 
     // Grant Lambda write access to the uploads bucket
     uploadsBucket.grantPut(rustLambda);
+
+    // A separate, scheduled worker drains the durable FCM outbox. It does not
+    // replace or expose the existing API Lambda, so mobile/API Gateway clients
+    // retain their current endpoint and behavior.
+    const notificationPushWorker = new lambda.Function(this, `Goddard${stageName}NotificationPushWorker`, {
+      functionName: `goddard-${stage}-notification-push-worker`,
+      runtime: lambda.Runtime.PROVIDED_AL2023,
+      architecture: lambda.Architecture.ARM_64,
+      handler: 'bootstrap',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/goddard/target/lambda/notification_push_worker'), {
+        exclude: ['**', '!bootstrap'],
+      }),
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(60),
+      environment: { RUST_LOG: 'info' },
+      logGroup: new logs.LogGroup(this, `Goddard${stageName}NotificationPushWorkerLogGroup`, {
+        logGroupName: `/aws/lambda/goddard-${stage}-notification-push-worker`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+      description: `Goddard ${stageName} - reliable FCM push outbox worker`,
+    });
+    // Wake the worker after a committed outbox insert; the schedule below is
+    // retained as the reliable retry/recovery path.
+    notificationPushWorker.grantInvoke(rustLambda);
+    new events.Rule(this, `Goddard${stageName}NotificationPushSchedule`, {
+      description: `Drains Goddard ${stageName} FCM outbox once per minute.`,
+      schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
+      targets: [new targets.LambdaFunction(notificationPushWorker)],
+    });
 
     // API Gateway
     const api = new apigateway.RestApi(this, `Goddard${stageName}Api`, {
@@ -138,6 +170,11 @@ export class RustLambdaStack extends cdk.Stack {
       value: rustLambda.functionArn,
       description: `${stageName} Lambda Function ARN`,
       exportName: `Goddard${stageName}LambdaFunctionArn`,
+    });
+
+    new cdk.CfnOutput(this, 'NotificationPushWorkerFunctionName', {
+      value: notificationPushWorker.functionName,
+      description: `${stageName} FCM outbox worker function name`,
     });
 
     new cdk.CfnOutput(this, 'UploadsBucketName', {

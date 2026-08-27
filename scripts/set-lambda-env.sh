@@ -22,6 +22,7 @@ echo -e "${BLUE}⚙️  Pushing Environment Variables to Lambda${NC}"
 echo -e "${BLUE}===========================================${NC}"
 echo -e "Lambda Function: ${YELLOW}${LAMBDA_FUNCTION_NAME}${NC}"
 echo -e "Env File:        ${YELLOW}${ENV_FILE}${NC}"
+echo -e "Environment scope: ${YELLOW}${ENV_SCOPE:-api}${NC}"
 echo -e "AWS Profile:     ${YELLOW}${AWS_PROFILE}${NC}"
 echo -e "AWS Region:      ${YELLOW}${AWS_REGION}${NC}"
 echo ""
@@ -46,7 +47,14 @@ RESERVED_VARS=("AWS_REGION" "AWS_DEFAULT_REGION" "AWS_PROFILE" "_AWS_XRAY_TRACE_
 # 4 KB. Keep local/Fly-only configuration in .env, but deploy only the variables
 # the Rust Lambda reads at runtime. The final occurrence of a duplicate key wins,
 # matching normal .env loading behaviour.
-LAMBDA_RUNTIME_KEYS="|API_BASE_URL|CORS_ORIGINS|DATABASE_URL|EMAIL_FROM|EMAIL_PROVIDER|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|ZEPTOMAIL_SEND_MAIL_TOKEN|FCM_PROJECT_ID|FCM_CLIENT_EMAIL|FCM_PRIVATE_KEY|FILLOUT_API_BASE_URL|FILLOUT_API_KEY|JWT_SECRET|LOG_LEVEL|OWNER_API_KEY|PARENT_DASHBOARD_URL|PORT|RUST_LOG|S3_UPLOAD_BUCKET|S3_BASE_URL|SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY|"
+API_RUNTIME_KEYS="|API_BASE_URL|CORS_ORIGINS|DATABASE_URL|EMAIL_FROM|EMAIL_PROVIDER|SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASS|ZEPTOMAIL_SEND_MAIL_TOKEN|FCM_PROJECT_ID|FCM_CLIENT_EMAIL|FCM_PRIVATE_KEY|FILLOUT_API_BASE_URL|FILLOUT_API_KEY|JWT_SECRET|LOG_LEVEL|OWNER_API_KEY|PARENT_DASHBOARD_URL|PORT|RUST_LOG|S3_UPLOAD_BUCKET|S3_BASE_URL|SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY|"
+WORKER_RUNTIME_KEYS="|DATABASE_URL|FCM_PROJECT_ID|FCM_CLIENT_EMAIL|FCM_PRIVATE_KEY|LOG_LEVEL|RUST_LOG|"
+ENV_SCOPE="${ENV_SCOPE:-api}"
+if [[ "$ENV_SCOPE" == "notification_worker" ]]; then
+    LAMBDA_RUNTIME_KEYS="$WORKER_RUNTIME_KEYS"
+else
+    LAMBDA_RUNTIME_KEYS="$API_RUNTIME_KEYS"
+fi
 
 runtime_env_lines() {
     awk -v allowed="$LAMBDA_RUNTIME_KEYS" '
@@ -147,6 +155,19 @@ if AWS_PROFILE="$AWS_PROFILE" AWS_DEFAULT_REGION="$AWS_REGION" aws lambda update
         --function-name "$LAMBDA_FUNCTION_NAME"
 
     echo -e "${GREEN}✅ Lambda function updated and ready!${NC}"
+
+    if [[ "$ENV_SCOPE" == "notification_worker" ]]; then
+        DEPLOYED_KEYS=$(AWS_PROFILE="$AWS_PROFILE" AWS_DEFAULT_REGION="$AWS_REGION" aws lambda get-function-configuration \
+            --profile "$AWS_PROFILE" --region "$AWS_REGION" --function-name "$LAMBDA_FUNCTION_NAME" \
+            --query 'Environment.Variables | keys(@)' --output text | tr '\t' '\n')
+        for required_key in DATABASE_URL FCM_PROJECT_ID FCM_CLIENT_EMAIL FCM_PRIVATE_KEY; do
+            if ! grep -qx "$required_key" <<< "$DEPLOYED_KEYS"; then
+                echo -e "${RED}❌ Worker environment verification failed: ${required_key} is missing${NC}"
+                exit 1
+            fi
+        done
+        echo -e "${GREEN}✅ Worker environment prerequisites verified${NC}"
+    fi
 else
     echo -e "${RED}❌ Failed to deploy environment variables!${NC}"
     rm -f /tmp/lambda_env_$$.json

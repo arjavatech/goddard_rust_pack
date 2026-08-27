@@ -128,4 +128,12 @@ impl UploadService {
             .map_err(|e| AppError::Internal(format!("Failed to create document access URL: {}", e)))?;
         Ok(request.uri().to_string())
     }
+
+    pub async fn delete_document_object(&self, key: &str) -> Result<(), AppError> {
+        let client = self.s3_client.as_ref().ok_or_else(|| AppError::Internal("S3 upload not configured".to_string()))?;
+        let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
+        client.delete_object().bucket(bucket).key(key).send().await
+            .map_err(|e| AppError::Internal(format!("Failed to remove S3 object: {}", e)))?;
+        Ok(())
+    }
 }

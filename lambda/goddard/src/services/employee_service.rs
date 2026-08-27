@@ -20,7 +20,8 @@ use crate::{
         ResendEmployeeInviteResponse,
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
-    services::{SupabaseClient, EmailService, supabase_client::UserMetadata},
+    models::document_request::{UploadIntentRequest, UploadIntentResponse, CompleteUploadRequest, FileAccessResponse},
+    services::{SupabaseClient, EmailService, UploadService, supabase_client::UserMetadata},
 };
 
 pub struct EmployeeService {
@@ -32,6 +33,7 @@ pub struct EmployeeService {
     school_dao: SchoolDao,
     supabase_client: SupabaseClient,
     email_service: Arc<EmailService>,
+    upload_service: Arc<UploadService>,
 }
 
 impl EmployeeService {
@@ -44,6 +46,7 @@ impl EmployeeService {
         school_dao: SchoolDao,
         supabase_client: SupabaseClient,
         email_service: Arc<EmailService>,
+        upload_service: Arc<UploadService>,
     ) -> Self {
         Self {
             employee_dao,
@@ -54,6 +57,7 @@ impl EmployeeService {
             school_dao,
             supabase_client,
             email_service,
+            upload_service,
         }
     }
 
@@ -325,7 +329,37 @@ impl EmployeeService {
     }
 
     pub async fn delete_form_template(&self, form_id: Uuid, school_id: Uuid) -> ApiResult<()> {
-        self.employee_form_template_dao.delete_template(form_id, school_id).await
+        let pdf_key = self.employee_form_template_dao.get_template_by_id(form_id, school_id).await?.and_then(|template| template.pdf_storage_key);
+        self.employee_form_template_dao.delete_template(form_id, school_id).await?;
+        if let Some(key) = pdf_key { if let Err(error) = self.upload_service.delete_document_object(&key).await { tracing::warn!("Unable to remove deleted employee template PDF: {}", error); } }
+        Ok(())
+    }
+
+    pub async fn employee_template_pdf_upload_intent(&self, id: Uuid, school_id: Uuid, data: &UploadIntentRequest) -> ApiResult<UploadIntentResponse> {
+        if data.content_type != "application/pdf" || data.file_size_bytes <= 0 || data.file_size_bytes > crate::services::upload_service::DOCUMENT_MAX_SIZE_BYTES { return Err(AppError::Validation("Upload a PDF template no larger than 10 MB".into())); }
+        self.employee_form_template_dao.get_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Employee form template not found".into()))?;
+        let key = format!("private/schools/{}/employee-form-templates/{}/{}.pdf", school_id, id, Uuid::new_v4());
+        Ok(UploadIntentResponse { storage_key: key.clone(), upload_url: self.upload_service.create_document_upload_url(&key, &data.content_type, data.file_size_bytes).await?, expires_in_seconds: 300 })
+    }
+
+    pub async fn complete_employee_template_pdf_upload(&self, id: Uuid, school_id: Uuid, data: &CompleteUploadRequest) -> ApiResult<EmployeeFormTemplate> {
+        if data.content_type != "application/pdf" || !data.storage_key.starts_with(&format!("private/schools/{}/employee-form-templates/{}/", school_id, id)) { return Err(AppError::Validation("Invalid employee form template PDF upload".into())); }
+        self.upload_service.verify_document_object(&data.storage_key, &data.content_type, data.file_size_bytes).await?;
+        let previous = self.employee_form_template_dao.get_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Employee form template not found".into()))?;
+        let updated = self.employee_form_template_dao.set_pdf(id, school_id, &data.storage_key, &data.file_name, &data.content_type, data.file_size_bytes).await?;
+        if let Some(old_key) = previous.pdf_storage_key.filter(|key| key != &data.storage_key) { if let Err(error) = self.upload_service.delete_document_object(&old_key).await { tracing::warn!("Unable to remove replaced employee template PDF: {}", error); } }
+        Ok(updated)
+    }
+
+    pub async fn employee_template_pdf_access_url(&self, id: Uuid, school_id: Uuid, download: bool) -> ApiResult<FileAccessResponse> {
+        let template = self.employee_form_template_dao.get_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Employee form template not found".into()))?;
+        let key = template.pdf_storage_key.ok_or_else(|| AppError::NotFound("No PDF template is attached".into()))?;
+        Ok(FileAccessResponse { url: self.upload_service.create_document_access_url(&key, download).await?, expires_in_seconds: 300 })
+    }
+
+    pub async fn remove_employee_template_pdf(&self, id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        if let Some(key) = self.employee_form_template_dao.clear_pdf(id, school_id).await? { self.upload_service.delete_document_object(&key).await?; }
+        Ok(())
     }
 
     // ─── Employee Form Assignments ──────────────────────────────────────────────

@@ -228,15 +228,24 @@ impl DocumentRequestDao {
         let tx=client.transaction().await.map_err(|e|AppError::Database(e.to_string()))?;
         let row=tx.query_one("SELECT school_id,status FROM document_request_assignments WHERE id=$1 FOR UPDATE", &[&assignment_id]).await.map_err(|e|AppError::Database(e.to_string()))?;
         let school_id:Uuid=row.get(0); let status:String=row.get(1);
-        if status!="pending" && status!="rejected" { return Err(AppError::Validation("This document is not currently available for upload".to_string())); }
+        if !matches!(status.as_str(), "pending" | "submitted" | "rejected") {
+            return Err(AppError::Validation(if status == "approved" { "Approved documents are locked and cannot be replaced".to_string() } else { "This document is not currently available for upload".to_string() }));
+        }
         let now:chrono::NaiveDateTime=tx.query_one("SELECT school_local_now($1)",&[&school_id]).await.map_err(|e|AppError::Database(e.to_string()))?.get(0);
         let version:i32=tx.query_one("SELECT COALESCE(MAX(version_number),0)+1 FROM document_submissions WHERE assignment_id=$1",&[&assignment_id]).await.map_err(|e|AppError::Database(e.to_string()))?.get(0);
         let submission=tx.query_one("INSERT INTO document_submissions (assignment_id,school_id,version_number,storage_key,original_file_name,content_type,file_size_bytes,checksum_sha256,uploaded_by,submitted_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING id", &[&assignment_id,&school_id,&version,&data.storage_key,&data.file_name,&data.content_type,&data.file_size_bytes,&data.checksum_sha256,&actor_id,&now]).await.map_err(|e|AppError::Database(e.to_string()))?;
         let submission_id:Uuid=submission.get(0);
         tx.execute("UPDATE document_request_assignments SET status='submitted',latest_submission_id=$2,submitted_at=$3,reviewed_at=NULL,reviewed_by=NULL,rejection_reason=NULL,updated_at=$3 WHERE id=$1", &[&assignment_id,&submission_id,&now]).await.map_err(|e|AppError::Database(e.to_string()))?;
-        tx.execute("INSERT INTO document_audit_events (school_id,document_request_id,assignment_id,submission_id,event_type,actor_id,created_at) SELECT school_id,document_request_id,id,$2,'uploaded',$3,$4 FROM document_request_assignments WHERE id=$1", &[&assignment_id,&submission_id,&actor_id,&now]).await.map_err(|e|AppError::Database(e.to_string()))?;
+        let event_type = match status.as_str() { "submitted" => "replaced", "rejected" => "reuploaded", _ => "uploaded" };
+        tx.execute("INSERT INTO document_audit_events (school_id,document_request_id,assignment_id,submission_id,event_type,actor_id,created_at) SELECT school_id,document_request_id,id,$2,$3,$4,$5 FROM document_request_assignments WHERE id=$1", &[&assignment_id,&submission_id,&event_type,&actor_id,&now]).await.map_err(|e|AppError::Database(e.to_string()))?;
         tx.commit().await.map_err(|e|AppError::Database(e.to_string()))?;
         self.assignment_by_id(assignment_id).await
+    }
+
+    pub async fn assignment_status(&self, assignment_id: Uuid) -> ApiResult<String> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        let row = client.query_opt("SELECT status FROM document_request_assignments WHERE id = $1", &[&assignment_id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+        row.map(|row| row.get(0)).ok_or_else(|| AppError::NotFound("Document assignment not found".into()))
     }
 
     pub async fn review(&self, assignment_id:Uuid, actor_id:Uuid, review:&ReviewDocumentAssignmentRequest) -> ApiResult<DocumentAssignmentItem> {

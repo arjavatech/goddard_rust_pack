@@ -3,16 +3,18 @@ use uuid::Uuid;
 
 use crate::dao::form_template_dao::FormTemplateDao;
 use crate::dao::school_dao::SchoolDao;
-use crate::error::error_types::AppError;
+use crate::error::{error_types::AppError, ApiResult};
 use crate::models::form_template::{FormTemplate, CreateFormTemplateRequest, UpdateFormTemplateRequest};
+use crate::models::document_request::{UploadIntentRequest, UploadIntentResponse, CompleteUploadRequest, FileAccessResponse};
 use crate::models::notification::{notification_type, CreateNotification};
-use crate::services::NotificationService;
+use crate::services::{NotificationService, UploadService};
 
 #[derive(Clone)]
 pub struct FormTemplateService {
     dao: FormTemplateDao,
     school_dao: SchoolDao,
     notification_service: Arc<NotificationService>,
+    upload_service: Arc<UploadService>,
 }
 
 impl FormTemplateService {
@@ -20,11 +22,13 @@ impl FormTemplateService {
         dao: FormTemplateDao,
         school_dao: SchoolDao,
         notification_service: Arc<NotificationService>,
+        upload_service: Arc<UploadService>,
     ) -> Self {
         Self {
             dao,
             school_dao,
             notification_service,
+            upload_service,
         }
     }
 
@@ -117,8 +121,10 @@ impl FormTemplateService {
             .await
             .ok()
             .flatten();
+        let pdf_key = self.dao.get_form_template_by_id(form_id, school_id).await?.and_then(|template| template.pdf_storage_key);
 
         self.dao.delete_form_template(&form_id, &school_id).await?;
+        if let Some(key) = pdf_key { if let Err(error) = self.upload_service.delete_document_object(&key).await { tracing::warn!("Unable to remove deleted form template PDF: {}", error); } }
 
         let body = match form_name {
             Some(name) if !name.is_empty() => format!("Form template \"{}\" has been deleted.", name),
@@ -138,6 +144,50 @@ impl FormTemplateService {
             None,
         ).await;
 
+        Ok(())
+    }
+
+    fn validate_template_pdf(data: &UploadIntentRequest) -> ApiResult<()> {
+        if data.content_type != "application/pdf" {
+            return Err(AppError::Validation("Form template uploads must be PDF files".into()));
+        }
+        if data.file_size_bytes <= 0 || data.file_size_bytes > crate::services::upload_service::DOCUMENT_MAX_SIZE_BYTES {
+            return Err(AppError::Validation("PDF template size must be between 1 byte and 10 MB".into()));
+        }
+        Ok(())
+    }
+
+    pub async fn pdf_upload_intent(&self, id: Uuid, school_id: Uuid, data: &UploadIntentRequest) -> ApiResult<UploadIntentResponse> {
+        Self::validate_template_pdf(data)?;
+        self.dao.get_form_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Form template not found".into()))?;
+        let key = format!("private/schools/{}/form-templates/{}/{}.pdf", school_id, id, Uuid::new_v4());
+        let upload_url = self.upload_service.create_document_upload_url(&key, &data.content_type, data.file_size_bytes).await?;
+        Ok(UploadIntentResponse { storage_key: key, upload_url, expires_in_seconds: 300 })
+    }
+
+    pub async fn complete_pdf_upload(&self, id: Uuid, school_id: Uuid, data: &CompleteUploadRequest) -> ApiResult<FormTemplate> {
+        if data.content_type != "application/pdf" || !data.storage_key.starts_with(&format!("private/schools/{}/form-templates/{}/", school_id, id)) {
+            return Err(AppError::Validation("Invalid form template PDF upload".into()));
+        }
+        self.upload_service.verify_document_object(&data.storage_key, &data.content_type, data.file_size_bytes).await?;
+        let previous = self.dao.get_form_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Form template not found".into()))?;
+        let updated = self.dao.set_pdf(id, school_id, &data.storage_key, &data.file_name, &data.content_type, data.file_size_bytes).await?;
+        if let Some(old_key) = previous.pdf_storage_key.filter(|key| key != &data.storage_key) {
+            if let Err(error) = self.upload_service.delete_document_object(&old_key).await { tracing::warn!("Unable to remove replaced form template PDF: {}", error); }
+        }
+        Ok(updated)
+    }
+
+    pub async fn pdf_access_url(&self, id: Uuid, school_id: Uuid, download: bool) -> ApiResult<FileAccessResponse> {
+        let template = self.dao.get_form_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Form template not found".into()))?;
+        let key = template.pdf_storage_key.ok_or_else(|| AppError::NotFound("No PDF template is attached".into()))?;
+        Ok(FileAccessResponse { url: self.upload_service.create_document_access_url(&key, download).await?, expires_in_seconds: 300 })
+    }
+
+    pub async fn remove_pdf(&self, id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        if let Some(key) = self.dao.clear_pdf(id, school_id).await? {
+            self.upload_service.delete_document_object(&key).await?;
+        }
         Ok(())
     }
 }

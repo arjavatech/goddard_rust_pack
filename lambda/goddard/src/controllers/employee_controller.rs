@@ -19,7 +19,9 @@ use crate::models::employee::{
     AssignEmployeeFormToSchoolRequest,
     ResendEmployeeInviteRequest,
     DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
+    EmployeeFormTemplate,
 };
+use crate::models::document_request::{UploadIntentRequest, UploadIntentResponse, CompleteUploadRequest, FileAccessResponse};
 use crate::models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery};
 use crate::services::employee_service::EmployeeService;
 use crate::middleware::auth::{AuthContext, check_permission_admin_or_superadmin};
@@ -29,6 +31,12 @@ use crate::middleware::auth::{AuthContext, check_permission_admin_or_superadmin}
 #[derive(Deserialize)]
 pub struct SchoolIdQuery {
     pub school_id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+pub struct TemplatePdfQuery {
+    pub school_id: Option<Uuid>,
+    pub download: Option<bool>,
 }
 
 // ─── Simple response shapes ──────────────────────────────────────────────────
@@ -209,6 +217,39 @@ pub async fn delete_employee_form_template(
 ) -> Result<impl IntoResponse, AppError> {
     svc.delete_form_template(params.form_id, params.school_id).await?;
     Ok((StatusCode::OK, Json(MessageResponse { message: "Employee form template deleted successfully".to_string() })))
+}
+
+pub async fn employee_template_pdf_upload_intent(
+    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>, Json(body): Json<UploadIntentRequest>,
+) -> Result<Json<UploadIntentResponse>, AppError> {
+    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth,&school_id)?;
+    Ok(Json(svc.employee_template_pdf_upload_intent(id,school_id,&body).await?))
+}
+
+pub async fn complete_employee_template_pdf_upload(
+    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>, Json(body): Json<CompleteUploadRequest>,
+) -> Result<Json<EmployeeFormTemplate>, AppError> {
+    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth,&school_id)?;
+    Ok(Json(svc.complete_employee_template_pdf_upload(id,school_id,&body).await?))
+}
+
+pub async fn employee_template_pdf_url(
+    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>,
+) -> Result<Json<FileAccessResponse>, AppError> {
+    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth,&school_id)?;
+    Ok(Json(svc.employee_template_pdf_access_url(id,school_id,query.download.unwrap_or(false)).await?))
+}
+
+pub async fn remove_employee_template_pdf(
+    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth,&school_id)?;
+    svc.remove_employee_template_pdf(id,school_id).await?;
+    Ok((StatusCode::OK,Json(MessageResponse{message:"PDF template removed".into()})))
 }
 
 // ─── Employee Form Assignment handlers ──────────────────────────────────────

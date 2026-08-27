@@ -41,7 +41,8 @@ use controllers::{
         create_classroom, get_classrooms_by_school, update_classroom, delete_classroom
     },
     form_template_controller::{
-        create_form_template, get_form_templates_by_school, update_form_template, delete_form_template
+        create_form_template, get_form_templates_by_school, update_form_template, delete_form_template,
+        form_template_pdf_upload_intent, complete_form_template_pdf_upload, form_template_pdf_url, remove_form_template_pdf,
     },
     class_form_override_controller::{
         create_class_form_override, delete_class_form_override
@@ -90,6 +91,7 @@ use controllers::{
         assign_employee_form, assign_employee_form_to_school, get_employee_form_assignments, get_employee_form_review_queue,
         review_employee_form_assignment, delete_employee_form_assignment,
         employee_form_submission_webhook, send_bulk_employee_form_reminders,
+        employee_template_pdf_upload_intent, complete_employee_template_pdf_upload, employee_template_pdf_url, remove_employee_template_pdf,
     },
     request_controller::{
         list_requests, create_request, update_request_status, update_expected_completion_date, update_request, pay_request, delete_request,
@@ -232,7 +234,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let auth_service = Arc::new(AuthService::new(auth_dao.clone(), school_dao.clone(), supabase_client.clone(), notification_service.clone()));
     let school_service = Arc::new(SchoolService::new(school_dao.clone(), supabase_client.clone(), auth_dao.clone()));
     let classroom_service = Arc::new(ClassroomService::new(classroom_dao, school_dao.clone(), notification_service.clone()));
-    let form_template_service = Arc::new(FormTemplateService::new(form_template_dao, school_dao.clone(), notification_service.clone()));
+    let upload_service = Arc::new(UploadService::new().await);
+    let form_template_service = Arc::new(FormTemplateService::new(form_template_dao, school_dao.clone(), notification_service.clone(), upload_service.clone()));
     let class_form_override_service = Arc::new(ClassFormOverrideService::new(class_form_override_dao));
     let enrollment_service = Arc::new(EnrollmentService::new(enrollment_dao, school_dao.clone(), supabase_client.clone(), email_service.clone(), notification_service.clone()));
     let form_submission_service = Arc::new(
@@ -245,7 +248,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let student_form_assignment_service = Arc::new(StudentFormAssignmentService::new(student_form_assignment_dao, email_service.clone(), notification_service.clone()));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
-    let upload_service = Arc::new(UploadService::new().await);
     let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone()));
     let document_request_service = Arc::new(DocumentRequestService::new(document_request_dao, upload_service.clone(), notification_service.clone(), email_service.clone()));
 
@@ -258,6 +260,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         school_dao.clone(),
         supabase_client.clone(),
         email_service.clone(),
+        upload_service.clone(),
     ));
 
     // Initialize tracing
@@ -320,6 +323,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/form-templates", get(get_form_templates_by_school).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/form-templates", put(update_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/form-templates", delete(delete_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/form-templates/:id/pdf/upload-intent", post(form_template_pdf_upload_intent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/form-templates/:id/pdf/complete-upload", post(complete_form_template_pdf_upload).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/form-templates/:id/pdf", get(form_template_pdf_url).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/form-templates/:id/pdf", delete(remove_form_template_pdf).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .with_state(form_template_service)
 
         // Class Form Overrides Management APIs (Admin JWT or API Key)
@@ -445,6 +452,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/employee-form-templates", get(get_employee_form_templates).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employee-form-templates", put(update_employee_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
         .route("/employee-form-templates", delete(delete_employee_form_template).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates/:id/pdf/upload-intent", post(employee_template_pdf_upload_intent).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates/:id/pdf/complete-upload", post(complete_employee_template_pdf_upload).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates/:id/pdf", get(employee_template_pdf_url).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
+        .route("/employee-form-templates/:id/pdf", delete(remove_employee_template_pdf).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))
 
         // Employee Form Assignments (Admin manages; Employee reads)
         .route("/employee-form-assignments", post(assign_employee_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)))

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -10,11 +10,20 @@ use uuid::Uuid;
 
 use crate::error::error_types::AppError;
 use crate::models::form_template::{CreateFormTemplateRequest, UpdateFormTemplateRequest, FormTemplateResponse, FormTemplateListResponse, DeleteFormTemplateParams};
+use crate::models::document_request::{UploadIntentRequest, UploadIntentResponse, CompleteUploadRequest, FileAccessResponse};
 use crate::services::form_template_service::FormTemplateService;
+use crate::middleware::auth::{AuthContext, check_permission_admin_or_superadmin};
+use axum::Extension;
 
 #[derive(Deserialize)]
 pub struct FormTemplateQueryParams {
     pub school_id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+pub struct FormTemplatePdfQueryParams {
+    pub school_id: Option<Uuid>,
+    pub download: Option<bool>,
 }
 
 #[derive(serde::Serialize)]
@@ -65,21 +74,56 @@ pub async fn update_form_template(
     Json(payload): Json<UpdateFormTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let form_template = form_template_service.update_form_template(payload).await?;
-    let response = FormTemplateResponse {
-        id: form_template.id,
-        school_id: form_template.school_id,
-        form_name: form_template.form_name,
-        form_type: form_template.form_type,
-        fillout_form_id: form_template.fillout_form_id,
-        due_date: form_template.due_date,
-        status: form_template.status,
-        is_required: form_template.is_required,
-        display_order: form_template.display_order,
-        created_at: form_template.created_at,
-        updated_at: form_template.updated_at,
-    };
+    let response = FormTemplateResponse::from(form_template);
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+pub async fn form_template_pdf_upload_intent(
+    State(service): State<Arc<FormTemplateService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<FormTemplatePdfQueryParams>,
+    Json(body): Json<UploadIntentRequest>,
+) -> Result<Json<UploadIntentResponse>, AppError> {
+    let school_id = query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(Json(service.pdf_upload_intent(id, school_id, &body).await?))
+}
+
+pub async fn complete_form_template_pdf_upload(
+    State(service): State<Arc<FormTemplateService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<FormTemplatePdfQueryParams>,
+    Json(body): Json<CompleteUploadRequest>,
+) -> Result<Json<FormTemplateResponse>, AppError> {
+    let school_id = query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(Json(FormTemplateResponse::from(service.complete_pdf_upload(id, school_id, &body).await?)))
+}
+
+pub async fn form_template_pdf_url(
+    State(service): State<Arc<FormTemplateService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<FormTemplatePdfQueryParams>,
+) -> Result<Json<FileAccessResponse>, AppError> {
+    let school_id = query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(Json(service.pdf_access_url(id, school_id, query.download.unwrap_or(false)).await?))
+}
+
+pub async fn remove_form_template_pdf(
+    State(service): State<Arc<FormTemplateService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<FormTemplatePdfQueryParams>,
+) -> Result<impl IntoResponse, AppError> {
+    let school_id = query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    service.remove_pdf(id, school_id).await?;
+    Ok((StatusCode::OK, Json(serde_json::json!({"message":"PDF template removed"}))))
 }
 
 pub async fn delete_form_template(

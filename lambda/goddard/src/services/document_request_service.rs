@@ -46,6 +46,10 @@ impl DocumentRequestService {
     pub async fn upload_intent(&self, assignment_id:Uuid, user:Uuid, admin:bool, data:&UploadIntentRequest)->ApiResult<UploadIntentResponse>{
         let (school_id,_,request_status)=self.dao.assignment_access(assignment_id,user,admin).await?;
         if request_status != "active" { return Err(AppError::Validation("This document request is closed".into())); }
+        let assignment_status = self.dao.assignment_status(assignment_id).await?;
+        if !matches!(assignment_status.as_str(), "pending" | "submitted" | "rejected") {
+            return Err(AppError::Validation(if assignment_status == "approved" { "Approved documents are locked and cannot be replaced".into() } else { "This document is not currently available for upload".into() }));
+        }
         if !crate::services::upload_service::DOCUMENT_ALLOWED_CONTENT_TYPES.contains(&data.content_type.as_str()) || data.file_size_bytes <= 0 || data.file_size_bytes > crate::services::upload_service::DOCUMENT_MAX_SIZE_BYTES { return Err(AppError::Validation("Upload a PDF, JPG/JPEG, or PNG no larger than 10 MB".into())); }
         let extension=match data.content_type.as_str(){"application/pdf"=>"pdf","image/jpeg"=>"jpg","image/png"=>"png",_=>"bin"};
         let key=format!("private/schools/{}/document-assignments/{}/{}.{}",school_id,assignment_id,Uuid::new_v4(),extension);

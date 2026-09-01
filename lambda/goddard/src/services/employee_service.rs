@@ -24,6 +24,7 @@ use crate::{
         UpdateEmployeeRequest,
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
+    models::school::SchoolFeature,
     services::{supabase_client::UserMetadata, EmailService, SupabaseClient, TapTimeMappingService, UploadService},
 };
 
@@ -41,6 +42,9 @@ pub struct EmployeeService {
 }
 
 impl EmployeeService {
+    async fn ensure_enabled(&self, school_id: Uuid) -> ApiResult<()> {
+        self.school_dao.ensure_feature_enabled(school_id, SchoolFeature::EmployeeManagement).await
+    }
     pub fn new(
         employee_dao: EmployeeDao,
         employee_form_template_dao: EmployeeFormTemplateDao,
@@ -83,6 +87,7 @@ impl EmployeeService {
         &self,
         req: EmployeeInviteRequest,
     ) -> ApiResult<EmployeeInviteResponse> {
+        self.ensure_enabled(req.school_id).await?;
         // Validate email basic format
         if req.email.trim().is_empty() || !req.email.contains('@') {
             return Err(AppError::Validation("Invalid email address".to_string()));
@@ -418,6 +423,7 @@ impl EmployeeService {
     }
 
     pub async fn get_employees(&self, school_id: Uuid) -> ApiResult<Vec<EmployeeWithUser>> {
+        self.ensure_enabled(school_id).await?;
         self.employee_dao.get_employees_by_school(school_id).await
     }
 
@@ -452,6 +458,7 @@ impl EmployeeService {
     }
 
     pub async fn deactivate_employee(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        self.ensure_enabled(school_id).await?;
         self.employee_dao
             .deactivate_employee(employee_id, school_id)
             .await?;
@@ -459,6 +466,7 @@ impl EmployeeService {
     }
 
     pub async fn activate_employee(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        self.ensure_enabled(school_id).await?;
         self.employee_dao
             .activate_employee(employee_id, school_id)
             .await?;
@@ -491,6 +499,7 @@ impl EmployeeService {
     }
 
     pub async fn delete_form_template(&self, form_id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        self.ensure_enabled(school_id).await?;
         let pdf_key = self
             .employee_form_template_dao
             .get_template_by_id(form_id, school_id)
@@ -611,6 +620,7 @@ impl EmployeeService {
     }
 
     pub async fn remove_employee_template_pdf(&self, id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        self.ensure_enabled(school_id).await?;
         if let Some(key) = self
             .employee_form_template_dao
             .clear_pdf(id, school_id)
@@ -735,6 +745,7 @@ impl EmployeeService {
         &self,
         school_id: Uuid,
     ) -> ApiResult<Vec<EmployeeFormAssignmentWithTemplate>> {
+        self.ensure_enabled(school_id).await?;
         self.employee_form_assignment_dao
             .get_assignments_by_school(school_id)
             .await
@@ -848,6 +859,7 @@ impl EmployeeService {
     }
 
     pub async fn delete_assignment(&self, assignment_id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        self.ensure_enabled(school_id).await?;
         self.employee_form_assignment_dao
             .delete_assignment(assignment_id, school_id)
             .await

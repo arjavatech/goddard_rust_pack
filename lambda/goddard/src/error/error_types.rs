@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("Authorization error: {0}")]
     Authorization(String),
 
+    #[error("Feature disabled: {0}")]
+    FeatureDisabled(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -41,7 +44,7 @@ impl AppError {
         match self {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Authentication(_) => StatusCode::UNAUTHORIZED,
-            AppError::Authorization(_) => StatusCode::FORBIDDEN,
+            AppError::Authorization(_) | AppError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Database(_) | AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -63,6 +66,7 @@ impl AppError {
             AppError::Validation(msg) => msg.clone(),
             AppError::Authentication(_) => "Authentication failed".to_string(),
             AppError::Authorization(_) => "Access denied".to_string(),
+            AppError::FeatureDisabled(msg) => msg.clone(),
             AppError::NotFound(resource) => format!("{} not found", resource),
             AppError::Conflict(msg) => msg.clone(),
             _ => "An internal error occurred".to_string(),
@@ -75,6 +79,7 @@ impl AppError {
             AppError::Validation(_) => "VALIDATION_ERROR".to_string(),
             AppError::Authentication(_) => "AUTH_ERROR".to_string(),
             AppError::Authorization(_) => "AUTHORIZATION_ERROR".to_string(),
+            AppError::FeatureDisabled(_) => "FEATURE_DISABLED".to_string(),
             AppError::NotFound(_) => "NOT_FOUND".to_string(),
             AppError::Conflict(_) => "CONFLICT".to_string(),
             AppError::ExternalService(_) => "EXTERNAL_SERVICE_ERROR".to_string(),

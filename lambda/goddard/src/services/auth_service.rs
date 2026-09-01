@@ -821,8 +821,8 @@ impl AuthService {
             None
         };
 
-        let school_data = match self.school_dao.get_school_by_id(&user.school_id).await {
-            Ok(Some(school)) => Some(SchoolResponse {
+        let school_data = match (self.school_dao.get_school_by_id(&user.school_id).await, self.school_dao.get_features(user.school_id).await) {
+            (Ok(Some(school)), Ok(features)) => Some(SchoolResponse {
                 id: school.id,
                 name: school.name,
                 subdomain: school.subdomain,
@@ -830,6 +830,10 @@ impl AuthService {
                 settings: school.settings,
                 request_categories: school.request_categories,
                 location: school.location,
+                parent_management_enabled: features.parent_management_enabled,
+                employee_management_enabled: features.employee_management_enabled,
+                expense_management_enabled: features.expense_management_enabled,
+                taptime_enabled: features.taptime_enabled,
                 created_at: school.created_at,
                 updated_at: school.updated_at,
             }),

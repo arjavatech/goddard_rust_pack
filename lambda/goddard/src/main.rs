@@ -274,7 +274,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     ));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
-    let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone()));
+    let request_service = Arc::new(RequestService::new(request_dao, upload_service.clone(), school_dao.clone()));
     let document_request_service = Arc::new(DocumentRequestService::new(
         document_request_dao,
         upload_service.clone(),

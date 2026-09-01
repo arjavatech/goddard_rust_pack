@@ -3,7 +3,7 @@ use tokio_postgres::Row;
 use uuid::Uuid;
 use crate::{
     error::{AppError, ApiResult},
-    models::school::{School, CreateSchoolRequest, UpdateSchoolRequest, RequestSettingOption, RequestSettingsOperation, SchoolRequestSettingsResponse},
+    models::school::{School, CreateSchoolRequest, UpdateSchoolRequest, RequestSettingOption, RequestSettingsOperation, SchoolRequestSettingsResponse, SchoolFeatures, SchoolFeature},
 };
 use std::time::Duration;
 
@@ -63,6 +63,29 @@ impl SchoolDao {
             is_active: row.get("is_active"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
+        }
+    }
+
+    pub async fn get_features(&self, school_id: Uuid) -> ApiResult<SchoolFeatures> {
+        let client = self.get_connection().await?;
+        client.query_opt(
+            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to load school features: {e}")))?
+            .map(|row| SchoolFeatures {
+                parent_management_enabled: row.get("parent_management_enabled"),
+                employee_management_enabled: row.get("employee_management_enabled"),
+                expense_management_enabled: row.get("expense_management_enabled"),
+                taptime_enabled: row.get("taptime_enabled"),
+            })
+            .ok_or_else(|| AppError::NotFound("School not found".into()))
+    }
+
+    pub async fn ensure_feature_enabled(&self, school_id: Uuid, feature: SchoolFeature) -> ApiResult<()> {
+        if feature.enabled(self.get_features(school_id).await?) {
+            Ok(())
+        } else {
+            Err(AppError::FeatureDisabled(format!("{} is not enabled for this school", feature.display_name())))
         }
     }
 

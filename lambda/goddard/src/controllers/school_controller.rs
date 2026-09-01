@@ -14,6 +14,7 @@ use crate::{
     error::AppError,
 };
 
+
 /// POST /schools
 /// Create a new school (API Key protected - SuperAdmin only)
 pub async fn create_school(

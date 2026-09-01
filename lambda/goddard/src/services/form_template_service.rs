@@ -7,6 +7,7 @@ use crate::error::{error_types::AppError, ApiResult};
 use crate::models::form_template::{FormTemplate, CreateFormTemplateRequest, UpdateFormTemplateRequest};
 use crate::models::document_request::{UploadIntentRequest, UploadIntentResponse, CompleteUploadRequest, FileAccessResponse};
 use crate::models::notification::{notification_type, CreateNotification};
+use crate::models::school::SchoolFeature;
 use crate::services::{NotificationService, UploadService};
 
 #[derive(Clone)]
@@ -18,6 +19,9 @@ pub struct FormTemplateService {
 }
 
 impl FormTemplateService {
+    async fn ensure_enabled(&self, school_id: Uuid) -> Result<(), AppError> {
+        self.school_dao.ensure_feature_enabled(school_id, SchoolFeature::ParentManagement).await
+    }
     pub fn new(
         dao: FormTemplateDao,
         school_dao: SchoolDao,
@@ -33,6 +37,7 @@ impl FormTemplateService {
     }
 
     pub async fn create_form_template(&self, request: CreateFormTemplateRequest) -> Result<FormTemplate, AppError> {
+        self.ensure_enabled(request.school_id).await?;
         if request.form_name.trim().is_empty() {
             return Err(AppError::Validation("Form name cannot be empty".to_string()));
         }
@@ -92,10 +97,12 @@ impl FormTemplateService {
     }
 
     pub async fn get_form_templates_by_school(&self, school_id: Uuid) -> Result<Vec<FormTemplate>, AppError> {
+        self.ensure_enabled(school_id).await?;
         self.dao.get_form_templates_by_school(&school_id).await
     }
 
     pub async fn update_form_template(&self, request: UpdateFormTemplateRequest) -> Result<FormTemplate, AppError> {
+        self.ensure_enabled(request.school_id).await?;
         if request.form_name.trim().is_empty() {
             return Err(AppError::Validation("Form name cannot be empty".to_string()));
         }
@@ -114,6 +121,7 @@ impl FormTemplateService {
     }
 
     pub async fn delete_form_template(&self, form_id: Uuid, school_id: Uuid) -> Result<(), AppError> {
+        self.ensure_enabled(school_id).await?;
         // Fetch the name BEFORE the delete so the notification body can show it.
         let form_name = self
             .dao

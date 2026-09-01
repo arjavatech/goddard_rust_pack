@@ -3,6 +3,7 @@ use crate::{
     error::{ApiResult, AppError},
     services::{SupabaseClient, TapTimeService},
 };
+use crate::models::school::SchoolFeature;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -89,6 +90,9 @@ pub struct TapTimeMappingService {
     schools: SchoolDao,
 }
 impl TapTimeMappingService {
+    async fn ensure_enabled(&self, school_id: Uuid) -> ApiResult<()> {
+        self.schools.ensure_feature_enabled(school_id, SchoolFeature::TapTime).await
+    }
     pub fn new(
         employees: EmployeeDao,
         auth: AuthDao,
@@ -107,6 +111,7 @@ impl TapTimeMappingService {
         }
     }
     pub async fn users(&self, school_id: Uuid) -> ApiResult<Vec<MappingUser>> {
+        self.ensure_enabled(school_id).await?;
         Ok(self.mappings.eligible_users(school_id).await?.into_iter().map(|user| {
             let mapped = user.taptime_employee_id.is_some();
             MappingUser {
@@ -130,6 +135,7 @@ impl TapTimeMappingService {
     /// Fast, local roster used by the attendance form. The external Goddard
     /// user ID remains the only identifier sent by the browser to TapTime.
     pub async fn attendance_users(&self, school_id: Uuid) -> ApiResult<Vec<AttendanceUser>> {
+        self.ensure_enabled(school_id).await?;
         Ok(self.mappings.eligible_users(school_id).await?.into_iter().filter_map(|user| {
             user.taptime_employee_id.map(|taptime_employee_id| AttendanceUser {
                 external_employee_id: user.user_id.to_string(),
@@ -145,6 +151,7 @@ impl TapTimeMappingService {
         &self,
         school_id: Uuid,
     ) -> ApiResult<Vec<serde_json::Value>> {
+        self.ensure_enabled(school_id).await?;
         let mut users = self.taptime.available_employees(school_id).await?;
         for user in &mut users {
             let emp_id = user
@@ -180,6 +187,7 @@ impl TapTimeMappingService {
     }
 
     pub async fn setup_status(&self, school_id: Uuid) -> ApiResult<TapTimeSetupStatus> {
+        self.ensure_enabled(school_id).await?;
         // A provisioning-only lookup is also a safe connection check: it can
         // return an empty employee list while still proving the tenant link.
         match self.taptime.available_employees(school_id).await {
@@ -217,6 +225,7 @@ impl TapTimeMappingService {
     }
 
     pub async fn redeem_pairing_code(&self, request: RedeemPairingCodeRequest) -> ApiResult<TapTimeSetupStatus> {
+        self.ensure_enabled(request.school_id).await?;
         if request.code.trim().is_empty() {
             return Err(AppError::Validation("A TapTime linking code is required".into()));
         }
@@ -238,6 +247,7 @@ impl TapTimeMappingService {
     /// Resolve only exact, company-scoped email matches.  This operation never
     /// creates TapTime records and never guesses when TapTime contains duplicates.
     pub async fn reconcile_email_matches(&self, school_id: Uuid) -> ApiResult<usize> {
+        self.ensure_enabled(school_id).await?;
         let taptime_users = self.taptime.available_employees(school_id).await?;
         let mut linked = 0;
         for user in self.mappings.eligible_users(school_id).await? {
@@ -266,6 +276,7 @@ impl TapTimeMappingService {
     /// operations must not fail just because TapTime is temporarily unavailable.
     /// It only links one exact email match and never creates a TapTime user.
     pub async fn reconcile_user_email(&self, school_id: Uuid, user_id: Uuid) -> ApiResult<bool> {
+        self.ensure_enabled(school_id).await?;
         if !self.setup_status(school_id).await?.configured {
             return Ok(false);
         }
@@ -341,12 +352,14 @@ impl TapTimeMappingService {
     }
 
     pub async fn settings(&self, school_id: Uuid) -> ApiResult<TapTimeSettingsResponse> {
+        self.ensure_enabled(school_id).await?;
         let default_report_type = self.schools.get_taptime_default_report_type(school_id).await?;
         let employment_types = self.taptime.employment_types(school_id).await?;
         Ok(TapTimeSettingsResponse { default_report_type, employment_types })
     }
 
     pub async fn update_settings(&self, school_id: Uuid, request: UpdateTapTimeSettingsRequest) -> ApiResult<TapTimeSettingsResponse> {
+        self.ensure_enabled(school_id).await?;
         let selected = request.default_report_type.trim();
         if selected.is_empty() { return Err(AppError::Validation("A default report type is required".into())); }
         let employment_types = self.taptime.employment_types(school_id).await?;

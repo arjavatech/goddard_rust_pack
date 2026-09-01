@@ -3,6 +3,43 @@ use chrono::{NaiveDateTime, DateTime, Utc};
 use uuid::Uuid;
 use serde_json::Value;
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SchoolFeatures {
+    pub parent_management_enabled: bool,
+    pub employee_management_enabled: bool,
+    pub expense_management_enabled: bool,
+    pub taptime_enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SchoolFeature {
+    ParentManagement,
+    EmployeeManagement,
+    ExpenseManagement,
+    TapTime,
+}
+
+impl SchoolFeature {
+    pub fn enabled(self, features: SchoolFeatures) -> bool {
+        match self {
+            Self::ParentManagement => features.parent_management_enabled,
+            Self::EmployeeManagement => features.employee_management_enabled,
+            Self::ExpenseManagement => features.expense_management_enabled,
+            Self::TapTime => features.taptime_enabled,
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::ParentManagement => "Parent Management",
+            Self::EmployeeManagement => "Employee Management",
+            Self::ExpenseManagement => "Expense Management",
+            Self::TapTime => "TapTime",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct School {
     pub id: Uuid,
@@ -43,6 +80,10 @@ pub struct SchoolResponse {
     pub settings: Option<Value>,
     pub request_categories: Option<Value>,
     pub location: Option<Value>,
+    pub parent_management_enabled: bool,
+    pub employee_management_enabled: bool,
+    pub expense_management_enabled: bool,
+    pub taptime_enabled: bool,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
@@ -71,6 +112,10 @@ impl From<School> for SchoolResponse {
             settings: school.settings,
             request_categories: school.request_categories,
             location: school.location,
+            parent_management_enabled: false,
+            employee_management_enabled: false,
+            expense_management_enabled: false,
+            taptime_enabled: false,
             created_at: school.created_at,
             updated_at: school.updated_at,
         }

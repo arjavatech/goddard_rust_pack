@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::dao::request_dao::RequestDao;
+use crate::dao::{request_dao::RequestDao, SchoolDao};
+use crate::models::school::SchoolFeature;
 use crate::middleware::auth::AuthContext;
 use crate::models::schema::UserRole;
 use crate::models::requests::{
@@ -15,11 +16,16 @@ use crate::error::error_types::AppError;
 pub struct RequestService {
     dao: RequestDao,
     upload_service: Arc<UploadService>,
+    schools: SchoolDao,
 }
 
 impl RequestService {
-    pub fn new(dao: RequestDao, upload_service: Arc<UploadService>) -> Self {
-        Self { dao, upload_service }
+    pub fn new(dao: RequestDao, upload_service: Arc<UploadService>, schools: SchoolDao) -> Self {
+        Self { dao, upload_service, schools }
+    }
+
+    async fn ensure_enabled(&self, school_id: Uuid) -> Result<(), AppError> {
+        self.schools.ensure_feature_enabled(school_id, SchoolFeature::ExpenseManagement).await
     }
 
     // ── Requests ──────────────────────────────────────────────────────────────
@@ -46,6 +52,11 @@ impl RequestService {
             }
         }
 
+        // A global SuperAdmin view is not associated with one school. Individual
+        // records are still filtered by the feature at their school in the UI;
+        // school-scoped requests are always checked here.
+        if let Some(school_id) = params.school_id { self.ensure_enabled(school_id).await?; }
+
         let (data, total, pending, in_progress, completed) = self.dao
             .list_requests(
                 params.school_id,
@@ -71,6 +82,7 @@ impl RequestService {
         auth: &AuthContext,
         mut body: CreateRequestBody,
     ) -> Result<Request, AppError> {
+        self.ensure_enabled(body.school_id).await?;
         match auth.role {
             UserRole::SuperAdmin => {}
             _ => {
@@ -126,6 +138,7 @@ impl RequestService {
 
         let req = self.dao.get_request_by_id(id).await?
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
+        self.ensure_enabled(req.school_id).await?;
 
         match auth.role {
             UserRole::SuperAdmin => {}
@@ -161,6 +174,7 @@ impl RequestService {
         body: UpdateExpectedCompletionDateBody,
     ) -> Result<Request, AppError> {
         let req = self.authorize_admin_request(auth, id).await?;
+        self.ensure_enabled(req.school_id).await?;
         if req.status != "In Progress" {
             return Err(AppError::Validation("Expected completion date can only be updated for an In Progress request".to_string()));
         }
@@ -174,6 +188,7 @@ impl RequestService {
         mut body: UpdateRequestBody,
     ) -> Result<Request, AppError> {
         let existing = self.authorize_request_editor(auth, id).await?;
+        self.ensure_enabled(existing.school_id).await?;
         if let Some(item) = &body.item {
             if item.trim().is_empty() {
                 return Err(AppError::Validation("Item name cannot be empty".to_string()));
@@ -208,8 +223,9 @@ impl RequestService {
     }
 
     pub async fn pay_request(&self, id: Uuid, mut body: PayRequestBody) -> Result<Request, AppError> {
-        self.dao.get_request_by_id(id).await?
+        let request = self.dao.get_request_by_id(id).await?
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
+        self.ensure_enabled(request.school_id).await?;
 
         if body.amount_spent <= 0.0 {
             return Err(AppError::Validation("Amount must be greater than 0".to_string()));
@@ -239,7 +255,8 @@ impl RequestService {
     }
 
     pub async fn delete_request(&self, auth: &AuthContext, id: Uuid) -> Result<(), AppError> {
-        self.authorize_request_editor(auth, id).await?;
+        let request = self.authorize_request_editor(auth, id).await?;
+        self.ensure_enabled(request.school_id).await?;
         self.dao.delete_request(id).await
     }
 
@@ -275,6 +292,8 @@ impl RequestService {
     // ── Expenses ──────────────────────────────────────────────────────────────
 
     pub async fn list_expenses(&self, params: ListExpensesParams) -> Result<ExpensesListResponse, AppError> {
+        let school_id = params.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+        self.ensure_enabled(school_id).await?;
         let page = params.page.unwrap_or(1).max(1);
         let limit = params.limit.unwrap_or(20).min(100);
         let include_summary = params.include.as_deref() == Some("summary");
@@ -293,6 +312,7 @@ impl RequestService {
     }
 
     pub async fn create_manual_expense(&self, body: CreateExpenseBody) -> Result<Request, AppError> {
+        self.ensure_enabled(body.school_id).await?;
         if body.item.trim().is_empty() {
             return Err(AppError::Validation("Item name cannot be empty".to_string()));
         }

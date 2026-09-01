@@ -1,6 +1,6 @@
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{NaiveDate, NaiveDateTime};
 
 // ─── Core DB structs ─────────────────────────────────────────────────────────
 
@@ -143,9 +143,15 @@ pub struct EmployeeInviteResponse {
     pub message: String,
 }
 #[derive(Debug, Deserialize)]
-pub struct ResendEmployeeInviteRequest { pub school_id: Uuid }
+pub struct ResendEmployeeInviteRequest {
+    pub school_id: Uuid,
+}
 #[derive(Debug, Serialize)]
-pub struct ResendEmployeeInviteResponse { pub employee_id: Uuid, pub email_sent: bool, pub message: String }
+pub struct ResendEmployeeInviteResponse {
+    pub employee_id: Uuid,
+    pub email_sent: bool,
+    pub message: String,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct BulkCreateEmployeesRequest {

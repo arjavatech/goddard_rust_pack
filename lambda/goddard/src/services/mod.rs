@@ -19,6 +19,8 @@ pub mod request_service;
 pub mod school_service;
 pub mod student_form_assignment_service;
 pub mod supabase_client;
+pub mod taptime_mapping_service;
+pub mod taptime_service;
 pub mod upload_service;
 
 pub use admin_service::AdminService;
@@ -40,4 +42,7 @@ pub use request_service::RequestService;
 pub use school_service::SchoolService;
 pub use student_form_assignment_service::StudentFormAssignmentService;
 pub use supabase_client::SupabaseClient;
+pub use taptime_mapping_service::CreateMappingRequest;
+pub use taptime_mapping_service::TapTimeMappingService;
+pub use taptime_service::TapTimeService;
 pub use upload_service::UploadService;

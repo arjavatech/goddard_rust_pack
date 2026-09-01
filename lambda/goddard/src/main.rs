@@ -90,12 +90,16 @@ use controllers::{
         get_student_form_review_queue, update_student_form_assignment,
     },
     student_form_assignment_review_controller::review_student_form_assignment,
+        taptime_mapping_controller::{
+            attendance_users, available_taptime_users, create_mapping, database_diagnostics, integration_status, mapping_users, reconcile_users,
+        redeem_pairing_code, setup_status, sync_access, taptime_settings, update_taptime_settings,
+    },
 };
 use dao::{
     AdminDao, AuthDao, ClassFormOverrideDao, ClassroomDao, DeviceTokenDao, DocumentRequestDao,
     EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao, EmployeeFormTemplateDao,
     EnrollmentDao, FormSubmissionDao, FormTemplateDao, NotificationDao, PortalDao, RequestDao,
-    SchoolDao, StudentFormAssignmentDao,
+    SchoolDao, StudentFormAssignmentDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
@@ -106,7 +110,8 @@ use services::{
     AdminService, AuthService, ClassFormOverrideService, ClassroomService, DocumentRequestService,
     EmailService, EmployeeService, EnrollmentService, FilloutService, FormSubmissionService,
     FormTemplateService, NotificationPushTrigger, NotificationService, PortalService,
-    RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient, UploadService,
+    RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient,
+    TapTimeMappingService, TapTimeService, UploadService,
 };
 use std::sync::Arc;
 
@@ -177,12 +182,23 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let employee_form_submission_dao = EmployeeFormSubmissionDao::new(pool.clone());
     let request_dao = RequestDao::new(pool.clone());
     let document_request_dao = DocumentRequestDao::new(pool.clone());
+    let taptime_mapping_dao = TapTimeMappingDao::new(pool.clone());
+    let taptime_service = TapTimeService::from_env()?;
 
     // Initialize email service first (SupabaseClient depends on it)
     let email_service = Arc::new(EmailService::new());
 
     // Initialize Supabase client
     let supabase_client = SupabaseClient::new(email_service.clone())?;
+
+    let taptime_mapping_service = Arc::new(TapTimeMappingService::new(
+        employee_dao.clone(),
+        auth_dao.clone(),
+        taptime_mapping_dao,
+        taptime_service.clone(),
+        supabase_client.clone(),
+        school_dao.clone(),
+    ));
 
     // Initialize Fillout service (optional - only if environment variables are present)
     let fillout_service = std::env::var("FILLOUT_API_KEY")
@@ -209,6 +225,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         school_dao.clone(),
         supabase_client.clone(),
         notification_service.clone(),
+        taptime_mapping_service.clone(),
     ));
     let school_service = Arc::new(SchoolService::new(
         school_dao.clone(),
@@ -275,6 +292,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         supabase_client.clone(),
         email_service.clone(),
         upload_service.clone(),
+        taptime_mapping_service.clone(),
     ));
 
     // Initialize tracing
@@ -287,8 +305,64 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .without_time()
         .init();
 
+    let taptime_mapping_router = Router::new()
+        .route(
+            "/taptime/settings",
+            get(taptime_settings).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only))
+                .patch(update_taptime_settings).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/setup-status",
+            get(setup_status).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/integration-status",
+            get(integration_status).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/setup/redeem-linking-code",
+            post(redeem_pairing_code).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/reconcile",
+            post(reconcile_users).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/sync-access",
+            post(sync_access).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/mapping-users",
+            get(mapping_users).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/taptime/users",
+            get(mapping_users).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/taptime/attendance-users",
+            get(attendance_users).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/taptime/available-users",
+            get(available_taptime_users)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        // TEMPORARY development diagnostic; protected exactly like mapping operations.
+        .route(
+            "/taptime/diagnostics/database",
+            get(database_diagnostics)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/taptime/user-mappings",
+            post(create_mapping).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .with_state(taptime_mapping_service);
+
     // Build the application router
     let app = Router::new()
+        .merge(taptime_mapping_router)
         // Health and Info Routes
         .route("/", get(hello_world))
         .route("/health", get(health_check))

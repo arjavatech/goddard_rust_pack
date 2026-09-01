@@ -189,7 +189,7 @@ impl AuthDao {
                    u.created_at
             FROM users u
             LEFT JOIN auth.users au ON au.email = u.email
-            WHERE u.school_id = $1 AND u.role = 'Admin' AND (u.is_active = true OR u.is_active IS NULL)
+            WHERE u.school_id = $1 AND u.role IN ('Admin', 'SuperAdmin') AND (u.is_active = true OR u.is_active IS NULL)
             ORDER BY u.first_name, u.last_name
         "#;
 

@@ -17,6 +17,7 @@ pub mod portal_dao;
 pub mod request_dao;
 pub mod school_dao;
 pub mod student_form_assignment_dao;
+pub mod taptime_mapping_dao;
 
 pub use admin_dao::AdminDao;
 pub use auth_dao::AuthDao;
@@ -37,3 +38,4 @@ pub use portal_dao::PortalDao;
 pub use request_dao::RequestDao;
 pub use school_dao::SchoolDao;
 pub use student_form_assignment_dao::StudentFormAssignmentDao;
+pub use taptime_mapping_dao::{TapTimeDatabaseDiagnostics, TapTimeMappingDao};

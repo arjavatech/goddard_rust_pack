@@ -198,6 +198,26 @@ impl SchoolDao {
         }).await
     }
 
+    pub async fn get_taptime_default_report_type(&self, school_id: Uuid) -> ApiResult<Option<String>> {
+        let client = self.get_connection().await?;
+        let row = client.query_opt(
+            "SELECT settings #>> '{taptime,default_report_type}' AS default_report_type FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to load TapTime school setting: {e}")))?
+            .ok_or_else(|| AppError::NotFound("School not found".into()))?;
+        Ok(row.get("default_report_type"))
+    }
+
+    pub async fn set_taptime_default_report_type(&self, school_id: Uuid, value: &str) -> ApiResult<()> {
+        let client = self.get_connection().await?;
+        let changed = client.execute(
+            "UPDATE schools SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{taptime,default_report_type}', to_jsonb($1::text), true), updated_at = NOW() WHERE id = $2 AND (is_active = true OR is_active IS NULL)",
+            &[&value, &school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to save TapTime school setting: {e}")))?;
+        if changed == 0 { return Err(AppError::NotFound("School not found".into())); }
+        Ok(())
+    }
+
     pub async fn update_school(&self, request: &UpdateSchoolRequest) -> ApiResult<School> {
         let client = self.get_connection().await?;
 

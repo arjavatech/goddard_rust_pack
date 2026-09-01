@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use axum::Extension;
 use axum::{
     extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -7,24 +9,22 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
-#[allow(unused_imports)]
-use axum::Extension;
 
 use crate::error::error_types::AppError;
-use crate::models::employee::{
-    EmployeeInviteRequest, UpdateEmployeeRequest, CreateEmployeeFormTemplateRequest,
-    UpdateEmployeeFormTemplateRequest, AssignEmployeeFormRequest, ReviewEmployeeFormRequest,
-    BulkEmployeeFormReminderRequest, EmployeeFormAssignmentQueryParams, EmployeeQueryParams,
-    BulkCreateEmployeesRequest, BulkEmployeeInput,
-    AssignEmployeeFormToSchoolRequest,
-    ResendEmployeeInviteRequest,
-    DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
-    EmployeeFormTemplate,
+use crate::middleware::auth::{check_permission_admin_or_superadmin, AuthContext};
+use crate::models::document_request::{
+    CompleteUploadRequest, FileAccessResponse, UploadIntentRequest, UploadIntentResponse,
 };
-use crate::models::document_request::{UploadIntentRequest, UploadIntentResponse, CompleteUploadRequest, FileAccessResponse};
+use crate::models::employee::{
+    AssignEmployeeFormRequest, AssignEmployeeFormToSchoolRequest, BulkCreateEmployeesRequest,
+    BulkEmployeeFormReminderRequest, BulkEmployeeInput, CreateEmployeeFormTemplateRequest,
+    DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
+    EmployeeFormAssignmentQueryParams, EmployeeFormTemplate, EmployeeInviteRequest,
+    EmployeeQueryParams, ResendEmployeeInviteRequest, ReviewEmployeeFormRequest,
+    UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
+};
 use crate::models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery};
 use crate::services::employee_service::EmployeeService;
-use crate::middleware::auth::{AuthContext, check_permission_admin_or_superadmin};
 
 // ─── Query params ─────────────────────────────────────────────────────────────
 
@@ -64,20 +64,30 @@ pub async fn bulk_create_employees(
     let mut school_id = None;
     let mut csv_bytes = None;
 
-    while let Some(field) = multipart.next_field().await
+    while let Some(field) = multipart
+        .next_field()
+        .await
         .map_err(|e| AppError::Validation(format!("Failed to read multipart field: {}", e)))?
     {
         match field.name() {
             Some("school_id") => {
-                let value = field.text().await
-                    .map_err(|e| AppError::Validation(format!("Failed to read school_id: {}", e)))?;
-                school_id = Some(Uuid::parse_str(value.trim())
-                    .map_err(|_| AppError::Validation("school_id must be a valid UUID".to_string()))?);
+                let value = field.text().await.map_err(|e| {
+                    AppError::Validation(format!("Failed to read school_id: {}", e))
+                })?;
+                school_id = Some(Uuid::parse_str(value.trim()).map_err(|_| {
+                    AppError::Validation("school_id must be a valid UUID".to_string())
+                })?);
             }
             Some("file") => {
-                csv_bytes = Some(field.bytes().await
-                    .map_err(|e| AppError::Validation(format!("Failed to read CSV file: {}", e)))?
-                    .to_vec());
+                csv_bytes = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            AppError::Validation(format!("Failed to read CSV file: {}", e))
+                        })?
+                        .to_vec(),
+                );
             }
             _ => {}
         }
@@ -99,21 +109,36 @@ pub async fn bulk_create_employees(
         })?);
     }
 
-    let payload = BulkCreateEmployeesRequest { school_id, employees };
+    let payload = BulkCreateEmployeesRequest {
+        school_id,
+        employees,
+    };
     check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
     let response = svc.bulk_create_employees(payload).await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
-pub async fn resend_employee_invite(State(svc): State<Arc<EmployeeService>>, Path(employee_id): Path<Uuid>, axum::Extension(auth): axum::Extension<AuthContext>, Json(payload): Json<ResendEmployeeInviteRequest>) -> Result<impl IntoResponse, AppError> {
+pub async fn resend_employee_invite(
+    State(svc): State<Arc<EmployeeService>>,
+    Path(employee_id): Path<Uuid>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Json(payload): Json<ResendEmployeeInviteRequest>,
+) -> Result<impl IntoResponse, AppError> {
     check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
-    Ok((StatusCode::OK, Json(svc.resend_employee_invite(employee_id, payload.school_id).await?)))
+    Ok((
+        StatusCode::OK,
+        Json(
+            svc.resend_employee_invite(employee_id, payload.school_id)
+                .await?,
+        ),
+    ))
 }
 
 pub async fn get_employees(
     State(svc): State<Arc<EmployeeService>>,
     Query(params): Query<EmployeeQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     let employees = svc.get_employees(school_id).await?;
     Ok((StatusCode::OK, Json(employees)))
@@ -124,7 +149,8 @@ pub async fn get_employee_by_id(
     Path(employee_id): Path<Uuid>,
     Query(params): Query<SchoolIdQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     let employee = svc.get_employee_by_id(employee_id, school_id).await?;
     Ok((StatusCode::OK, Json(employee)))
@@ -136,7 +162,8 @@ pub async fn update_employee(
     Query(params): Query<SchoolIdQuery>,
     Json(payload): Json<UpdateEmployeeRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     let employee = svc.update_employee(employee_id, school_id, payload).await?;
     Ok((StatusCode::OK, Json(employee)))
@@ -147,10 +174,16 @@ pub async fn deactivate_employee(
     Path(employee_id): Path<Uuid>,
     Query(params): Query<SchoolIdQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     svc.deactivate_employee(employee_id, school_id).await?;
-    Ok((StatusCode::OK, Json(MessageResponse { message: "Employee deactivated successfully".to_string() })))
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Employee deactivated successfully".to_string(),
+        }),
+    ))
 }
 
 pub async fn activate_employee(
@@ -158,10 +191,16 @@ pub async fn activate_employee(
     Path(employee_id): Path<Uuid>,
     Query(params): Query<SchoolIdQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     svc.activate_employee(employee_id, school_id).await?;
-    Ok((StatusCode::OK, Json(MessageResponse { message: "Employee activated successfully".to_string() })))
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Employee activated successfully".to_string(),
+        }),
+    ))
 }
 
 pub async fn get_current_employee(
@@ -169,7 +208,8 @@ pub async fn get_current_employee(
     axum::Extension(auth): axum::Extension<AuthContext>,
     Query(params): Query<SchoolIdQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     let employee = svc.get_current_employee(auth.user_id, school_id).await?;
     Ok((StatusCode::OK, Json(employee)))
@@ -197,7 +237,8 @@ pub async fn get_employee_form_templates(
     State(svc): State<Arc<EmployeeService>>,
     Query(params): Query<SchoolIdQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id = params.school_id
+    let school_id = params
+        .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
     let templates = svc.get_form_templates(school_id).await?;
     Ok((StatusCode::OK, Json(templates)))
@@ -215,41 +256,83 @@ pub async fn delete_employee_form_template(
     State(svc): State<Arc<EmployeeService>>,
     Query(params): Query<DeleteEmployeeFormTemplateParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    svc.delete_form_template(params.form_id, params.school_id).await?;
-    Ok((StatusCode::OK, Json(MessageResponse { message: "Employee form template deleted successfully".to_string() })))
+    svc.delete_form_template(params.form_id, params.school_id)
+        .await?;
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Employee form template deleted successfully".to_string(),
+        }),
+    ))
 }
 
 pub async fn employee_template_pdf_upload_intent(
-    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>, Json(body): Json<UploadIntentRequest>,
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<TemplatePdfQuery>,
+    Json(body): Json<UploadIntentRequest>,
 ) -> Result<Json<UploadIntentResponse>, AppError> {
-    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
-    check_permission_admin_or_superadmin(&auth,&school_id)?;
-    Ok(Json(svc.employee_template_pdf_upload_intent(id,school_id,&body).await?))
+    let school_id = query
+        .school_id
+        .ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(Json(
+        svc.employee_template_pdf_upload_intent(id, school_id, &body)
+            .await?,
+    ))
 }
 
 pub async fn complete_employee_template_pdf_upload(
-    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>, Json(body): Json<CompleteUploadRequest>,
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<TemplatePdfQuery>,
+    Json(body): Json<CompleteUploadRequest>,
 ) -> Result<Json<EmployeeFormTemplate>, AppError> {
-    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
-    check_permission_admin_or_superadmin(&auth,&school_id)?;
-    Ok(Json(svc.complete_employee_template_pdf_upload(id,school_id,&body).await?))
+    let school_id = query
+        .school_id
+        .ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(Json(
+        svc.complete_employee_template_pdf_upload(id, school_id, &body)
+            .await?,
+    ))
 }
 
 pub async fn employee_template_pdf_url(
-    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>,
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<TemplatePdfQuery>,
 ) -> Result<Json<FileAccessResponse>, AppError> {
-    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
-    check_permission_admin_or_superadmin(&auth,&school_id)?;
-    Ok(Json(svc.employee_template_pdf_access_url(id,school_id,query.download.unwrap_or(false)).await?))
+    let school_id = query
+        .school_id
+        .ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    Ok(Json(
+        svc.employee_template_pdf_access_url(id, school_id, query.download.unwrap_or(false))
+            .await?,
+    ))
 }
 
 pub async fn remove_employee_template_pdf(
-    State(svc): State<Arc<EmployeeService>>, axum::Extension(auth): axum::Extension<AuthContext>, Path(id): Path<Uuid>, Query(query): Query<TemplatePdfQuery>,
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<TemplatePdfQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let school_id=query.school_id.ok_or_else(|| AppError::Validation("school_id is required".into()))?;
-    check_permission_admin_or_superadmin(&auth,&school_id)?;
-    svc.remove_employee_template_pdf(id,school_id).await?;
-    Ok((StatusCode::OK,Json(MessageResponse{message:"PDF template removed".into()})))
+    let school_id = query
+        .school_id
+        .ok_or_else(|| AppError::Validation("school_id is required".into()))?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    svc.remove_employee_template_pdf(id, school_id).await?;
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "PDF template removed".into(),
+        }),
+    ))
 }
 
 // ─── Employee Form Assignment handlers ──────────────────────────────────────
@@ -270,7 +353,9 @@ pub async fn assign_employee_form_to_school(
     Json(payload): Json<AssignEmployeeFormToSchoolRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
-    let response = svc.assign_form_to_all_employees(payload, auth.user_id).await?;
+    let response = svc
+        .assign_form_to_all_employees(payload, auth.user_id)
+        .await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -280,13 +365,21 @@ pub async fn get_employee_form_assignments(
 ) -> Result<impl IntoResponse, AppError> {
     if let Some(employee_id) = params.employee_id {
         let assignments = svc.get_assignments_by_employee(employee_id).await?;
-        return Ok((StatusCode::OK, Json(serde_json::to_value(assignments).unwrap_or_default())));
+        return Ok((
+            StatusCode::OK,
+            Json(serde_json::to_value(assignments).unwrap_or_default()),
+        ));
     }
     if let Some(school_id) = params.school_id {
         let assignments = svc.get_assignments_by_school(school_id).await?;
-        return Ok((StatusCode::OK, Json(serde_json::to_value(assignments).unwrap_or_default())));
+        return Ok((
+            StatusCode::OK,
+            Json(serde_json::to_value(assignments).unwrap_or_default()),
+        ));
     }
-    Err(AppError::Validation("Either school_id or employee_id is required".to_string()))
+    Err(AppError::Validation(
+        "Either school_id or employee_id is required".to_string(),
+    ))
 }
 
 pub async fn get_employee_form_review_queue(
@@ -313,8 +406,14 @@ pub async fn delete_employee_form_assignment(
     State(svc): State<Arc<EmployeeService>>,
     Query(params): Query<DeleteEmployeeFormAssignmentParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    svc.delete_assignment(params.assignment_id, params.school_id).await?;
-    Ok((StatusCode::OK, Json(MessageResponse { message: "Employee form assignment deleted successfully".to_string() })))
+    svc.delete_assignment(params.assignment_id, params.school_id)
+        .await?;
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Employee form assignment deleted successfully".to_string(),
+        }),
+    ))
 }
 
 // ─── Employee Form Submission webhook ───────────────────────────────────────
@@ -349,15 +448,17 @@ pub async fn employee_form_submission_webhook(
         return Err(AppError::Authentication("Invalid API key".to_string()));
     }
 
-    let submission = svc.handle_form_webhook(
-        payload.employee_form_assignment_id,
-        &payload.fillout_submission_id,
-        payload.form_data.as_ref(),
-        payload.metadata.as_ref(),
-        payload.edit_link.as_deref(),
-        payload.pdf_link.as_deref(),
-        payload.submitted_at,
-    ).await?;
+    let submission = svc
+        .handle_form_webhook(
+            payload.employee_form_assignment_id,
+            &payload.fillout_submission_id,
+            payload.form_data.as_ref(),
+            payload.metadata.as_ref(),
+            payload.edit_link.as_deref(),
+            payload.pdf_link.as_deref(),
+            payload.submitted_at,
+        )
+        .await?;
     Ok((StatusCode::OK, Json(submission)))
 }
 

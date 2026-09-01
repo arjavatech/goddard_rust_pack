@@ -2,7 +2,7 @@ use crate::{
     dao::AuthDao,
     error::{AppError, ApiResult},
     utils::ValidationUtils,
-    services::{SupabaseClient, supabase_client::UserMetadata},
+    services::{SupabaseClient, TapTimeMappingService, supabase_client::UserMetadata},
     models::school::SchoolResponse,
 };
 use chrono::{DateTime, Utc};
@@ -178,6 +178,7 @@ pub struct AuthService {
     school_dao: crate::dao::school_dao::SchoolDao,
     supabase_client: SupabaseClient,
     notification_service: std::sync::Arc<crate::services::NotificationService>,
+    taptime_mapping_service: std::sync::Arc<TapTimeMappingService>,
 }
 
 impl AuthService {
@@ -186,12 +187,14 @@ impl AuthService {
         school_dao: crate::dao::school_dao::SchoolDao,
         supabase_client: SupabaseClient,
         notification_service: std::sync::Arc<crate::services::NotificationService>,
+        taptime_mapping_service: std::sync::Arc<TapTimeMappingService>,
     ) -> Self {
         Self {
             dao,
             school_dao,
             supabase_client,
             notification_service,
+            taptime_mapping_service,
         }
     }
 
@@ -438,6 +441,7 @@ impl AuthService {
                 &school_name,
             ).await;
         }
+        self.reconcile_taptime_user(school_uuid, &user_id).await;
 
         Ok(CreateInvitationResponse {
             success: true,
@@ -617,6 +621,8 @@ impl AuthService {
         let email_status = if email_sent { "delivered".to_string() } else { "unknown".to_string() };
         let message = email_status_message(&email_status, "SuperAdmin user created successfully. Please check email for confirmation link (valid 7 days).");
 
+        self.reconcile_taptime_user(school_uuid, &user_id).await;
+
         Ok(CreateInvitationResponse {
             success: true,
             message,
@@ -712,6 +718,7 @@ impl AuthService {
             request.last_name,
             request.phone_number,
         ).await?;
+        self.reconcile_taptime_user(updated.school_id, &updated.id.to_string()).await;
 
         Ok(AdminUserResponse {
             id: updated.id.to_string(),
@@ -722,6 +729,13 @@ impl AuthService {
             role: updated.role,
             is_verified: updated.is_verified,
         })
+    }
+
+    async fn reconcile_taptime_user(&self, school_id: uuid::Uuid, user_id: &str) {
+        let Ok(user_id) = uuid::Uuid::parse_str(user_id) else { return; };
+        if let Err(error) = self.taptime_mapping_service.reconcile_user_email(school_id, user_id).await {
+            tracing::warn!(%school_id, %user_id, error = %error, "TapTime email reconciliation deferred after admin change");
+        }
     }
 
     /// Soft delete admin user (SuperAdmin only)

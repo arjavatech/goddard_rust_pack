@@ -131,6 +131,43 @@ impl TapTimeMappingDao {
         Ok(())
     }
 
+    /// Cache only the PIN already accepted by TapTime. This is called after a
+    /// successful TapTime response; it must never be used as the authority for
+    /// changing a PIN.
+    pub async fn save_pin(&self, user_id: Uuid, pin: &str) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {e}")))?;
+        let updated = client.execute(
+            "UPDATE users SET taptime_pin = $2, updated_at = NOW() WHERE id = $1",
+            &[&user_id, &pin],
+        ).await.map_err(|e| AppError::Database(format!("Failed to save TapTime PIN mirror: {e}")))?;
+        if updated == 0 {
+            return Err(AppError::NotFound("Goddard user".into()));
+        }
+        Ok(())
+    }
+
+    /// Fast local guard before the direct TapTime update. TapTime remains the
+    /// source of truth and performs its own final duplicate-PIN validation.
+    pub async fn ensure_pin_available(&self, school_id: Uuid, user_id: Uuid, pin: &str) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {e}")))?;
+        let exists = client.query_one(
+            r#"SELECT EXISTS(
+                SELECT 1 FROM users
+                WHERE school_id = $1 AND id <> $2
+                  AND taptime_employee_id IS NOT NULL
+                  AND COALESCE(is_active, true) = true
+                  AND taptime_pin = $3
+            )"#,
+            &[&school_id, &user_id, &pin],
+        ).await.map_err(|e| AppError::Database(format!("Failed to validate TapTime PIN: {e}")))?;
+        if exists.get::<_, bool>(0) {
+            return Err(AppError::Conflict("This 4-digit PIN is already assigned to an active connected TapTime user in this school".into()));
+        }
+        Ok(())
+    }
+
     pub async fn create(
         &self,
         school_id: Uuid,

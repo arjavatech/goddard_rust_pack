@@ -42,7 +42,8 @@ impl EmployeeDao {
         let rows = client.query(
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
-                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified, e.created_at
+                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
+                    u.taptime_employee_id, u.taptime_pin, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
@@ -61,7 +62,8 @@ impl EmployeeDao {
         let row = client.query_opt(
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
-                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified, e.created_at
+                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
+                    u.taptime_employee_id, u.taptime_pin, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
@@ -120,7 +122,8 @@ impl EmployeeDao {
         let row = client.query_opt(
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
-                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified, e.created_at
+                    e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
+                    u.taptime_employee_id, u.taptime_pin, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
@@ -189,6 +192,8 @@ impl EmployeeDao {
             joined_on: row.get("joined_on"),
             is_active: row.get("is_active"),
             is_verified: row.get("is_verified"),
+            taptime_employee_id: row.get("taptime_employee_id"),
+            taptime_pin: row.get("taptime_pin"),
             created_at: row.get("created_at"),
         }
     }

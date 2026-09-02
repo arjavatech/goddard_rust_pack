@@ -211,6 +211,9 @@ pub async fn get_current_employee(
     let school_id = params
         .school_id
         .ok_or_else(|| AppError::Validation("school_id is required".to_string()))?;
+    if auth.user_id != Uuid::nil() && auth.school_id != school_id {
+        return Err(AppError::Authorization("Access denied to school".to_string()));
+    }
     let employee = svc.get_current_employee(auth.user_id, school_id).await?;
     Ok((StatusCode::OK, Json(employee)))
 }

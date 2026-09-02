@@ -100,6 +100,7 @@ export class RustLambdaStack extends cdk.Stack {
       targets: [new targets.LambdaFunction(notificationPushWorker)],
     });
 
+
     // API Gateway
     const api = new apigateway.RestApi(this, `Goddard${stageName}Api`, {
       restApiName: `Goddard ${stageName} API`,

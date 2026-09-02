@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,16 @@ use crate::{
 #[derive(Deserialize)]
 pub struct QueryParams {
     pub school_id: Uuid,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEmployeePinRequest {
+    pub pin: String,
+}
+
+#[derive(Serialize)]
+pub struct UpdateEmployeePinResponse {
+    pub status: &'static str,
 }
 
 #[derive(Serialize)]
@@ -145,4 +155,26 @@ pub async fn create_mapping(
         .unwrap_or_else(Uuid::nil);
     service.create_mapping(request, mapped_by).await?;
     Ok(Json(MappingCreatedResponse { status: "mapped" }))
+}
+
+pub async fn update_employee_pin(
+    State(service): State<Arc<TapTimeMappingService>>,
+    Path(goddard_user_id): Path<Uuid>,
+    Query(query): Query<QueryParams>,
+    Extension(actor): Extension<AuthContext>,
+    Json(request): Json<UpdateEmployeePinRequest>,
+) -> Result<Json<UpdateEmployeePinResponse>, AppError> {
+    service.update_employee_pin(&actor, query.school_id, goddard_user_id, &request.pin).await?;
+    Ok(Json(UpdateEmployeePinResponse { status: "updated" }))
+}
+
+/// Stores the local PIN mirror after the browser has received a successful
+/// response from TapTime's self-only `/v1/integrations/me/pin` endpoint.
+pub async fn mirror_own_pin(
+    State(service): State<Arc<TapTimeMappingService>>,
+    Extension(actor): Extension<AuthContext>,
+    Json(request): Json<UpdateEmployeePinRequest>,
+) -> Result<Json<UpdateEmployeePinResponse>, AppError> {
+    service.mirror_own_pin(&actor, &request.pin).await?;
+    Ok(Json(UpdateEmployeePinResponse { status: "updated" }))
 }

@@ -32,6 +32,11 @@ pub struct EmployeeWithUser {
     pub joined_on: Option<NaiveDate>,
     pub is_active: Option<bool>,
     pub is_verified: Option<bool>,
+    /// TapTime's employee identity is retained locally to route updates through
+    /// the trusted server-to-server integration; it is never supplied by the browser.
+    pub taptime_employee_id: Option<Uuid>,
+    /// Mirror of the PIN confirmed by TapTime. TapTime remains authoritative.
+    pub taptime_pin: Option<String>,
     pub created_at: Option<NaiveDateTime>,
 }
 

@@ -91,7 +91,7 @@ use controllers::{
     },
     student_form_assignment_review_controller::review_student_form_assignment,
         taptime_mapping_controller::{
-            attendance_users, available_taptime_users, create_mapping, database_diagnostics, integration_status, mapping_users, reconcile_users,
+            attendance_users, available_taptime_users, create_mapping, database_diagnostics, integration_status, mapping_users, mirror_own_pin, reconcile_users, update_employee_pin,
         redeem_pairing_code, setup_status, sync_access, taptime_settings, update_taptime_settings,
     },
 };
@@ -192,8 +192,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let supabase_client = SupabaseClient::new(email_service.clone())?;
 
     let taptime_mapping_service = Arc::new(TapTimeMappingService::new(
-        employee_dao.clone(),
-        auth_dao.clone(),
         taptime_mapping_dao,
         taptime_service.clone(),
         supabase_client.clone(),
@@ -342,6 +340,14 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/taptime/attendance-users",
             get(attendance_users).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/taptime/users/:goddard_user_id/pin",
+            patch(update_employee_pin).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/taptime/me/pin",
+            patch(mirror_own_pin).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
         .route(
             "/taptime/available-users",

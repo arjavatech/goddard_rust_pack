@@ -56,6 +56,7 @@ LAMBDA_FUNCTION_NAME=$NOTIFICATION_WORKER_FUNCTION_NAME \
     AWS_REGION=$AWS_REGION \
     ./scripts/set-lambda-env.sh
 
+
 # Print API URL
 echo ""
 echo -e "${BLUE}📊 Stack Outputs:${NC}"

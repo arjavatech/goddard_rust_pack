@@ -111,6 +111,8 @@ pub struct AdminUserResponse {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub taptime_employee_id: Option<String>,
+    pub taptime_pin: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,6 +163,10 @@ pub struct FilteredUserResponse {
     pub parent_id: Option<String>,
     pub last_name: Option<String>,
     pub first_name: Option<String>,
+    /// Present only for a user already connected to TapTime. This endpoint is
+    /// self-scoped, so it is safe to expose the user's own display/cache PIN.
+    pub taptime_employee_id: Option<String>,
+    pub taptime_pin: Option<String>,
     pub school_data: Option<SchoolResponse>,
 }
 
@@ -682,6 +688,8 @@ impl AuthService {
                 parent_id,
                 first_name,
                 last_name,
+                taptime_employee_id: None,
+                taptime_pin: None,
                 school_data: None,
             });
         }
@@ -728,6 +736,8 @@ impl AuthService {
             email: updated.email,
             role: updated.role,
             is_verified: updated.is_verified,
+            taptime_employee_id: updated.taptime_employee_id.map(|id| id.to_string()),
+            taptime_pin: updated.taptime_pin,
         })
     }
 
@@ -791,6 +801,8 @@ impl AuthService {
             email: u.email,
             role: u.role,
             is_verified: u.is_verified,
+            taptime_employee_id: u.taptime_employee_id.map(|id| id.to_string()),
+            taptime_pin: u.taptime_pin,
         }).collect())
     }
 
@@ -848,6 +860,8 @@ impl AuthService {
             parent_id,
             first_name: Some(user.first_name),
             last_name: Some(user.last_name),
+            taptime_employee_id: user.taptime_employee_id.map(|id| id.to_string()),
+            taptime_pin: user.taptime_pin,
             school_data,
         })
     }

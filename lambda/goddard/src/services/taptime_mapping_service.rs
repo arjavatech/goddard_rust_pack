@@ -1,6 +1,7 @@
 use crate::{
-    dao::{AuthDao, EmployeeDao, SchoolDao, TapTimeDatabaseDiagnostics, TapTimeMappingDao},
+    dao::{SchoolDao, TapTimeDatabaseDiagnostics, TapTimeMappingDao},
     error::{ApiResult, AppError},
+    middleware::auth::{check_permission_admin_or_superadmin, check_permission_superadmin_only, AuthContext},
     services::{SupabaseClient, TapTimeService},
 };
 use crate::models::school::SchoolFeature;
@@ -82,8 +83,6 @@ pub struct TapTimeSettingsResponse {
 
 #[derive(Clone)]
 pub struct TapTimeMappingService {
-    employees: EmployeeDao,
-    auth: AuthDao,
     mappings: TapTimeMappingDao,
     taptime: TapTimeService,
     supabase: SupabaseClient,
@@ -94,16 +93,12 @@ impl TapTimeMappingService {
         self.schools.ensure_feature_enabled(school_id, SchoolFeature::TapTime).await
     }
     pub fn new(
-        employees: EmployeeDao,
-        auth: AuthDao,
         mappings: TapTimeMappingDao,
         taptime: TapTimeService,
         supabase: SupabaseClient,
         schools: SchoolDao,
     ) -> Self {
         Self {
-            employees,
-            auth,
             mappings,
             taptime,
             supabase,
@@ -146,6 +141,65 @@ impl TapTimeMappingService {
                 role: user.role,
             })
         }).collect())
+    }
+
+    /// Updates TapTime directly, then mirrors the confirmed value locally.
+    pub async fn update_employee_pin(
+        &self,
+        actor: &AuthContext,
+        school_id: Uuid,
+        goddard_user_id: Uuid,
+        pin: &str,
+    ) -> ApiResult<()> {
+        self.ensure_enabled(school_id).await?;
+        check_permission_admin_or_superadmin(actor, &school_id)?;
+        if actor.user_id != Uuid::nil() && actor.school_id != school_id {
+            return Err(AppError::Authorization("Access denied to school".into()));
+        }
+        if pin.len() != 4 || !pin.chars().all(|value| value.is_ascii_digit()) {
+            return Err(AppError::Validation("PIN must contain exactly 4 digits".into()));
+        }
+
+        let user = self.mappings.eligible_users(school_id).await?.into_iter()
+            .find(|item| item.user_id == goddard_user_id)
+            .ok_or_else(|| AppError::NotFound("Goddard user".into()))?;
+        if matches!(user.role.as_str(), "Admin" | "SuperAdmin") {
+            check_permission_superadmin_only(actor)?;
+        }
+        if user.taptime_employee_id.is_none() {
+            return Err(AppError::Conflict("This user is not connected to TapTime".into()));
+        }
+
+        self.mappings.ensure_pin_available(school_id, goddard_user_id, pin).await?;
+        self.taptime.deliver(
+            school_id,
+            goddard_user_id,
+            "pin",
+            &serde_json::json!({ "pin": pin }),
+            Uuid::new_v4(),
+        ).await?;
+        self.mappings.save_pin(goddard_user_id, pin).await
+    }
+
+    /// Mirrors a PIN that the authenticated browser has already changed using
+    /// TapTime's self-only integration endpoint. This performs no external
+    /// call: TapTime remains the authority and this database stores only the
+    /// value needed to render the user's own profile promptly.
+    pub async fn mirror_own_pin(&self, actor: &AuthContext, pin: &str) -> ApiResult<()> {
+        if actor.user_id == Uuid::nil() {
+            return Err(AppError::Authorization("A signed-in user is required".into()));
+        }
+        self.ensure_enabled(actor.school_id).await?;
+        if pin.len() != 4 || !pin.chars().all(|value| value.is_ascii_digit()) {
+            return Err(AppError::Validation("PIN must contain exactly 4 digits".into()));
+        }
+        let user = self.mappings.eligible_users(actor.school_id).await?.into_iter()
+            .find(|item| item.user_id == actor.user_id)
+            .ok_or_else(|| AppError::NotFound("Goddard user".into()))?;
+        if user.taptime_employee_id.is_none() || user.taptime_pin.is_none() {
+            return Err(AppError::Conflict("This user is not connected to TapTime".into()));
+        }
+        self.mappings.save_pin(actor.user_id, pin).await
     }
     pub async fn available_taptime_users(
         &self,
@@ -332,11 +386,11 @@ impl TapTimeMappingService {
         if !self.setup_status(school_id).await?.configured {
             return Err(AppError::Conflict("Connect this school to TapTime before syncing user access".into()));
         }
-        let mut users: Vec<(Uuid, String)> = self.employees.get_employees_by_school(school_id).await?
-            .into_iter().filter(|user| user.is_active.unwrap_or(true))
-            .map(|user| (user.user_id, "Employee".to_string())).collect();
-        users.extend(self.auth.get_admins_by_school(school_id).await?.into_iter()
-            .map(|user| (user.id, user.role)));
+        // The TapTime roster intentionally includes Employees, Admins, and
+        // Super Admins. Keep this independent from /users/admin, whose UI is
+        // correctly limited to Admin records only.
+        let users: Vec<(Uuid, String)> = self.mappings.eligible_users(school_id).await?
+            .into_iter().map(|user| (user.user_id, user.role)).collect();
         let mut updated_users = 0;
         let mut failed_users = Vec::new();
         for (user_id, role) in users {
@@ -387,8 +441,8 @@ impl TapTimeMappingService {
         }
         let phone = user.phone.as_deref().map(str::trim).filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::Validation("A phone number is required before creating a TapTime user".into()))?;
-        if request.pin.len() < 4 || request.pin.len() > 10 || !request.pin.chars().all(|value| value.is_ascii_digit()) {
-            return Err(AppError::Validation("PIN must contain 4 to 10 digits".into()));
+        if request.pin.len() != 4 || !request.pin.chars().all(|value| value.is_ascii_digit()) {
+            return Err(AppError::Validation("PIN must contain exactly 4 digits".into()));
         }
         // A phone-derived PIN is just the initial suggestion.  If it is already
         // used by this TapTime company, choose a free four-digit alternative.

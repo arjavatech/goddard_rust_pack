@@ -27,8 +27,6 @@ pub async fn create_form_submission_webhook(
     headers: HeaderMap,
     Json(request): Json<CreateFormSubmissionWebhookRequest>,
 ) -> Result<(StatusCode, Json<FormSubmissionResponse>), AppError> {
-    println!("[DEBUG] Starting form submission webhook");
-    println!("[DEBUG] Raw payload: {:?}", request.payload);
 
     // Extract webhook secret from X-API-Key header
     let api_key = headers
@@ -39,21 +37,13 @@ pub async fn create_form_submission_webhook(
             AppError::Authentication("Missing X-API-Key header".to_string())
         })?;
 
-    println!("[DEBUG] API key extracted successfully");
 
     // Validate webhook secret
-    match service.validate_webhook_secret(api_key).await {
-        Ok(_) => println!("[DEBUG] Webhook secret validation passed"),
-        Err(e) => {
-            println!("[ERROR] Webhook validation failed: {:?}", e);
-            return Err(e);
-        }
-    }
+    service.validate_webhook_secret(api_key).await?;
 
     // Create form submission with enhanced error handling
     match service.create_form_submission_from_webhook(request).await {
         Ok(submission) => {
-            println!("[DEBUG] Form submission created successfully");
             Ok((StatusCode::CREATED, Json(submission)))
         }
         Err(e) => {
@@ -69,7 +59,6 @@ pub async fn get_latest_form_submission(
     headers: HeaderMap,
     Query(query): Query<FormSubmissionQuery>,
 ) -> Result<Json<Option<FormSubmissionResponse>>, AppError> {
-    println!("[DEBUG] GET Latest: Starting request");
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -82,7 +71,6 @@ pub async fn get_latest_form_submission(
 
     // Validate API key
     service.validate_webhook_secret(api_key).await?;
-    println!("[DEBUG] GET Latest: Authentication successful");
 
     let submission = service
         .get_latest_form_submission(
@@ -92,7 +80,6 @@ pub async fn get_latest_form_submission(
         )
         .await?;
 
-    println!("[DEBUG] GET Latest: Query completed successfully");
     Ok(Json(submission))
 }
 
@@ -102,7 +89,6 @@ pub async fn get_form_submission_versions(
     headers: HeaderMap,
     Query(query): Query<FormSubmissionQuery>,
 ) -> Result<Json<Vec<FormSubmissionVersionResponse>>, AppError> {
-    println!("[DEBUG] GET Versions: Starting request");
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -115,7 +101,6 @@ pub async fn get_form_submission_versions(
 
     // Validate API key
     service.validate_webhook_secret(api_key).await?;
-    println!("[DEBUG] GET Versions: Authentication successful");
 
     let versions = service
         .get_all_form_submission_versions(
@@ -125,7 +110,6 @@ pub async fn get_form_submission_versions(
         )
         .await?;
 
-    println!("[DEBUG] GET Versions: Query completed successfully");
     Ok(Json(versions))
 }
 
@@ -135,7 +119,6 @@ pub async fn get_form_submission_by_id(
     headers: HeaderMap,
     Path(submission_id): Path<Uuid>,
 ) -> Result<Json<FormSubmissionResponse>, AppError> {
-    println!("[DEBUG] GET ByID: Starting request for ID: {}", submission_id);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -148,11 +131,9 @@ pub async fn get_form_submission_by_id(
 
     // Validate API key
     service.validate_webhook_secret(api_key).await?;
-    println!("[DEBUG] GET ByID: Authentication successful");
 
     let submission = service.get_form_submission_by_id(submission_id).await?;
 
-    println!("[DEBUG] GET ByID: Query completed successfully");
     Ok(Json(submission))
 }
 
@@ -166,11 +147,9 @@ pub async fn get_form_resume_link(
     State(service): State<Arc<FormSubmissionService>>,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<Json<ResumeLinkResponse>, AppError> {
-    println!("[DEBUG] GET ResumeLink: assignment_id={}", assignment_id);
 
     let edit_link = service.get_form_resume_link(assignment_id).await?;
 
-    println!("[DEBUG] GET ResumeLink: returning edit_link={:?}", edit_link);
     Ok(Json(ResumeLinkResponse { edit_link }))
 }
 
@@ -181,7 +160,6 @@ pub async fn update_form_submission_status(
     Path(submission_id): Path<Uuid>,
     Json(request): Json<UpdateFormSubmissionStatusRequest>,
 ) -> Result<Json<FormSubmissionResponse>, AppError> {
-    println!("[DEBUG] PUT Status: Starting request for ID: {}", submission_id);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -194,12 +172,10 @@ pub async fn update_form_submission_status(
 
     // Validate API key
     service.validate_webhook_secret(api_key).await?;
-    println!("[DEBUG] PUT Status: Authentication successful");
 
     let submission = service
         .update_form_submission_status(submission_id, request)
         .await?;
 
-    println!("[DEBUG] PUT Status: Update completed successfully");
     Ok(Json(submission))
 }

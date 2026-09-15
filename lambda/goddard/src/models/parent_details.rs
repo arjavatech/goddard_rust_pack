@@ -43,6 +43,7 @@ pub struct ParentChildForm {
     pub approved_by: Option<Uuid>,
     pub approved_on: Option<chrono::NaiveDateTime>,
     pub assigned_at: Option<String>, // Format: DD-MM-YYYY
+    pub manual_pdf_uploaded_at: Option<chrono::NaiveDateTime>,
 }
 
 // Database row structure for query results
@@ -79,4 +80,7 @@ pub struct ParentDetailsRow {
     pub approved_by: Option<Uuid>,
     pub approved_on: Option<chrono::NaiveDateTime>,
     pub assigned_at: Option<chrono::NaiveDateTime>,
+    pub submission_source: Option<String>,
+    pub manual_pdf_storage_key: Option<String>,
+    pub manual_pdf_uploaded_at: Option<chrono::NaiveDateTime>,
 }

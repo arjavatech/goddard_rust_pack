@@ -20,8 +20,6 @@ pub async fn get_admin_dashboard_metrics(
     State(admin_service): State<Arc<AdminService>>,
     Query(query): Query<GetAdminDashboardMetricsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Getting dashboard metrics - User: {}, Role: {:?}, School: {}",
-        auth.email, auth.role, query.school_id);
 
     let response = admin_service.get_dashboard_metrics(query).await?;
     Ok(ResponseUtils::success(response))

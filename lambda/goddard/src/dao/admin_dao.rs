@@ -20,7 +20,6 @@ impl AdminDao {
     pub async fn get_dashboard_metrics(&self, school_id: Uuid) -> ApiResult<AdminDashboardMetricsResponse> {
         use tokio::time::timeout;
 
-        println!("[AdminDao] Fetching dashboard metrics for school_id: {}", school_id);
 
         let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
         let client = match client_result {
@@ -108,9 +107,6 @@ impl AdminDao {
             total_forms: row.get::<_, Option<i64>>("total_forms").unwrap_or(0),
             classwise_metrics,
         };
-
-        println!("[AdminDao] Successfully fetched dashboard metrics: {} classrooms, {} parents, {} children, {} forms",
-            response.total_classrooms, response.total_active_parents, response.total_active_children, response.total_forms);
 
         Ok(response)
     }

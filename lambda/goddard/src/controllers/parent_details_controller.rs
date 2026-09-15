@@ -21,19 +21,15 @@ pub async fn get_parent_details_by_id(
     State(enrollment_service): State<Arc<EnrollmentService>>,
     Path(parent_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] GET Parent Details: Starting request for parent_id: {}", parent_id);
-    println!("[DEBUG] Auth context - User: {}, Role: {:?}", auth.user_id, auth.role);
 
     // CRITICAL SECURITY: Validate parent access
     // Parents can only access their own data
     // Admins/SuperAdmins can access any parent's data
     validate_parent_access(&auth, &parent_id)?;
 
-    println!("[DEBUG] GET Parent Details: Access validation passed");
 
     // Get parent details from service
     let response = enrollment_service.get_parent_details_by_id(parent_id).await?;
 
-    println!("[DEBUG] GET Parent Details: Successfully retrieved parent details");
     Ok(ResponseUtils::success(response))
 }

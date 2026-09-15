@@ -34,8 +34,8 @@ if [ -f "../../.env" ]; then
     set +a
 fi
 
-# Build the Lambda function for local testing
-cargo lambda build --release
+# Build for local testing
+cargo build --release
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Build successful!${NC}"
@@ -44,7 +44,7 @@ else
     exit 1
 fi
 
-echo -e "${YELLOW}🚀 Starting local Lambda server...${NC}"
+echo -e "${YELLOW}🚀 Starting local server...${NC}"
 echo -e "${BLUE}Server will be available at: http://localhost:9000${NC}"
 echo -e "${BLUE}To test endpoints:${NC}"
 echo -e "${GREEN}  GET  http://localhost:9000/health${NC}"
@@ -54,5 +54,5 @@ echo -e "${GREEN}  GET  http://localhost:9000/users${NC}"
 echo -e "${BLUE}Press Ctrl+C to stop the server${NC}"
 echo ""
 
-# Start the local Lambda server
-cargo lambda start --release
+# Start the local server (plain HTTP on port 9000, no Lambda prefix)
+cargo run --bin goddard-backend --release

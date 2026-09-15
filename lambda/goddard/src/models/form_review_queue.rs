@@ -32,6 +32,7 @@ pub struct StudentFormReviewQueueItem {
     pub parent_email: String,
     pub classroom_id: Option<Uuid>,
     pub classroom_name: Option<String>,
+    pub submission_source: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -49,4 +50,6 @@ pub struct EmployeeFormReviewQueueItem {
     pub employee_first_name: String,
     pub employee_last_name: String,
     pub employee_email: String,
+    pub submission_source: Option<String>,
+    pub manual_pdf_uploaded_at: Option<chrono::NaiveDateTime>,
 }

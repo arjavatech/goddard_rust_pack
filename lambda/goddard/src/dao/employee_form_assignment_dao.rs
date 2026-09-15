@@ -34,6 +34,13 @@ impl EmployeeFormAssignmentDao {
             is_active: row.get("is_active"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
+            submission_source: row.try_get("submission_source").ok(),
+            manual_pdf_storage_key: row.try_get("manual_pdf_storage_key").ok().flatten(),
+            manual_pdf_file_name: row.try_get("manual_pdf_file_name").ok().flatten(),
+            manual_pdf_content_type: row.try_get("manual_pdf_content_type").ok().flatten(),
+            manual_pdf_file_size_bytes: row.try_get("manual_pdf_file_size_bytes").ok().flatten(),
+            manual_pdf_uploaded_at: row.try_get("manual_pdf_uploaded_at").ok().flatten(),
+            manual_pdf_uploaded_by: row.try_get("manual_pdf_uploaded_by").ok().flatten(),
         }
     }
 
@@ -59,6 +66,13 @@ impl EmployeeFormAssignmentDao {
             recent_pdf_link: row.get("recent_pdf_link"),
             employee_first_name: row.get("employee_first_name"),
             employee_last_name: row.get("employee_last_name"),
+            submission_source: row.try_get("submission_source").ok(),
+            manual_pdf_storage_key: row.try_get("manual_pdf_storage_key").ok().flatten(),
+            manual_pdf_file_name: row.try_get("manual_pdf_file_name").ok().flatten(),
+            manual_pdf_content_type: row.try_get("manual_pdf_content_type").ok().flatten(),
+            manual_pdf_file_size_bytes: row.try_get("manual_pdf_file_size_bytes").ok().flatten(),
+            manual_pdf_uploaded_at: row.try_get("manual_pdf_uploaded_at").ok().flatten(),
+            manual_pdf_uploaded_by: row.try_get("manual_pdf_uploaded_by").ok().flatten(),
         }
     }
 
@@ -155,7 +169,9 @@ impl EmployeeFormAssignmentDao {
                     t.form_name, t.fillout_form_id, t.due_date,
                     a.assignment_source, a.status, a.is_required, a.assigned_by, a.assigned_at,
                     a.approved_by, a.approved_on, a.notes, a.recent_edit_link, a.recent_pdf_link,
-                    u.first_name as employee_first_name, u.last_name as employee_last_name
+                    u.first_name as employee_first_name, u.last_name as employee_last_name,
+                    a.submission_source, a.manual_pdf_storage_key, a.manual_pdf_file_name,
+                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by
              FROM employee_form_assignments a
              JOIN employee_form_templates t ON a.employee_form_template_id = t.id
              JOIN users u ON a.user_id = u.id
@@ -176,7 +192,9 @@ impl EmployeeFormAssignmentDao {
                     t.form_name, t.fillout_form_id, t.due_date,
                     a.assignment_source, a.status, a.is_required, a.assigned_by, a.assigned_at,
                     a.approved_by, a.approved_on, a.notes, a.recent_edit_link, a.recent_pdf_link,
-                    u.first_name as employee_first_name, u.last_name as employee_last_name
+                    u.first_name as employee_first_name, u.last_name as employee_last_name,
+                    a.submission_source, a.manual_pdf_storage_key, a.manual_pdf_file_name,
+                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by
              FROM employee_form_assignments a
              JOIN employee_form_templates t ON a.employee_form_template_id = t.id
              JOIN users u ON a.user_id = u.id
@@ -197,7 +215,8 @@ impl EmployeeFormAssignmentDao {
                    COALESCE(s.submitted_at, a.updated_at, a.assigned_at) AS submitted_at,
                    COALESCE(s.edit_link, a.recent_edit_link) AS recent_edit_link,
                    COALESCE(s.pdf_link, a.recent_pdf_link) AS recent_pdf_link,
-                   u.first_name AS employee_first_name, u.last_name AS employee_last_name, u.email AS employee_email
+                   u.first_name AS employee_first_name, u.last_name AS employee_last_name, u.email AS employee_email,
+                   a.submission_source, a.manual_pdf_uploaded_at
             FROM employee_form_assignments a
             JOIN employee_form_templates t ON t.id = a.employee_form_template_id
             JOIN users u ON u.id = a.user_id
@@ -210,7 +229,7 @@ impl EmployeeFormAssignmentDao {
                 LIMIT 1
             ) s ON true
             WHERE a.school_id = $1
-              AND a.status = 'in_progress'
+              AND a.status IN ('in_progress', 'manually_uploaded')
               AND (a.is_active = true OR a.is_active IS NULL)
             ORDER BY COALESCE(s.submitted_at, a.updated_at, a.assigned_at) DESC
             "#,
@@ -222,6 +241,8 @@ impl EmployeeFormAssignmentDao {
             status: row.get("status"), submitted_at: row.get("submitted_at"), recent_edit_link: row.get("recent_edit_link"),
             recent_pdf_link: row.get("recent_pdf_link"), employee_first_name: row.get("employee_first_name"),
             employee_last_name: row.get("employee_last_name"), employee_email: row.get("employee_email"),
+            submission_source: row.try_get("submission_source").ok(),
+            manual_pdf_uploaded_at: row.try_get("manual_pdf_uploaded_at").ok(),
         }).collect())
     }
 
@@ -298,5 +319,110 @@ impl EmployeeFormAssignmentDao {
 
         if n == 0 { return Err(AppError::NotFound("Employee form assignment not found".to_string())); }
         Ok(())
+    }
+
+    pub async fn complete_manual_pdf_upload(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+        storage_key: &str,
+        file_name: &str,
+        content_type: &str,
+        file_size_bytes: i64,
+        uploaded_by: &str,
+    ) -> Result<EmployeeFormAssignment, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            r#"
+            UPDATE employee_form_assignments
+            SET status = 'manually_uploaded',
+                manual_pdf_storage_key = $3,
+                manual_pdf_file_name = $4,
+                manual_pdf_content_type = $5,
+                manual_pdf_file_size_bytes = $6,
+                manual_pdf_uploaded_at = NOW(),
+                manual_pdf_uploaded_by = $7,
+                submission_source = 'manual_upload',
+                updated_at = NOW()
+            WHERE id = $1 AND school_id = $2
+            RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
+                      assignment_source, status, is_required, assigned_by, assigned_at,
+                      approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
+                      is_active, created_at, updated_at,
+                      submission_source, manual_pdf_storage_key, manual_pdf_file_name,
+                      manual_pdf_content_type, manual_pdf_file_size_bytes, manual_pdf_uploaded_at,
+                      manual_pdf_uploaded_by
+            "#,
+            &[
+                &assignment_id,
+                &school_id,
+                &storage_key,
+                &file_name,
+                &content_type,
+                &file_size_bytes,
+                &uploaded_by,
+            ],
+        )
+        .await
+        .map_err(|e| AppError::Database(format!("Failed to complete manual PDF upload: {}", e)))?;
+
+        Ok(Self::row_to_assignment(&row))
+    }
+
+    pub async fn get_manual_pdf_storage_key(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<Option<String>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_opt(
+            "SELECT manual_pdf_storage_key FROM employee_form_assignments WHERE id = $1 AND school_id = $2",
+            &[&assignment_id, &school_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(format!("Failed to get manual PDF storage key: {}", e)))?;
+
+        Ok(row.and_then(|r| r.try_get("manual_pdf_storage_key").ok()))
+    }
+
+    pub async fn remove_manual_pdf(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<EmployeeFormAssignment, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            r#"
+            UPDATE employee_form_assignments
+            SET status = 'incomplete',
+                manual_pdf_storage_key = NULL,
+                manual_pdf_file_name = NULL,
+                manual_pdf_content_type = NULL,
+                manual_pdf_file_size_bytes = NULL,
+                manual_pdf_uploaded_at = NULL,
+                manual_pdf_uploaded_by = NULL,
+                submission_source = 'digital',
+                updated_at = NOW()
+            WHERE id = $1 AND school_id = $2
+            RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
+                      assignment_source, status, is_required, assigned_by, assigned_at,
+                      approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
+                      is_active, created_at, updated_at,
+                      submission_source, manual_pdf_storage_key, manual_pdf_file_name,
+                      manual_pdf_content_type, manual_pdf_file_size_bytes, manual_pdf_uploaded_at,
+                      manual_pdf_uploaded_by
+            "#,
+            &[&assignment_id, &school_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(format!("Failed to remove manual PDF upload: {}", e)))?;
+
+        Ok(Self::row_to_assignment(&row))
     }
 }

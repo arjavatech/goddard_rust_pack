@@ -810,7 +810,6 @@ impl EnrollmentService {
 
     // Get parent details by parent ID
     pub async fn get_parent_details_by_id(&self, parent_id: Uuid) -> ApiResult<ParentDetailsResponse> {
-        println!("[DEBUG] EnrollmentService: Getting parent details for ID: {}", parent_id);
 
         // Get parent details from DAO
         let rows = self.enrollment_dao.get_parent_details_by_id(parent_id).await?;
@@ -871,6 +870,18 @@ impl EnrollmentService {
                         None
                     };
 
+                    // Handle manual PDF uploads
+                    let is_manual = row.submission_source.as_deref() == Some("manual_upload");
+                    let recent_pdf_link = if is_manual {
+                        row.manual_pdf_storage_key.as_ref().map(|key| {
+                            let base = std::env::var("S3_BASE_URL").unwrap_or_default();
+                            format!("{}/{}", base.trim_end_matches('/'), key)
+                        })
+                    } else {
+                        row.recent_pdf_link.clone()
+                    };
+                    let approved_on = if is_manual { None } else { row.approved_on };
+
                     child.forms.push(ParentChildForm {
                         form_id: format!("form_{}", form_template_id),
                         student_form_assignment_id: *assignment_id,
@@ -880,10 +891,11 @@ impl EnrollmentService {
                         status: row.status.clone().unwrap_or_else(|| "incomplete".to_string()),
                         is_required: row.is_required.unwrap_or(false),
                         recent_edit_link: row.recent_edit_link.clone(),
-                        recent_pdf_link: row.recent_pdf_link.clone(),
+                        recent_pdf_link,
                         approved_by: row.approved_by,
-                        approved_on: row.approved_on,
+                        approved_on,
                         assigned_at: row.assigned_at.map(|dt| dt.format("%d-%m-%Y").to_string()),
+                        manual_pdf_uploaded_at: row.manual_pdf_uploaded_at,
                     });
                 }
             }
@@ -901,17 +913,14 @@ impl EnrollmentService {
             children: children_map.into_values().collect(),
         };
 
-        println!("[DEBUG] EnrollmentService: Successfully retrieved parent details with {} children", response.children.len());
         Ok(response)
     }
 
     pub async fn validate_api_key(&self, api_key: &str) -> ApiResult<()> {
-        println!("[DEBUG] EnrollmentService: Validating API key");
 
         // Use the same API key validation as other endpoints
         let expected_api_key = match std::env::var("OWNER_API_KEY") {
             Ok(key) => {
-                println!("[DEBUG] EnrollmentService: OWNER_API_KEY found");
                 key
             }
             Err(e) => {
@@ -925,13 +934,11 @@ impl EnrollmentService {
             return Err(AppError::Authentication("Invalid API key".to_string()));
         }
 
-        println!("[DEBUG] EnrollmentService: API key validation successful");
         Ok(())
     }
 
     // Deactivate parent and all related children and enrollments
     pub async fn deactivate_parent(&self, parent_id: Uuid) -> ApiResult<DeactivateParentResponse> {
-        println!("[DEBUG] EnrollmentService: Deactivating parent {}", parent_id);
 
         // Capture parent email + school name BEFORE the DAO update so the
         // notification has everything it needs even if the user record changes.
@@ -1008,13 +1015,11 @@ impl EnrollmentService {
 
     // Activate parent and all related children and enrollments
     pub async fn activate_parent(&self, parent_id: Uuid) -> ApiResult<ActivateParentResponse> {
-        println!("[DEBUG] EnrollmentService: Activating parent {}", parent_id);
         self.enrollment_dao.activate_parent(parent_id).await
     }
 
     // Update child status (admin only - no validation, accepts any status value)
     pub async fn update_child_status(&self, child_id: Uuid, request: crate::models::enrollment::UpdateChildStatusRequest) -> ApiResult<crate::models::enrollment::UpdateChildStatusResponse> {
-        println!("[DEBUG] EnrollmentService: Updating child {} status to: {}", child_id, request.status);
         let response = self.enrollment_dao.update_child_status(child_id, &request.status).await?;
 
         // Fire child-archived notification (non-blocking) when the new status is
@@ -1125,7 +1130,6 @@ impl EnrollmentService {
         changed_by_user_id: Uuid,
         school_id: Uuid,
     ) -> ApiResult<crate::models::enrollment::PromoteEnrollmentResponse> {
-        println!("[DEBUG] EnrollmentService: Promoting enrollment {} to classroom {}", enrollment_id, request.to_classroom_id);
 
         // Step 1: Get current enrollment details
         let enrollment = self.enrollment_dao.get_enrollment_with_classroom(enrollment_id, school_id).await?;
@@ -1149,7 +1153,6 @@ impl EnrollmentService {
             }
 
             // Allow creating first transition record even to same classroom
-            println!("[DEBUG] Allowing promotion to same classroom - creating first transition record for enrollment {}", enrollment_id);
         }
 
         // Step 4: Update enrollment with user context (single transaction)
@@ -1198,7 +1201,6 @@ impl EnrollmentService {
             message,
         };
 
-        println!("[DEBUG] EnrollmentService: Successfully promoted enrollment {}", enrollment_id);
         Ok(response)
     }
 
@@ -1209,7 +1211,6 @@ impl EnrollmentService {
         request: crate::models::enrollment::EditClassTransitionRequest,
         school_id: Uuid,
     ) -> ApiResult<crate::models::enrollment::EditClassTransitionResponse> {
-        println!("[DEBUG] EnrollmentService: Editing latest transition for enrollment {}", enrollment_id);
 
         // Step 1A: Verify enrollment belongs to school
         let enrollment_exists = self.enrollment_dao
@@ -1300,7 +1301,6 @@ impl EnrollmentService {
             message: "Transition record updated successfully".to_string(),
         };
 
-        println!("[DEBUG] EnrollmentService: Successfully edited class transition {}", transition_id);
         Ok(response)
     }
 
@@ -1313,7 +1313,6 @@ impl EnrollmentService {
     ) -> ApiResult<crate::models::enrollment::BulkPromoteEnrollmentsResponse> {
         use crate::models::enrollment::{PromoteEnrollmentResponse, FailedPromotion, PromotionSummary};
 
-        println!("[DEBUG] EnrollmentService: Bulk promoting {} students", request.promotions.len());
 
         // Validation 1: School ID must match auth school ID
         if request.school_id != auth_school_id {
@@ -1387,9 +1386,6 @@ impl EnrollmentService {
             failed_count: failed.len(),
         };
 
-        println!("[DEBUG] EnrollmentService: Bulk promotion complete - {}/{} successful",
-            summary.successful_count, summary.total_requested);
-
         Ok(crate::models::enrollment::BulkPromoteEnrollmentsResponse {
             successful,
             failed,
@@ -1425,7 +1421,6 @@ impl EnrollmentService {
             }
 
             // Allow creating first transition record even to same classroom
-            println!("[DEBUG] Bulk promotion: Allowing promotion to same classroom - creating first transition record for enrollment {}", enrollment_id);
         }
 
         // Step 3: Update enrollment with user context (single transaction)

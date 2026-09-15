@@ -291,6 +291,12 @@ pub struct FormStatus {
     pub recent_pdf_link: Option<String>,
     pub approved_by: Option<Uuid>,
     pub approved_on: Option<NaiveDateTime>,
+    #[serde(default)]
+    pub submission_source: Option<String>,
+    #[serde(default)]
+    pub manual_pdf_storage_key: Option<String>,
+    #[serde(default)]
+    pub manual_pdf_uploaded_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Serialize)]

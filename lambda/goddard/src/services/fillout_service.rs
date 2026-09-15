@@ -30,29 +30,24 @@ impl FilloutService {
         form_id: &str,
         fillout_submission_id: &str,
     ) -> Result<FilloutSubmissionDetails, AppError> {
-        println!("[DEBUG] FilloutService: Starting fetch for form_id: {}, submission_id: {}", form_id, fillout_submission_id);
 
         let url = format!(
             "{}/v1/api/forms/{}/submissions/{}?includeEditLink=true",
             self.base_url, form_id, fillout_submission_id
         );
 
-        println!("[DEBUG] FilloutService: Request URL: {}", url);
 
         // Retry logic: 5 attempts with 5-second delays
         for attempt in 1..=5 {
-            println!("[DEBUG] FilloutService: Attempt {} of 5", attempt);
 
             match self.make_api_request(&url).await {
                 Ok(response) => {
-                    println!("[DEBUG] FilloutService: Successfully fetched submission details on attempt {}", attempt);
                     return Ok(response.into());
                 }
                 Err(e) => {
                     println!("[WARN] FilloutService: Attempt {} failed: {:?}", attempt, e);
 
                     if attempt < 5 {
-                        println!("[DEBUG] FilloutService: Waiting 5 seconds before retry...");
                         sleep(Duration::from_secs(5)).await;
                     } else {
                         println!("[ERROR] FilloutService: All attempts failed, returning error");
@@ -67,11 +62,8 @@ impl FilloutService {
     }
 
     async fn make_api_request(&self, url: &str) -> Result<FilloutSubmissionResponse, AppError> {
-        println!("[DEBUG] FilloutService: Making API request to: {}", url);
 
-        println!("[DEBUG] FilloutService: Using API key: {}", if self.api_key.len() > 20 { &self.api_key[..20] } else { &self.api_key }); // Only log first 20 chars for security
         let auth_header = format!("Bearer {}", self.api_key);
-        println!("[DEBUG] FilloutService: Authorization header: {}", if auth_header.len() > 30 { &auth_header[..30] } else { &auth_header }); // Log first 30 chars safely
 
         let response = self
             .client
@@ -86,21 +78,12 @@ impl FilloutService {
             })?;
 
         let status = response.status();
-        println!("[DEBUG] FilloutService: Response status: {}", status);
 
         if status.is_success() {
             let response_text = response.text().await.map_err(|e| {
                 println!("[ERROR] FilloutService: Failed to read response body: {:?}", e);
                 AppError::ExternalService(format!("Failed to read response from Fillout API: {}", e))
             })?;
-
-            println!("[DEBUG] FilloutService: Response body length: {} characters", response_text.len());
-            println!("[DEBUG] FilloutService: Response preview: {}",
-                     if response_text.len() > 200 {
-                         format!("{}...", &response_text[..200])
-                     } else {
-                         response_text.clone()
-                     });
 
             serde_json::from_str::<FilloutSubmissionResponse>(&response_text)
                 .map_err(|e| {
@@ -134,7 +117,6 @@ impl FilloutService {
         form_id: &str,
         assignment_id: &str,
     ) -> Result<Option<String>, AppError> {
-        println!("[DEBUG] FilloutService: Polling in-progress submissions for form: {}, assignment: {}", form_id, assignment_id);
 
         let url = format!(
             "{}/v1/api/forms/{}/submissions?status=in_progress&includeEditLink=true&limit=150",
@@ -143,7 +125,6 @@ impl FilloutService {
 
         let response = self.make_submissions_list_request(&url).await?;
 
-        println!("[DEBUG] FilloutService: Got {} in-progress submissions", response.responses.len());
 
         for submission in response.responses {
             let matches = submission.url_parameters.iter().any(|p| {
@@ -151,17 +132,14 @@ impl FilloutService {
                     && p.value.as_deref() == Some(assignment_id)
             });
             if matches {
-                println!("[DEBUG] FilloutService: Found matching submission: {}, editLink: {:?}", submission.submission_id, submission.edit_link);
                 return Ok(submission.edit_link);
             }
         }
 
-        println!("[DEBUG] FilloutService: No in-progress submission found for assignment: {}", assignment_id);
         Ok(None)
     }
 
     async fn make_submissions_list_request(&self, url: &str) -> Result<FilloutSubmissionsListResponse, AppError> {
-        println!("[DEBUG] FilloutService: Making submissions list request to: {}", url);
 
         let auth_header = format!("Bearer {}", self.api_key);
 
@@ -175,7 +153,6 @@ impl FilloutService {
             .map_err(|e| AppError::ExternalService(format!("Failed to send request to Fillout API: {}", e)))?;
 
         let status = response.status();
-        println!("[DEBUG] FilloutService: Submissions list response status: {}", status);
 
         if status.is_success() {
             let response_text = response.text().await.map_err(|e| {

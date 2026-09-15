@@ -30,7 +30,6 @@ impl FormSubmissionDao {
         &self,
         fillout_submission_id: &str,
     ) -> Result<Option<FormSubmission>, AppError> {
-        println!("[DEBUG] DAO: Checking if submission exists with fillout_submission_id: {}", fillout_submission_id);
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -57,7 +56,6 @@ impl FormSubmissionDao {
 
         for message in rows {
             if let tokio_postgres::SimpleQueryMessage::Row(_row) = message {
-                println!("[DEBUG] DAO: Found existing submission");
                 // Re-query using proper method to get typed row
                 let row = client.query_one(
                     "SELECT * FROM form_submissions WHERE fillout_submission_id = $1",
@@ -70,7 +68,6 @@ impl FormSubmissionDao {
             }
         }
 
-        println!("[DEBUG] DAO: No existing submission found");
         Ok(None)
     }
 
@@ -82,11 +79,9 @@ impl FormSubmissionDao {
         student_form_assignment_id: Uuid,
         form_template_id: Uuid,
     ) -> Result<(FormSubmission, bool), AppError> {
-        println!("[DEBUG] DAO: Starting form submission creation/update from payload using UPSERT");
 
         let client = match self.pool.get().await {
             Ok(c) => {
-                println!("[DEBUG] DAO: Database connection acquired");
                 c
             }
             Err(e) => {
@@ -100,7 +95,6 @@ impl FormSubmissionDao {
         let received_at: NaiveDateTime = client.query_one(
             "SELECT school_local_now($1)", &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to resolve school-local time: {}", e)))?.get(0);
-        println!("[DEBUG] DAO: Generated school-local receive timestamp: {}", received_at);
 
         // Extract fillout_submission_id from payload — the self-hosted Fillout sends
         // `submission_id`; older keys kept as fallbacks
@@ -111,7 +105,6 @@ impl FormSubmissionDao {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("webhook_{}", Uuid::new_v4()));
-        println!("[DEBUG] DAO: Fillout submission ID: {}", fillout_submission_id);
 
         let form_status = payload.get("form_status").and_then(|v| v.as_str()).map(|s| s.to_string());
         let form_id = payload.get("form_id").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -155,7 +148,6 @@ impl FormSubmissionDao {
         });
 
         let submission_id = Uuid::new_v4();
-        println!("[DEBUG] DAO: Generated submission ID: {}", submission_id);
 
         // UPSERT query using ON CONFLICT
         // xmax = 0 indicates INSERT, xmax != 0 indicates UPDATE
@@ -194,14 +186,12 @@ impl FormSubmissionDao {
             received_at
         );
 
-        println!("[DEBUG] DAO: Executing UPSERT query with ON CONFLICT");
 
         let row = match tokio::time::timeout(
             std::time::Duration::from_secs(10),
             client.query_one(&upsert_query, &[])
         ).await {
             Ok(Ok(row)) => {
-                println!("[DEBUG] DAO: UPSERT executed successfully");
                 row
             }
             Ok(Err(e)) => {
@@ -216,14 +206,12 @@ impl FormSubmissionDao {
 
         // Check if this was an INSERT or UPDATE
         let is_insert: bool = row.get("is_insert");
-        println!("[DEBUG] DAO: Operation type - is_insert: {}", is_insert);
 
         // Update student_form_assignments on webhook:
         // - COMPLETED (or missing status): set status to 'in_progress' (pending review),
         //   including flipping 'rejected'/'approved' back on resubmission
         // - IN_PROGRESS (partial save): only track the submission, leave status untouched
         let update_query = if is_in_progress {
-            println!("[DEBUG] DAO: form_status=IN_PROGRESS — tracking submission without changing assignment status for {}", student_form_assignment_id);
             r#"
             UPDATE student_form_assignments
             SET
@@ -232,7 +220,6 @@ impl FormSubmissionDao {
             WHERE id = $2
         "#
         } else {
-            println!("[DEBUG] DAO: Updating student_form_assignments status to 'in_progress' for assignment_id: {}", student_form_assignment_id);
             r#"
             UPDATE student_form_assignments
             SET
@@ -251,11 +238,8 @@ impl FormSubmissionDao {
 
         match tokio::time::timeout(std::time::Duration::from_secs(5), update_future).await {
             Ok(Ok(result)) => {
-                println!("[DEBUG] DAO: UPDATE student_form_assignments executed successfully: {} rows affected", result);
                 if is_insert {
-                    println!("[DEBUG] DAO: First submission - status set to 'in_progress'");
                 } else {
-                    println!("[DEBUG] DAO: Resubmission detected - status changed back to 'in_progress'");
                 }
             }
             Ok(Err(e)) => {
@@ -268,9 +252,6 @@ impl FormSubmissionDao {
 
         // Convert row to FormSubmission
         let submission = self.row_to_form_submission(row)?;
-
-        println!("[DEBUG] DAO: Form submission {} completed successfully (is_insert: {})",
-                 if is_insert { "created" } else { "updated" }, is_insert);
 
         Ok((submission, is_insert))
     }
@@ -358,7 +339,6 @@ impl FormSubmissionDao {
         form_data: Option<serde_json::Value>,
         metadata: Option<serde_json::Value>,
     ) -> Result<FormSubmission, AppError> {
-        println!("[DEBUG] DAO: Starting form submission update for ID: {}", submission_id);
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -385,7 +365,6 @@ impl FormSubmissionDao {
             let query = "UPDATE form_submissions SET status = $2, revision_reason = $3, form_data = $4, metadata = $5, updated_at = $6 WHERE id = $1 RETURNING *";
             let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![&submission_id, &status_str, reason, form_data, metadata, &now];
 
-            println!("[DEBUG] DAO: Executing update query: {}", query);
             let row = client.query_one(query, &params).await.map_err(|e| AppError::Database(e.to_string()))?;
             return self.row_to_form_submission(row);
         } else if let (Some(status), Some(reason), Some(form_data)) = (&status, &reason, &form_data) {
@@ -393,7 +372,6 @@ impl FormSubmissionDao {
             let query = "UPDATE form_submissions SET status = $2, revision_reason = $3, form_data = $4, updated_at = $5 WHERE id = $1 RETURNING *";
             let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![&submission_id, &status_str, reason, form_data, &now];
 
-            println!("[DEBUG] DAO: Executing update query: {}", query);
             let row = client.query_one(query, &params).await.map_err(|e| AppError::Database(e.to_string()))?;
             return self.row_to_form_submission(row);
         } else if let (Some(status), Some(reason)) = (&status, &reason) {
@@ -401,7 +379,6 @@ impl FormSubmissionDao {
             let query = "UPDATE form_submissions SET status = $2, revision_reason = $3, updated_at = $4 WHERE id = $1 RETURNING *";
             let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![&submission_id, &status_str, reason, &now];
 
-            println!("[DEBUG] DAO: Executing update query: {}", query);
             let row = client.query_one(query, &params).await.map_err(|e| AppError::Database(e.to_string()))?;
             return self.row_to_form_submission(row);
         } else if let Some(status) = &status {
@@ -409,21 +386,18 @@ impl FormSubmissionDao {
             let query = "UPDATE form_submissions SET status = $2, updated_at = $3 WHERE id = $1 RETURNING *";
             let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![&submission_id, &status_str, &now];
 
-            println!("[DEBUG] DAO: Executing update query: {}", query);
             let row = client.query_one(query, &params).await.map_err(|e| AppError::Database(e.to_string()))?;
             return self.row_to_form_submission(row);
         } else if let Some(form_data) = &form_data {
             let query = "UPDATE form_submissions SET form_data = $2, updated_at = $3 WHERE id = $1 RETURNING *";
             let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![&submission_id, form_data, &now];
 
-            println!("[DEBUG] DAO: Executing update query: {}", query);
             let row = client.query_one(query, &params).await.map_err(|e| AppError::Database(e.to_string()))?;
             return self.row_to_form_submission(row);
         } else if let Some(metadata) = &metadata {
             let query = "UPDATE form_submissions SET metadata = $2, updated_at = $3 WHERE id = $1 RETURNING *";
             let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![&submission_id, metadata, &now];
 
-            println!("[DEBUG] DAO: Executing update query: {}", query);
             let row = client.query_one(query, &params).await.map_err(|e| AppError::Database(e.to_string()))?;
             return self.row_to_form_submission(row);
         } else {
@@ -445,11 +419,9 @@ impl FormSubmissionDao {
         &self,
         student_form_assignment_id: Uuid,
     ) -> Result<Option<Uuid>, AppError> {
-        println!("[DEBUG] DAO: Getting form template ID for assignment: {}", student_form_assignment_id);
 
         let client = match self.pool.get().await {
             Ok(c) => {
-                println!("[DEBUG] DAO: Database connection acquired for assignment lookup");
                 c
             }
             Err(e) => {
@@ -466,7 +438,6 @@ impl FormSubmissionDao {
             &[&student_form_assignment_id],
         ).await {
             Ok(row) => {
-                println!("[DEBUG] DAO: Assignment lookup query executed successfully");
                 row
             }
             Err(e) => {
@@ -478,7 +449,6 @@ impl FormSubmissionDao {
         match row {
             Some(r) => {
                 let form_template_id: Uuid = r.get("form_template_id");
-                println!("[DEBUG] DAO: Found form_template_id: {}", form_template_id);
                 Ok(Some(form_template_id))
             }
             None => {
@@ -492,15 +462,12 @@ impl FormSubmissionDao {
         &self,
         student_form_assignment_id: Uuid,
     ) -> Result<Option<(Uuid, Uuid, Uuid)>, AppError> {
-        println!("[DEBUG] DAO: Looking up assignment details for: {}", student_form_assignment_id);
 
-        println!("[DEBUG] DAO: Attempting to get connection from pool...");
         let client = match tokio::time::timeout(
             std::time::Duration::from_secs(15),
             self.pool.get()
         ).await {
             Ok(Ok(c)) => {
-                println!("[DEBUG] DAO: Database connection acquired for assignment lookup");
                 c
             }
             Ok(Err(e)) => {
@@ -513,7 +480,6 @@ impl FormSubmissionDao {
             }
         };
 
-        println!("[DEBUG] DAO: Connection acquired, preparing to execute query");
 
         // Use simple_query to avoid prepared statement conflicts
         let query = format!(
@@ -524,14 +490,12 @@ impl FormSubmissionDao {
             student_form_assignment_id
         );
 
-        println!("[DEBUG] DAO: Executing assignment lookup query: {}", query);
 
         let rows = match tokio::time::timeout(
             std::time::Duration::from_secs(15),
             client.simple_query(&query)
         ).await {
             Ok(Ok(rows)) => {
-                println!("[DEBUG] DAO: Assignment lookup query executed successfully, got {} results", rows.len());
                 rows
             }
             Ok(Err(e)) => {
@@ -544,12 +508,10 @@ impl FormSubmissionDao {
             }
         };
 
-        println!("[DEBUG] DAO: Processing query results");
 
         // Parse the results
         for message in rows {
             if let tokio_postgres::SimpleQueryMessage::Row(row) = message {
-                println!("[DEBUG] DAO: Found row, extracting values");
 
                 let school_id = row.get("school_id")
                     .and_then(|s| Uuid::parse_str(s).ok())
@@ -572,22 +534,17 @@ impl FormSubmissionDao {
                         AppError::Database("Invalid form_template_id in database".to_string())
                     })?;
 
-                println!("[DEBUG] DAO: Found assignment details - school: {}, enrollment: {}, template: {}",
-                         school_id, enrollment_id, form_template_id);
                 return Ok(Some((school_id, enrollment_id, form_template_id)));
             }
         }
 
-        println!("[DEBUG] DAO: No assignment found for ID: {}", student_form_assignment_id);
         Ok(None)
     }
 
     fn row_to_form_submission(&self, row: Row) -> Result<FormSubmission, AppError> {
-        println!("[DEBUG] DAO: Starting row conversion");
 
         let status_str: String = match row.try_get("status") {
             Ok(status) => {
-                println!("[DEBUG] DAO: Status extracted: {}", status);
                 status
             }
             Err(e) => {
@@ -610,7 +567,6 @@ impl FormSubmissionDao {
             }
         };
 
-        println!("[DEBUG] DAO: Extracting all row fields");
 
         let submission = FormSubmission {
             id: row.try_get("id").map_err(|e| {
@@ -692,7 +648,6 @@ impl FormSubmissionDao {
             },
         };
 
-        println!("[DEBUG] DAO: Row conversion completed successfully");
         Ok(submission)
     }
 
@@ -736,7 +691,6 @@ impl FormSubmissionDao {
         edit_link: Option<String>,
         pdf_link: Option<String>,
     ) -> Result<(), AppError> {
-        println!("[DEBUG] DAO: Updating submission links for ID: {}", submission_id);
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -760,7 +714,6 @@ impl FormSubmissionDao {
             return Err(AppError::NotFound("Form submission not found".to_string()));
         }
 
-        println!("[DEBUG] DAO: Successfully updated submission links for {} rows", rows_affected);
         Ok(())
     }
 
@@ -770,7 +723,6 @@ impl FormSubmissionDao {
         recent_edit_link: Option<String>,
         recent_pdf_link: Option<String>,
     ) -> Result<(), AppError> {
-        println!("[DEBUG] DAO: Updating assignment links for ID: {}", student_form_assignment_id);
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -793,7 +745,6 @@ impl FormSubmissionDao {
             return Err(AppError::NotFound("Student form assignment not found".to_string()));
         }
 
-        println!("[DEBUG] DAO: Successfully updated assignment links for {} rows", rows_affected);
         Ok(())
     }
 }

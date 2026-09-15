@@ -19,21 +19,17 @@ impl SchoolDao {
 
     // Helper function to get database connection with timeout
     async fn get_connection(&self) -> ApiResult<Client> {
-        println!("[SchoolDao] Attempting to get database connection with 5s timeout");
         let timeout_duration = Duration::from_secs(5);
         let get_connection = self.pool.get();
 
         match tokio::time::timeout(timeout_duration, get_connection).await {
             Ok(Ok(client)) => {
-                println!("[SchoolDao] Database connection acquired successfully");
                 Ok(client)
             },
             Ok(Err(e)) => {
-                println!("[SchoolDao] Failed to get connection from pool: {:?}", e);
                 Err(AppError::Database(format!("Failed to get connection from pool: {}", e)))
             },
             Err(_) => {
-                println!("[SchoolDao] Database connection timeout after 5s");
                 Err(AppError::Database("Database connection timeout (5s) - database may be unreachable".to_string()))
             }
         }
@@ -90,7 +86,6 @@ impl SchoolDao {
     }
 
     pub async fn create_school(&self, request: &CreateSchoolRequest) -> ApiResult<School> {
-        println!("[SchoolDao] Starting create_school - getting database connection");
 
         let name = request.name.clone();
         let subdomain = request.subdomain.clone();
@@ -98,8 +93,6 @@ impl SchoolDao {
         let settings = request.settings.clone();
 
         self.execute_with_connection(|client| async move {
-            println!("[SchoolDao] Database connection acquired successfully");
-            println!("[SchoolDao] Executing INSERT query for school: name={}, subdomain={}", name, subdomain);
 
             let settings_json = match &settings {
                 Some(s) => format!("'{}'", s.to_string().replace('\'', "''")),
@@ -120,11 +113,9 @@ impl SchoolDao {
 
             let result = client.simple_query(&query).await
                 .map_err(|e| {
-                    println!("[SchoolDao] INSERT query failed with error: {:?}", e);
                     AppError::Database(format!("Failed to create school: {}", e))
                 })?;
 
-            println!("[SchoolDao] INSERT query executed successfully");
 
             for message in result {
                 if let tokio_postgres::SimpleQueryMessage::Row(row) = message {
@@ -140,7 +131,6 @@ impl SchoolDao {
                         created_at: row.get(8).and_then(|s| s.parse().ok()),
                         updated_at: row.get(9).and_then(|s| s.parse().ok()),
                     };
-                    println!("[SchoolDao] School object created successfully: id={}", school.id);
                     return Ok(school);
                 }
             }
@@ -312,23 +302,19 @@ impl SchoolDao {
     }
 
     pub async fn check_subdomain_exists(&self, subdomain: &str, exclude_id: Option<&Uuid>) -> ApiResult<bool> {
-        println!("[SchoolDao] Starting check_subdomain_exists for subdomain: {}", subdomain);
 
         let subdomain = subdomain.to_string();
         let exclude_id = exclude_id.copied();
 
         self.execute_with_connection(|client| async move {
-            println!("[SchoolDao] Database connection acquired for subdomain check");
 
             let query = if let Some(exclude_id) = exclude_id {
-                println!("[SchoolDao] Executing subdomain check query (excluding ID: {})", exclude_id);
                 format!(
                     "SELECT COUNT(*) FROM schools WHERE subdomain = '{}' AND id != '{}' AND (is_active = true OR is_active IS NULL)",
                     subdomain.replace('\'', "''"),
                     exclude_id
                 )
             } else {
-                println!("[SchoolDao] Executing subdomain check query (no exclusions)");
                 format!(
                     "SELECT COUNT(*) FROM schools WHERE subdomain = '{}' AND (is_active = true OR is_active IS NULL)",
                     subdomain.replace('\'', "''")
@@ -337,7 +323,6 @@ impl SchoolDao {
 
             let result = client.simple_query(&query).await
                 .map_err(|e| {
-                    println!("[SchoolDao] Subdomain check query failed: {:?}", e);
                     AppError::Database(e.to_string())
                 })?;
 
@@ -347,7 +332,6 @@ impl SchoolDao {
                 0
             };
 
-            println!("[SchoolDao] Subdomain check completed: subdomain={}, count={}, exists={}", subdomain, count, count > 0);
             Ok(count > 0)
         }).await
     }

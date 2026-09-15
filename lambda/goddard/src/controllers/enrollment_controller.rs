@@ -25,7 +25,6 @@ pub async fn create_parent_invite(
 ) -> Result<impl IntoResponse, AppError> {
     // JWT admin_only middleware will handle authentication and authorization
     // The service will validate business logic and permissions
-    println!("[DEBUG] Creating parent invite - User: {}, Role: {:?}", auth.email, auth.role);
     let response = enrollment_service.create_parent_invite(payload).await?;
     Ok(ResponseUtils::success(response))
 }
@@ -51,7 +50,6 @@ pub async fn add_child(
 ) -> Result<impl IntoResponse, AppError> {
     // JWT admin_only middleware will handle authentication and authorization
     // The service will validate business logic and permissions
-    println!("[DEBUG] Adding child - User: {}, Role: {:?}", auth.email, auth.role);
     let response = enrollment_service.add_child(payload).await?;
     Ok(ResponseUtils::success(response))
 }
@@ -75,7 +73,6 @@ pub async fn get_enrollment_children_with_forms(
     axum::extract::Query(query): axum::extract::Query<GetEnrollmentChildrenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // JWT admin_only middleware will handle authentication and authorization
-    println!("[DEBUG] Getting children forms - User: {}, Role: {:?}", auth.email, auth.role);
     let response = enrollment_service.get_enrollment_children_with_forms(query).await?;
     Ok(ResponseUtils::success(response))
 }
@@ -117,8 +114,6 @@ pub async fn deactivate_parent(
     State(enrollment_service): State<Arc<EnrollmentService>>,
     Path(parent_id): Path<Uuid>,
 ) -> Result<(StatusCode, impl IntoResponse), AppError> {
-    println!("[DEBUG] Deactivating parent - User: {}, Role: {:?}, Parent ID: {}",
-        auth.email, auth.role, parent_id);
 
     let response = enrollment_service.deactivate_parent(parent_id).await?;
     Ok((StatusCode::OK, ResponseUtils::success(response)))
@@ -131,8 +126,6 @@ pub async fn activate_parent(
     State(enrollment_service): State<Arc<EnrollmentService>>,
     Path(parent_id): Path<Uuid>,
 ) -> Result<(StatusCode, impl IntoResponse), AppError> {
-    println!("[DEBUG] Activating parent - User: {}, Role: {:?}, Parent ID: {}",
-        auth.email, auth.role, parent_id);
 
     let response = enrollment_service.activate_parent(parent_id).await?;
     Ok((StatusCode::OK, ResponseUtils::success(response)))
@@ -146,8 +139,6 @@ pub async fn update_child_status(
     Path(child_id): Path<Uuid>,
     Json(payload): Json<UpdateChildStatusRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Updating child status - User: {}, Role: {:?}, Child ID: {}, Status: {}",
-        auth.email, auth.role, child_id, payload.status);
 
     let response = enrollment_service.update_child_status(child_id, payload).await?;
     Ok(ResponseUtils::success(response))
@@ -165,8 +156,6 @@ pub async fn promote_enrollment(
     Path(enrollment_id): Path<Uuid>,
     Json(payload): Json<crate::models::enrollment::PromoteEnrollmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Promoting enrollment - User: {}, Role: {:?}, Enrollment ID: {}, Target Classroom: {}",
-        auth.email, auth.role, enrollment_id, payload.to_classroom_id);
 
     let response = enrollment_service.promote_enrollment(
         enrollment_id,
@@ -185,9 +174,6 @@ pub async fn bulk_promote_enrollments(
     State(enrollment_service): State<Arc<EnrollmentService>>,
     Json(payload): Json<crate::models::enrollment::BulkPromoteEnrollmentsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Bulk promoting {} students - User: {}, Role: {:?}, School: {}",
-        payload.promotions.len(), auth.email, auth.role, payload.school_id);
-
     let response = enrollment_service.bulk_promote_enrollments(
         payload,
         auth.user_id,
@@ -212,8 +198,6 @@ pub async fn edit_class_transition(
     Path(enrollment_id): Path<Uuid>,
     Json(payload): Json<crate::models::enrollment::EditClassTransitionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Editing latest class transition for enrollment - User: {}, Role: {:?}, Enrollment ID: {}",
-        auth.email, auth.role, enrollment_id);
 
     let response = enrollment_service.edit_class_transition(
         enrollment_id,
@@ -233,7 +217,6 @@ pub async fn bulk_import_families(
     State(enrollment_service): State<Arc<EnrollmentService>>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Bulk import families - User: {}, Role: {:?}", auth.email, auth.role);
 
     let mut school_id: Option<Uuid> = None;
     let mut csv_bytes: Option<Vec<u8>> = None;
@@ -274,7 +257,6 @@ pub async fn bulk_add_secondary_parents(
     State(enrollment_service): State<Arc<EnrollmentService>>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    println!("[DEBUG] Bulk add secondary parents - User: {}, Role: {:?}", auth.email, auth.role);
 
     let mut school_id: Option<Uuid> = None;
     let mut csv_bytes: Option<Vec<u8>> = None;

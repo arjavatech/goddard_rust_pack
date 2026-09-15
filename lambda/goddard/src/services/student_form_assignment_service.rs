@@ -2,7 +2,8 @@ use crate::dao::StudentFormAssignmentDao;
 use crate::models::student_form_assignment::{
     StudentFormAssignment, StudentFormAssignmentResponse, CreateStudentFormAssignmentRequest,
     UpdateStudentFormAssignmentRequest, DeleteStudentFormAssignmentResponse,
-    BulkAssignFormRequest, BulkAssignFormResponse, FailedAssignment
+    BulkAssignFormRequest, BulkAssignFormResponse, FailedAssignment,
+    ManualPdfUploadIntentRequest, ManualPdfUploadIntentResponse, ManualPdfCompleteUploadRequest
 };
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
@@ -10,7 +11,7 @@ use crate::models::student_form_assignment_review::{
 use crate::models::email::{FormApprovedNotification, FormAssignedNotification, FormRejectedNotification};
 use crate::models::notification::{notification_type, CreateNotification};
 use crate::services::email_service::{parent_dashboard_url, EmailService};
-use crate::services::NotificationService;
+use crate::services::{NotificationService, UploadService};
 use crate::error::AppError;
 use crate::models::form_review_queue::{FormReviewQueueQuery, StudentFormReviewQueueItem};
 use uuid::Uuid;
@@ -24,6 +25,7 @@ pub struct StudentFormAssignmentService {
     dao: StudentFormAssignmentDao,
     email_service: Arc<EmailService>,
     notification_service: Arc<NotificationService>,
+    upload_service: Arc<UploadService>,
 }
 
 impl StudentFormAssignmentService {
@@ -31,11 +33,13 @@ impl StudentFormAssignmentService {
         dao: StudentFormAssignmentDao,
         email_service: Arc<EmailService>,
         notification_service: Arc<NotificationService>,
+        upload_service: Arc<UploadService>,
     ) -> Self {
         Self {
             dao,
             email_service,
             notification_service,
+            upload_service,
         }
     }
 
@@ -43,15 +47,12 @@ impl StudentFormAssignmentService {
         &self,
         request: CreateStudentFormAssignmentRequest,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Starting assignment creation");
-        println!("[DEBUG] StudentFormAssignmentService: Request data: {:?}", request);
 
         // Create the assignment
         let assignment = self.dao
             .create_student_form_assignment(&request)
             .await?;
 
-        println!("[DEBUG] StudentFormAssignmentService: Assignment created successfully with ID: {}", assignment.id);
 
         self.fire_form_assigned_email(assignment.id).await;
 
@@ -163,13 +164,11 @@ impl StudentFormAssignmentService {
         &self,
         school_id: Uuid,
     ) -> Result<Vec<StudentFormAssignmentResponse>, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Getting assignments for school: {}", school_id);
 
         let assignments = self.dao
             .get_assignments_by_school(school_id)
             .await?;
 
-        println!("[DEBUG] StudentFormAssignmentService: Found {} assignments", assignments.len());
         Ok(assignments.into_iter().map(|a| a.into()).collect())
     }
 
@@ -177,14 +176,11 @@ impl StudentFormAssignmentService {
         &self,
         request: UpdateStudentFormAssignmentRequest,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Starting assignment update");
-        println!("[DEBUG] StudentFormAssignmentService: Update request: {:?}", request);
 
         let assignment = self.dao
             .update_student_form_assignment(&request)
             .await?;
 
-        println!("[DEBUG] StudentFormAssignmentService: Assignment updated successfully");
         Ok(assignment.into())
     }
 
@@ -193,14 +189,11 @@ impl StudentFormAssignmentService {
         assignment_id: Uuid,
         school_id: Uuid,
     ) -> Result<DeleteStudentFormAssignmentResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Starting assignment deletion");
-        println!("[DEBUG] StudentFormAssignmentService: Assignment ID: {}, School ID: {}", assignment_id, school_id);
 
         self.dao
             .delete_student_form_assignment(assignment_id, school_id)
             .await?;
 
-        println!("[DEBUG] StudentFormAssignmentService: Assignment deleted successfully");
         Ok(DeleteStudentFormAssignmentResponse {
             message: "Student form assignment successfully deleted".to_string(),
             assignment_id,
@@ -212,8 +205,6 @@ impl StudentFormAssignmentService {
         &self,
         request: ReviewStudentFormAssignmentRequest,
     ) -> Result<ReviewStudentFormAssignmentResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Starting assignment review");
-        println!("[DEBUG] StudentFormAssignmentService: Review request: {:?}", request);
 
         // Validate that the status is either Approved or Rejected
         match request.status {
@@ -231,7 +222,6 @@ impl StudentFormAssignmentService {
             .review_student_form_assignment(&request)
             .await?;
 
-        println!("[DEBUG] StudentFormAssignmentService: Assignment reviewed successfully");
 
         // Fire approval/rejection email (non-blocking). See docs/EMAIL_NOTIFICATIONS.md.
         match self
@@ -314,12 +304,10 @@ impl StudentFormAssignmentService {
     }
 
     pub async fn validate_api_key(&self, api_key: &str) -> Result<(), AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Validating API key");
 
         // Use the same API key validation as other endpoints
         let expected_api_key = match std::env::var("OWNER_API_KEY") {
             Ok(key) => {
-                println!("[DEBUG] StudentFormAssignmentService: OWNER_API_KEY found");
                 key
             }
             Err(e) => {
@@ -333,7 +321,6 @@ impl StudentFormAssignmentService {
             return Err(AppError::Authentication("Invalid API key".to_string()));
         }
 
-        println!("[DEBUG] StudentFormAssignmentService: API key validation successful");
         Ok(())
     }
 
@@ -341,9 +328,6 @@ impl StudentFormAssignmentService {
         &self,
         request: BulkAssignFormRequest,
     ) -> Result<BulkAssignFormResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Starting bulk form assignment");
-        println!("[DEBUG] StudentFormAssignmentService: School ID: {}, Number of assignments: {}",
-                 request.school_id, request.assignments.len());
 
         // Validate request has at least one assignment
         if request.assignments.is_empty() {
@@ -359,30 +343,16 @@ impl StudentFormAssignmentService {
             .into_iter()
             .collect();
 
-        println!("[DEBUG] StudentFormAssignmentService: Validating {} unique form templates", form_template_ids.len());
 
         // Step 1: Validate all form templates are active
-        match self.dao.validate_form_templates_active(&form_template_ids).await {
-            Ok(_) => println!("[DEBUG] StudentFormAssignmentService: All form templates validated as active"),
-            Err(e) => {
-                println!("[ERROR] StudentFormAssignmentService: Form template validation failed: {:?}", e);
-                return Err(e);
-            }
-        }
+        self.dao.validate_form_templates_active(&form_template_ids).await?;
 
         // Step 2: Check for duplicate assignments
-        match self.dao.check_duplicate_assignments(request.school_id, &request.assignments).await {
-            Ok(_) => println!("[DEBUG] StudentFormAssignmentService: No duplicate assignments found"),
-            Err(e) => {
-                println!("[ERROR] StudentFormAssignmentService: Duplicate assignment check failed: {:?}", e);
-                return Err(e);
-            }
-        }
+        self.dao.check_duplicate_assignments(request.school_id, &request.assignments).await?;
 
         // Step 3: Create assignments in bulk (within transaction)
         match self.dao.bulk_create_assignments(request.school_id, request.assignments).await {
             Ok(created_assignments) => {
-                println!("[DEBUG] StudentFormAssignmentService: Successfully created {} assignments", created_assignments.len());
 
                 for assignment in &created_assignments {
                     self.fire_form_assigned_email(assignment.id).await;
@@ -415,7 +385,6 @@ impl StudentFormAssignmentService {
         child_first_name: &str,
         child_last_name: &str,
     ) -> Result<(Vec<u8>, String), AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Downloading forms ZIP for enrollment: {}", enrollment_id);
 
         let forms = self.dao.get_completed_assignments_for_zip(enrollment_id).await?;
 
@@ -423,7 +392,6 @@ impl StudentFormAssignmentService {
             return Err(AppError::NotFound("No completed forms with PDF links found for this enrollment".to_string()));
         }
 
-        println!("[DEBUG] StudentFormAssignmentService: Found {} forms to download", forms.len());
 
         let client = reqwest::Client::new();
         let mut buffer = Cursor::new(Vec::new());
@@ -457,7 +425,6 @@ impl StudentFormAssignmentService {
                                     continue;
                                 }
                                 success_count += 1;
-                                println!("[DEBUG] Added to ZIP: {}", file_name);
                             }
                             Err(e) => {
                                 println!("[WARN] Failed to read PDF bytes for {}: {}", form.form_name, e);
@@ -484,7 +451,6 @@ impl StudentFormAssignmentService {
         let sanitized_last = Self::sanitize_filename(child_last_name);
         let filename = format!("{}_{}_{}.zip", sanitized_first, sanitized_last, "completed_forms");
 
-        println!("[DEBUG] StudentFormAssignmentService: ZIP created with {} of {} forms", success_count, forms.len());
         Ok((zip_bytes, filename))
     }
 
@@ -501,13 +467,10 @@ impl StudentFormAssignmentService {
         &self,
         request: crate::models::student_form_assignment::AssignFormToSchoolStudentsRequest,
     ) -> Result<crate::models::student_form_assignment::AssignFormToSchoolStudentsResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Assigning form {} to all active students in school {}",
-            request.form_template_id, request.school_id);
 
         // Validate that the form template is active
         let form_template_ids = vec![request.form_template_id];
         self.dao.validate_form_templates_active(&form_template_ids).await?;
-        println!("[DEBUG] StudentFormAssignmentService: Form template validated");
 
         // Call DAO to assign forms to all active students
         let is_required = request.is_required.unwrap_or(false);
@@ -531,8 +494,6 @@ impl StudentFormAssignmentService {
 
         let newly_assigned = successful.len() as i64;
 
-        println!("[DEBUG] StudentFormAssignmentService: Assignment complete. Total: {}, Already assigned: {}, Newly assigned: {}",
-            total_active_students, students_already_assigned, newly_assigned);
 
         Ok(crate::models::student_form_assignment::AssignFormToSchoolStudentsResponse {
             school_id: request.school_id,
@@ -551,13 +512,10 @@ impl StudentFormAssignmentService {
         &self,
         request: crate::models::student_form_assignment::AssignFormToClassStudentsRequest,
     ) -> Result<crate::models::student_form_assignment::AssignFormToClassStudentsResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentService: Assigning form {} to all active students in class {} of school {}",
-            request.form_template_id, request.class_id, request.school_id);
 
         // Validate that the form template is active
         let form_template_ids = vec![request.form_template_id];
         self.dao.validate_form_templates_active(&form_template_ids).await?;
-        println!("[DEBUG] StudentFormAssignmentService: Form template validated");
 
         // Call DAO to assign forms to all active students in the class
         let is_required = false;
@@ -582,8 +540,6 @@ impl StudentFormAssignmentService {
 
         let newly_assigned = successful.len() as i64;
 
-        println!("[DEBUG] StudentFormAssignmentService: Class assignment complete. Total: {}, Already assigned: {}, Newly assigned: {}",
-            total_active_students, students_already_assigned, newly_assigned);
 
         Ok(crate::models::student_form_assignment::AssignFormToClassStudentsResponse {
             school_id: request.school_id,
@@ -596,5 +552,146 @@ impl StudentFormAssignmentService {
             successful,
             failed: Vec::new(),
         })
+    }
+
+    pub async fn create_manual_pdf_upload_intent(
+        &self,
+        req: ManualPdfUploadIntentRequest,
+    ) -> Result<ManualPdfUploadIntentResponse, AppError> {
+        // Validate file type is PDF
+        if req.content_type != "application/pdf" {
+            return Err(AppError::Validation("Only PDF files are allowed".to_string()));
+        }
+
+        // Validate file size (max 10 MB)
+        if req.file_size_bytes > 10 * 1024 * 1024 {
+            return Err(AppError::Validation("File size exceeds 10 MB limit".to_string()));
+        }
+
+        // Generate S3 storage key
+        let storage_key = format!(
+            "private/schools/{}/form-assignments/{}/manual/{}.pdf",
+            req.school_id,
+            req.assignment_id,
+            Uuid::new_v4()
+        );
+
+        // Get presigned upload URL from upload service
+        let upload_url = self.upload_service
+            .create_document_upload_url(&storage_key, &req.content_type, req.file_size_bytes)
+            .await?;
+
+        Ok(ManualPdfUploadIntentResponse {
+            storage_key,
+            upload_url,
+            expires_in_seconds: 300,
+        })
+    }
+
+    pub async fn complete_manual_pdf_upload(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+        req: ManualPdfCompleteUploadRequest,
+    ) -> Result<StudentFormAssignmentResponse, AppError> {
+        // Verify the file exists in S3
+        self.upload_service
+            .verify_document_object(&req.storage_key, "application/pdf", req.file_size_bytes)
+            .await?;
+
+        // Update assignment in database
+        let assignment = self.dao
+            .complete_manual_pdf_upload(
+                assignment_id,
+                school_id,
+                &req.storage_key,
+                &req.file_name,
+                "application/pdf",
+                req.file_size_bytes,
+                &req.uploaded_by,
+            )
+            .await?;
+
+        Ok(assignment.into())
+    }
+
+    pub async fn get_manual_pdf_access_url(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<String, AppError> {
+        // Get the storage key
+        let storage_key = self.dao
+            .get_manual_pdf_storage_key(assignment_id, school_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Manual PDF not found".to_string()))?;
+
+        // Generate presigned GET URL
+        let url = self.upload_service
+            .create_document_access_url(&storage_key, false)
+            .await?;
+
+        Ok(url)
+    }
+
+    pub async fn remove_manual_pdf(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<StudentFormAssignmentResponse, AppError> {
+        // Get the storage key before deleting
+        if let Ok(Some(storage_key)) = self.dao.get_manual_pdf_storage_key(assignment_id, school_id).await {
+            // Delete from S3
+            let _ = self.upload_service.delete_document_object(&storage_key).await;
+        }
+
+        // Reset the assignment in database
+        let assignment = self.dao
+            .remove_manual_pdf(assignment_id, school_id)
+            .await?;
+
+        Ok(assignment.into())
+    }
+
+    pub async fn upload_manual_pdf(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+        file_bytes: Vec<u8>,
+        file_name: String,
+        uploaded_by: String,
+    ) -> Result<StudentFormAssignmentResponse, AppError> {
+        // Validate file size (max 10 MB)
+        if file_bytes.len() > 10 * 1024 * 1024 {
+            return Err(AppError::Validation("File size exceeds 10 MB limit".to_string()));
+        }
+
+        // Generate S3 storage key
+        let storage_key = format!(
+            "private/schools/{}/form-assignments/{}/manual/{}.pdf",
+            school_id,
+            assignment_id,
+            Uuid::new_v4()
+        );
+
+        // Upload file to S3
+        self.upload_service
+            .upload_document(&storage_key, file_bytes.clone(), "application/pdf")
+            .await?;
+
+        // Update assignment in database
+        let assignment = self.dao
+            .complete_manual_pdf_upload(
+                assignment_id,
+                school_id,
+                &storage_key,
+                &file_name,
+                "application/pdf",
+                file_bytes.len() as i64,
+                &uploaded_by,
+            )
+            .await?;
+
+        Ok(assignment.into())
     }
 }

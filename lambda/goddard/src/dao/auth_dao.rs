@@ -432,7 +432,6 @@ impl AuthDao {
         &self,
         school_id: &uuid::Uuid
     ) -> ApiResult<Option<OwnerDetailsWithAuth>> {
-        println!("[AuthDao] Getting SuperAdmin with login status for school_id: {}", school_id);
 
         let client = match tokio::time::timeout(
             std::time::Duration::from_secs(5),
@@ -463,11 +462,9 @@ impl AuthDao {
             LIMIT 1
         "#;
 
-        println!("[AuthDao] Executing query to join public.users with auth.users");
 
         match client.query_opt(query, &[&school_id]).await {
             Ok(Some(row)) => {
-                println!("[AuthDao] SuperAdmin found for school");
 
                 // Parse created_at
                 let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
@@ -482,7 +479,6 @@ impl AuthDao {
                     chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc)
                 });
 
-                println!("[AuthDao] Last sign in status: has_logged_in={}", last_sign_in_at_utc.is_some());
 
                 Ok(Some(OwnerDetailsWithAuth {
                     id: row.get("id"),
@@ -497,11 +493,9 @@ impl AuthDao {
                 }))
             },
             Ok(None) => {
-                println!("[AuthDao] No SuperAdmin found for school");
                 Ok(None)
             },
             Err(e) => {
-                println!("[AuthDao] Database error: {:?}", e);
                 Err(AppError::Database(format!("Failed to query SuperAdmin: {}", e)))
             }
         }

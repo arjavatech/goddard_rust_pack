@@ -20,7 +20,6 @@ pub async fn send_bulk_form_reminders(
         "[EmailController] Bulk email request from user: {}",
         auth.user_id
     );
-    println!("[EmailController] School ID: {}", payload.school_id);
     println!(
         "[EmailController] Number of emails: {}",
         payload.reminders.len()
@@ -28,7 +27,6 @@ pub async fn send_bulk_form_reminders(
 
     // Validation: Check role is Admin or SuperAdmin
     if !matches!(auth.role, UserRole::Admin | UserRole::SuperAdmin) {
-        println!("[EmailController] Unauthorized: role={:?}", auth.role);
         return Err(AppError::Authorization(
             "Only Admin and SuperAdmin can send bulk emails".to_string(),
         ));
@@ -38,13 +36,10 @@ pub async fn send_bulk_form_reminders(
     // SuperAdmin can email any school, Admin must match their school_id
     if matches!(auth.role, UserRole::Admin) {
         if auth.school_id != payload.school_id {
-            println!("[EmailController] Admin trying to access different school: user_school={}, requested={}",
-                auth.school_id, payload.school_id);
             return Err(AppError::Authorization(
                 "Admin can only send emails for their own school".to_string(),
             ));
         }
-        println!("[EmailController] Admin authorized for their school");
     } else {
         // SuperAdmin can access any school
         println!(
@@ -68,7 +63,6 @@ pub async fn send_bulk_form_reminders(
 
     // Validation: Check for empty batch
     if payload.reminders.is_empty() {
-        println!("[EmailController] Empty batch received");
         return Err(AppError::Validation(
             "No email reminders provided".to_string(),
         ));

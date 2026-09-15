@@ -49,26 +49,20 @@ impl FormSubmissionService {
         &self,
         request: CreateFormSubmissionWebhookRequest,
     ) -> Result<FormSubmissionResponse, AppError> {
-        println!("[DEBUG] Service: Starting webhook processing");
 
         // Handle both nested payload (for local testing) and flat payload (for production webhook)
         let actual_payload = if let Some(nested) = request.payload.get("payload") {
-            println!("[DEBUG] Service: Using nested payload structure");
             nested
         } else {
-            println!("[DEBUG] Service: Using flat payload structure");
             &request.payload
         };
 
         // Extract student_form_assignment_id (this is the only required field)
-        println!("[DEBUG] Service: Looking for student_form_assignment_id in payload: {:?}", actual_payload);
         let student_form_assignment_id = actual_payload.get("student_form_assignment_id")
             .and_then(|v| {
-                println!("[DEBUG] Service: Found student_form_assignment_id value: {:?}", v);
                 v.as_str()
             })
             .and_then(|s| {
-                println!("[DEBUG] Service: Parsing UUID from string: {}", s);
                 Uuid::parse_str(s).ok()
             })
             .ok_or_else(|| {
@@ -76,13 +70,10 @@ impl FormSubmissionService {
                 AppError::Validation("Missing or invalid student_form_assignment_id in payload".to_string())
             })?;
 
-        println!("[DEBUG] Service: Extracted student_form_assignment_id: {}", student_form_assignment_id);
 
         // Query the student_form_assignments table to get school_id, enrollment_id, and form_template_id
         let (school_id, enrollment_id, form_template_id) = match self.dao.get_assignment_details(student_form_assignment_id).await {
             Ok(Some(details)) => {
-                println!("[DEBUG] Service: Found assignment details - school: {}, enrollment: {}, template: {}",
-                         details.0, details.1, details.2);
                 details
             }
             Ok(None) => {
@@ -94,10 +85,6 @@ impl FormSubmissionService {
                 return Err(e);
             }
         };
-
-        println!("[DEBUG] Service: Extracted IDs - school: {}, enrollment: {}, assignment: {}, template: {}",
-                 school_id, enrollment_id, student_form_assignment_id, form_template_id);
-        println!("[DEBUG] Service: About to create form submission");
 
         // Create form submission with version control (returns tuple: (submission, is_insert))
         let (submission, is_insert) = match self.dao
@@ -111,8 +98,6 @@ impl FormSubmissionService {
             .await
         {
             Ok((sub, is_insert)) => {
-                println!("[DEBUG] Service: Form submission {} successfully with ID: {} (is_insert: {})",
-                         if is_insert { "created" } else { "updated" }, sub.id, is_insert);
                 (sub, is_insert)
             }
             Err(e) => {
@@ -135,9 +120,6 @@ impl FormSubmissionService {
         let pdf_link = non_empty("pdf_link");
         let is_in_progress = form_status.as_deref() == Some("IN_PROGRESS");
 
-        println!("[DEBUG] Service: Payload details - form_status: {:?}, edit_link: {:?}, pdf_link: {:?}",
-                 form_status, edit_link, pdf_link);
-
         // Store links from the payload in both tables whenever they are present
         if edit_link.is_some() || pdf_link.is_some() {
             if let Err(e) = self.dao.update_submission_links(
@@ -148,7 +130,6 @@ impl FormSubmissionService {
                 println!("[WARN] Service: Failed to update submission links: {:?}", e);
                 // Don't fail the webhook - just log the warning
             } else {
-                println!("[DEBUG] Service: Successfully updated submission links");
             }
 
             if let Err(e) = self.dao.update_assignment_links(
@@ -159,7 +140,6 @@ impl FormSubmissionService {
                 println!("[WARN] Service: Failed to update assignment links: {:?}", e);
                 // Don't fail the webhook - just log the warning
             } else {
-                println!("[DEBUG] Service: Successfully updated assignment links");
             }
         }
 
@@ -167,7 +147,6 @@ impl FormSubmissionService {
         // since each one needs review. Partial saves (form_status=IN_PROGRESS) are
         // skipped; a missing/unknown form_status fails open and still notifies.
         if is_in_progress {
-            println!("[DEBUG] Service: form_status=IN_PROGRESS, skipping admin notification");
         } else {
             let submitted_event = if is_insert { "submitted" } else { "re-submitted" };
             let admin_body = match self
@@ -275,10 +254,6 @@ impl FormSubmissionService {
         submission_id: Uuid,
         request: UpdateFormSubmissionStatusRequest,
     ) -> Result<FormSubmissionResponse, AppError> {
-        println!("[DEBUG] Service: Starting form submission update");
-        println!("[DEBUG] Service: Status: {:?}, Reason: {:?}, Form Data: {:?}, Metadata: {:?}",
-                 request.status, request.reason, request.form_data.is_some(), request.metadata.is_some());
-
         let submission = self.dao
             .update_form_submission(
                 submission_id,
@@ -289,7 +264,6 @@ impl FormSubmissionService {
             )
             .await?;
 
-        println!("[DEBUG] Service: Form submission updated successfully");
         Ok(submission.into())
     }
 
@@ -297,12 +271,10 @@ impl FormSubmissionService {
         &self,
         assignment_id: Uuid,
     ) -> Result<Option<String>, AppError> {
-        println!("[DEBUG] Service: Getting resume link for assignment: {}", assignment_id);
 
         // Tier 1: check DB for already-stored recent_edit_link
         if let Ok(Some(link)) = self.dao.get_recent_edit_link_by_assignment(assignment_id).await {
             if !link.is_empty() {
-                println!("[DEBUG] Service: Found resume link in DB (fast path)");
                 return Ok(Some(link));
             }
         }
@@ -336,13 +308,11 @@ impl FormSubmissionService {
             raw_form_id
         };
 
-        println!("[DEBUG] Service: Polling Fillout API for in-progress submission (form: {})", form_id);
         let edit_link = fillout_service
             .get_inprogress_edit_link(&form_id, &assignment_id.to_string())
             .await?;
 
         if let Some(ref link) = edit_link {
-            println!("[DEBUG] Service: Found edit link from Fillout, storing in DB");
             if let Err(e) = self.dao.update_assignment_links(assignment_id, Some(link.clone()), None).await {
                 println!("[WARN] Service: Failed to cache resume link in DB: {:?}", e);
             }
@@ -352,12 +322,10 @@ impl FormSubmissionService {
     }
 
     pub async fn validate_webhook_secret(&self, api_key: &str) -> Result<(), AppError> {
-        println!("[DEBUG] Service: Validating webhook secret");
 
         // Use the same API key validation as other endpoints
         let expected_api_key = match std::env::var("OWNER_API_KEY") {
             Ok(key) => {
-                println!("[DEBUG] Service: OWNER_API_KEY found");
                 key
             }
             Err(e) => {
@@ -371,7 +339,6 @@ impl FormSubmissionService {
             return Err(AppError::Authentication("Invalid API key".to_string()));
         }
 
-        println!("[DEBUG] Service: Webhook secret validation successful");
         Ok(())
     }
 }

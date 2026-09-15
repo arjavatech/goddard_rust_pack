@@ -23,7 +23,6 @@ pub async fn create_student_form_assignment(
     headers: HeaderMap,
     Json(request): Json<CreateStudentFormAssignmentRequest>,
 ) -> Result<(StatusCode, Json<StudentFormAssignmentResponse>), AppError> {
-    println!("[DEBUG] Starting student form assignment creation");
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -34,23 +33,14 @@ pub async fn create_student_form_assignment(
             AppError::Authentication("Missing X-API-Key header".to_string())
         })?;
 
-    println!("[DEBUG] API key extracted successfully");
 
     // Validate API key
-    match service.validate_api_key(api_key).await {
-        Ok(_) => println!("[DEBUG] API key validation passed"),
-        Err(e) => {
-            println!("[ERROR] API key validation failed: {:?}", e);
-            return Err(e);
-        }
-    }
+    service.validate_api_key(api_key).await?;
 
-    println!("[DEBUG] Request data: {:?}", request);
 
     // Create student form assignment
     match service.create_student_form_assignment(request).await {
         Ok(assignment) => {
-            println!("[DEBUG] Student form assignment created successfully");
             Ok((StatusCode::CREATED, Json(assignment)))
         }
         Err(e) => {
@@ -66,7 +56,6 @@ pub async fn get_assignments_by_school(
     headers: HeaderMap,
     Query(query): Query<GetStudentFormAssignmentsQuery>,
 ) -> Result<Json<Vec<StudentFormAssignmentResponse>>, AppError> {
-    println!("[DEBUG] GET Assignments: Starting request for school: {}", query.school_id);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -79,13 +68,11 @@ pub async fn get_assignments_by_school(
 
     // Validate API key
     service.validate_api_key(api_key).await?;
-    println!("[DEBUG] GET Assignments: Authentication successful");
 
     let assignments = service
         .get_assignments_by_school(query.school_id)
         .await?;
 
-    println!("[DEBUG] GET Assignments: Query completed successfully, found {} assignments", assignments.len());
     Ok(Json(assignments))
 }
 
@@ -104,7 +91,6 @@ pub async fn update_student_form_assignment(
     headers: HeaderMap,
     Json(request): Json<UpdateStudentFormAssignmentRequest>,
 ) -> Result<Json<StudentFormAssignmentResponse>, AppError> {
-    println!("[DEBUG] PUT Assignment: Starting request for ID: {}", request.id);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -117,13 +103,11 @@ pub async fn update_student_form_assignment(
 
     // Validate API key
     service.validate_api_key(api_key).await?;
-    println!("[DEBUG] PUT Assignment: Authentication successful");
 
     let assignment = service
         .update_student_form_assignment(request)
         .await?;
 
-    println!("[DEBUG] PUT Assignment: Update completed successfully");
     Ok(Json(assignment))
 }
 
@@ -133,8 +117,6 @@ pub async fn delete_student_form_assignment(
     headers: HeaderMap,
     Query(query): Query<DeleteStudentFormAssignmentQuery>,
 ) -> Result<Json<DeleteStudentFormAssignmentResponse>, AppError> {
-    println!("[DEBUG] DELETE Assignment: Starting request for assignment: {}, school: {}",
-             query.assignment_id, query.school_id);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -147,13 +129,11 @@ pub async fn delete_student_form_assignment(
 
     // Validate API key
     service.validate_api_key(api_key).await?;
-    println!("[DEBUG] DELETE Assignment: Authentication successful");
 
     let response = service
         .delete_student_form_assignment(query.assignment_id, query.school_id)
         .await?;
 
-    println!("[DEBUG] DELETE Assignment: Deletion completed successfully");
     Ok(Json(response))
 }
 
@@ -163,9 +143,6 @@ pub async fn bulk_assign_forms_to_students(
     headers: HeaderMap,
     Json(request): Json<BulkAssignFormRequest>,
 ) -> Result<(StatusCode, Json<BulkAssignFormResponse>), AppError> {
-    println!("[DEBUG] BULK ASSIGN: Starting bulk form assignment");
-    println!("[DEBUG] BULK ASSIGN: School ID: {}, Number of assignments: {}",
-             request.school_id, request.assignments.len());
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -178,13 +155,10 @@ pub async fn bulk_assign_forms_to_students(
 
     // Validate API key
     service.validate_api_key(api_key).await?;
-    println!("[DEBUG] BULK ASSIGN: Authentication successful");
 
     // Perform bulk assignment
     match service.bulk_assign_forms(request).await {
         Ok(response) => {
-            println!("[DEBUG] BULK ASSIGN: Successfully assigned {} forms, {} failed",
-                     response.successful.len(), response.failed.len());
             Ok((StatusCode::CREATED, Json(response)))
         }
         Err(e) => {
@@ -200,9 +174,6 @@ pub async fn assign_form_to_school_students(
     headers: HeaderMap,
     Json(request): Json<crate::models::student_form_assignment::AssignFormToSchoolStudentsRequest>,
 ) -> Result<(StatusCode, Json<crate::models::student_form_assignment::AssignFormToSchoolStudentsResponse>), AppError> {
-    println!("[DEBUG] ASSIGN TO SCHOOL: Starting assignment");
-    println!("[DEBUG] ASSIGN TO SCHOOL: School ID: {}, Form Template ID: {}, Is Required: {:?}",
-             request.school_id, request.form_template_id, request.is_required);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -215,14 +186,10 @@ pub async fn assign_form_to_school_students(
 
     // Validate API key
     service.validate_api_key(api_key).await?;
-    println!("[DEBUG] ASSIGN TO SCHOOL: Authentication successful");
 
     // Perform assignment to all active students
     match service.assign_form_to_school_students(request).await {
         Ok(response) => {
-            println!("[DEBUG] ASSIGN TO SCHOOL: Successfully assigned to {} students. Total: {}, Already assigned: {}, Newly assigned: {}",
-                     response.newly_assigned, response.total_active_students,
-                     response.students_already_assigned, response.newly_assigned);
             Ok((StatusCode::CREATED, Json(response)))
         }
         Err(e) => {
@@ -238,9 +205,6 @@ pub async fn assign_form_to_class_students(
     headers: HeaderMap,
     Json(request): Json<crate::models::student_form_assignment::AssignFormToClassStudentsRequest>,
 ) -> Result<(StatusCode, Json<crate::models::student_form_assignment::AssignFormToClassStudentsResponse>), AppError> {
-    println!("[DEBUG] ASSIGN TO CLASS: Starting assignment");
-    println!("[DEBUG] ASSIGN TO CLASS: School ID: {}, Class ID: {}, Form Template ID: {}",
-             request.school_id, request.class_id, request.form_template_id);
 
     // Extract API key from X-API-Key header
     let api_key = headers
@@ -253,14 +217,10 @@ pub async fn assign_form_to_class_students(
 
     // Validate API key
     service.validate_api_key(api_key).await?;
-    println!("[DEBUG] ASSIGN TO CLASS: Authentication successful");
 
     // Perform assignment to all active students in the class
     match service.assign_form_to_class_students(request).await {
         Ok(response) => {
-            println!("[DEBUG] ASSIGN TO CLASS: Successfully assigned to {} students. Total: {}, Already assigned: {}, Newly assigned: {}",
-                     response.newly_assigned, response.total_active_students,
-                     response.students_already_assigned, response.newly_assigned);
             Ok((StatusCode::CREATED, Json(response)))
         }
         Err(e) => {
@@ -276,18 +236,14 @@ pub async fn download_enrollment_forms_zip(
     State(service): State<Arc<StudentFormAssignmentService>>,
     Path(enrollment_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    println!("[DEBUG] DOWNLOAD ZIP: Starting for enrollment: {}", enrollment_id);
-    println!("[DEBUG] DOWNLOAD ZIP: Auth context - User: {}, Role: {:?}", auth.user_id, auth.role);
 
     // Lookup parent_id and child name for this enrollment and validate access
     let (parent_id, child_first_name, child_last_name) = service.get_enrollment_parent_id(enrollment_id).await?;
     validate_parent_access(&auth, &parent_id)?;
-    println!("[DEBUG] DOWNLOAD ZIP: Access validation passed");
 
     // Download and create ZIP
     let (zip_bytes, filename) = service.download_enrollment_forms_zip(enrollment_id, &child_first_name, &child_last_name).await?;
 
-    println!("[DEBUG] DOWNLOAD ZIP: Returning ZIP file: {} ({} bytes)", filename, zip_bytes.len());
 
     Ok((
         StatusCode::OK,

@@ -48,6 +48,8 @@ use controllers::{
         get_employee_form_templates, get_employee_forms, get_employees, invite_employee,
         remove_employee_template_pdf, resend_employee_invite, review_employee_form_assignment,
         send_bulk_employee_form_reminders, update_employee, update_employee_form_template,
+        employee_manual_pdf_upload_intent, employee_manual_pdf_complete_upload,
+        get_employee_manual_pdf_url, delete_employee_manual_pdf, upload_employee_manual_pdf,
     },
     enrollment_controller::{
         activate_invite, activate_parent, add_child, bulk_add_secondary_parents,
@@ -90,6 +92,10 @@ use controllers::{
         get_student_form_review_queue, update_student_form_assignment,
     },
     student_form_assignment_review_controller::review_student_form_assignment,
+    student_form_assignment_manual_pdf_controller::{
+        student_manual_pdf_upload_intent, student_manual_pdf_complete_upload,
+        get_student_manual_pdf_url, delete_student_manual_pdf, upload_student_manual_pdf,
+    },
         taptime_mapping_controller::{
             attendance_users, available_taptime_users, create_mapping, database_diagnostics, integration_status, mapping_users, mirror_own_pin, reconcile_users, update_employee_pin,
         redeem_pairing_code, setup_status, sync_access, taptime_settings, update_taptime_settings,
@@ -207,7 +213,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .ok();
 
     if fillout_service.is_some() {
-        println!("[DEBUG] Fillout service initialized successfully");
     } else {
         println!("[WARN] Fillout service not initialized - missing environment variables");
     }
@@ -269,6 +274,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         student_form_assignment_dao,
         email_service.clone(),
         notification_service.clone(),
+        upload_service.clone(),
     ));
     let portal_service = Arc::new(PortalService::new(Arc::new(portal_dao)));
     let admin_service = Arc::new(AdminService::new(admin_dao));
@@ -718,6 +724,23 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             get(download_enrollment_forms_zip)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
+        .route(
+            "/student-form-assignments/:id/manual-pdf/upload-intent",
+            post(student_manual_pdf_upload_intent)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/student-form-assignments/:id/manual-pdf/complete-upload",
+            post(student_manual_pdf_complete_upload)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/student-form-assignments/:id/manual-pdf",
+            get(get_student_manual_pdf_url)
+                .post(upload_student_manual_pdf)
+                .delete(delete_student_manual_pdf)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
         .with_state(student_form_assignment_service)
         // Document Requests: secure parent/employee upload and admin review workflow.
         .route(
@@ -955,6 +978,23 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/emails/bulk-employee-form-reminders",
             post(send_bulk_employee_form_reminders)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employee-form-assignments/:id/manual-pdf/upload-intent",
+            post(employee_manual_pdf_upload_intent)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employee-form-assignments/:id/manual-pdf/complete-upload",
+            post(employee_manual_pdf_complete_upload)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employee-form-assignments/:id/manual-pdf",
+            get(get_employee_manual_pdf_url)
+                .post(upload_employee_manual_pdf)
+                .delete(delete_employee_manual_pdf)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .with_state(employee_service)

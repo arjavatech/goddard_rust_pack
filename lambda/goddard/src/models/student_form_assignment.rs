@@ -8,6 +8,7 @@ pub enum StudentFormAssignmentStatus {
     Incomplete,
     InProgress,
     Completed,
+    ManuallyUploaded,
     Approved,
     Rejected,
 }
@@ -24,6 +25,13 @@ pub struct StudentFormAssignment {
     pub is_required: bool,
     pub assigned_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub submission_source: String,
+    pub manual_pdf_storage_key: Option<String>,
+    pub manual_pdf_file_name: Option<String>,
+    pub manual_pdf_content_type: Option<String>,
+    pub manual_pdf_file_size_bytes: Option<i64>,
+    pub manual_pdf_uploaded_at: Option<DateTime<Utc>>,
+    pub manual_pdf_uploaded_by: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -61,6 +69,13 @@ pub struct StudentFormAssignmentResponse {
     pub is_required: bool,
     pub assigned_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub submission_source: String,
+    pub manual_pdf_storage_key: Option<String>,
+    pub manual_pdf_file_name: Option<String>,
+    pub manual_pdf_content_type: Option<String>,
+    pub manual_pdf_file_size_bytes: Option<i64>,
+    pub manual_pdf_uploaded_at: Option<DateTime<Utc>>,
+    pub manual_pdf_uploaded_by: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -94,6 +109,13 @@ impl From<StudentFormAssignment> for StudentFormAssignmentResponse {
             is_required: assignment.is_required,
             assigned_at: assignment.assigned_at,
             updated_at: assignment.updated_at,
+            submission_source: assignment.submission_source,
+            manual_pdf_storage_key: assignment.manual_pdf_storage_key,
+            manual_pdf_file_name: assignment.manual_pdf_file_name,
+            manual_pdf_content_type: assignment.manual_pdf_content_type,
+            manual_pdf_file_size_bytes: assignment.manual_pdf_file_size_bytes,
+            manual_pdf_uploaded_at: assignment.manual_pdf_uploaded_at,
+            manual_pdf_uploaded_by: assignment.manual_pdf_uploaded_by,
         }
     }
 }
@@ -154,6 +176,29 @@ pub struct AssignFormToClassStudentsRequest {
     pub school_id: Uuid,
     pub class_id: Uuid,
     pub form_template_id: Uuid,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ManualPdfUploadIntentRequest {
+    pub assignment_id: Uuid,
+    pub school_id: Uuid,
+    pub file_size_bytes: i64,
+    pub content_type: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ManualPdfUploadIntentResponse {
+    pub storage_key: String,
+    pub upload_url: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ManualPdfCompleteUploadRequest {
+    pub storage_key: String,
+    pub file_name: String,
+    pub file_size_bytes: i64,
+    pub uploaded_by: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

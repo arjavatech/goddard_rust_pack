@@ -32,11 +32,9 @@ impl StudentFormAssignmentDao {
         &self,
         request: &CreateStudentFormAssignmentRequest,
     ) -> Result<StudentFormAssignment, AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Starting assignment creation");
 
         let client = match self.pool.get().await {
             Ok(c) => {
-                println!("[DEBUG] StudentFormAssignmentDAO: Database connection acquired");
                 c
             }
             Err(e) => {
@@ -54,11 +52,11 @@ impl StudentFormAssignmentDao {
             StudentFormAssignmentStatus::Incomplete => "incomplete",
             StudentFormAssignmentStatus::InProgress => "in_progress",
             StudentFormAssignmentStatus::Completed => "completed",
+            StudentFormAssignmentStatus::ManuallyUploaded => "manually_uploaded",
             StudentFormAssignmentStatus::Approved => "approved",
             StudentFormAssignmentStatus::Rejected => "rejected",
         };
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Executing INSERT query");
         let row = match client.query_one(
             r#"
             INSERT INTO student_form_assignments (
@@ -81,7 +79,6 @@ impl StudentFormAssignmentDao {
             ],
         ).await {
             Ok(row) => {
-                println!("[DEBUG] StudentFormAssignmentDAO: INSERT query executed successfully");
                 row
             }
             Err(e) => {
@@ -90,7 +87,6 @@ impl StudentFormAssignmentDao {
             }
         };
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Converting row to assignment");
         self.row_to_student_form_assignment(row)
     }
 
@@ -128,7 +124,8 @@ impl StudentFormAssignmentDao {
                    COALESCE(fs.pdf_link, sfa.recent_pdf_link) AS recent_pdf_link,
                    c.first_name AS student_first_name, c.last_name AS student_last_name,
                    parent.first_name AS parent_first_name, parent.last_name AS parent_last_name,
-                   parent.email AS parent_email, cl.id AS classroom_id, cl.name AS classroom_name
+                   parent.email AS parent_email, cl.id AS classroom_id, cl.name AS classroom_name,
+                   sfa.submission_source
             FROM student_form_assignments sfa
             JOIN form_templates ft ON ft.id = sfa.form_template_id
             JOIN children c ON c.id = sfa.child_id
@@ -144,7 +141,7 @@ impl StudentFormAssignmentDao {
                 LIMIT 1
             ) fs ON true
             WHERE sfa.school_id = $1
-              AND sfa.status = 'in_progress'
+              AND sfa.status IN ('in_progress', 'manually_uploaded')
               AND (sfa.is_active = true OR sfa.is_active IS NULL)
             ORDER BY COALESCE(fs.submitted_at, sfa.updated_at, sfa.assigned_at) DESC
             "#,
@@ -161,6 +158,7 @@ impl StudentFormAssignmentDao {
             student_last_name: row.get("student_last_name"), parent_first_name: row.get("parent_first_name"),
             parent_last_name: row.get("parent_last_name"), parent_email: row.get("parent_email"),
             classroom_id: row.get("classroom_id"), classroom_name: row.get("classroom_name"),
+            submission_source: row.try_get("submission_source").ok(),
         }).collect())
     }
 
@@ -168,7 +166,6 @@ impl StudentFormAssignmentDao {
         &self,
         request: &UpdateStudentFormAssignmentRequest,
     ) -> Result<StudentFormAssignment, AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Starting assignment update for ID: {}", request.id);
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -221,7 +218,6 @@ impl StudentFormAssignmentDao {
             set_clauses.join(", ")
         );
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Executing update query: {}", query);
 
         // Build parameters
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![
@@ -250,6 +246,7 @@ impl StudentFormAssignmentDao {
             StudentFormAssignmentStatus::Incomplete => "incomplete".to_string(),
             StudentFormAssignmentStatus::InProgress => "in_progress".to_string(),
             StudentFormAssignmentStatus::Completed => "completed".to_string(),
+            StudentFormAssignmentStatus::ManuallyUploaded => "manually_uploaded".to_string(),
             StudentFormAssignmentStatus::Approved => "approved".to_string(),
             StudentFormAssignmentStatus::Rejected => "rejected".to_string(),
         });
@@ -265,7 +262,6 @@ impl StudentFormAssignmentDao {
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Update query executed successfully");
         self.row_to_student_form_assignment(row)
     }
 
@@ -299,7 +295,6 @@ impl StudentFormAssignmentDao {
         &self,
         request: &ReviewStudentFormAssignmentRequest,
     ) -> Result<ReviewStudentFormAssignmentResponse, AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Starting assignment review for ID: {}", request.assignment_id);
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -313,7 +308,6 @@ impl StudentFormAssignmentDao {
 
         let now = Utc::now().naive_utc();
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Executing review update query with status: {}", status_str);
         let row = client.query_one(
             r#"
             UPDATE student_form_assignments
@@ -343,7 +337,6 @@ impl StudentFormAssignmentDao {
             AppError::Database(e.to_string())
         })?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Review update completed successfully");
 
         // Get the status from the returned row to confirm the update
         let status_str: String = row.try_get("status")
@@ -398,11 +391,9 @@ impl StudentFormAssignmentDao {
     }
 
     fn row_to_student_form_assignment(&self, row: Row) -> Result<StudentFormAssignment, AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Starting row conversion");
 
         let status_str: String = match row.try_get("status") {
             Ok(status) => {
-                println!("[DEBUG] StudentFormAssignmentDAO: Status extracted: {}", status);
                 status
             }
             Err(e) => {
@@ -415,6 +406,7 @@ impl StudentFormAssignmentDao {
             "incomplete" => StudentFormAssignmentStatus::Incomplete,
             "in_progress" => StudentFormAssignmentStatus::InProgress,
             "completed" => StudentFormAssignmentStatus::Completed,
+            "manually_uploaded" => StudentFormAssignmentStatus::ManuallyUploaded,
             "approved" => StudentFormAssignmentStatus::Approved,
             "rejected" => StudentFormAssignmentStatus::Rejected,
             _ => {
@@ -423,7 +415,6 @@ impl StudentFormAssignmentDao {
             }
         };
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Extracting all row fields");
 
         let assignment = StudentFormAssignment {
             id: row.try_get("id").map_err(|e| {
@@ -469,9 +460,18 @@ impl StudentFormAssignmentDao {
                 })?;
                 naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
             },
+            submission_source: row.try_get("submission_source").unwrap_or_else(|_| "digital".to_string()),
+            manual_pdf_storage_key: row.try_get("manual_pdf_storage_key").ok().flatten(),
+            manual_pdf_file_name: row.try_get("manual_pdf_file_name").ok().flatten(),
+            manual_pdf_content_type: row.try_get("manual_pdf_content_type").ok().flatten(),
+            manual_pdf_file_size_bytes: row.try_get("manual_pdf_file_size_bytes").ok().flatten(),
+            manual_pdf_uploaded_at: {
+                let naive_dt_opt: Option<NaiveDateTime> = row.try_get("manual_pdf_uploaded_at").ok().flatten();
+                naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+            },
+            manual_pdf_uploaded_by: row.try_get("manual_pdf_uploaded_by").ok().flatten(),
         };
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Row conversion completed successfully");
         Ok(assignment)
     }
 
@@ -544,7 +544,6 @@ impl StudentFormAssignmentDao {
         &self,
         form_template_ids: &[Uuid],
     ) -> Result<(), AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Validating {} form templates are active", form_template_ids.len());
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -573,7 +572,6 @@ impl StudentFormAssignmentDao {
             }
         }
 
-        println!("[DEBUG] StudentFormAssignmentDAO: All form templates validated successfully");
         Ok(())
     }
 
@@ -583,7 +581,6 @@ impl StudentFormAssignmentDao {
         school_id: Uuid,
         assignments: &[FormAssignment],
     ) -> Result<(), AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Checking for duplicate assignments");
 
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -617,7 +614,6 @@ impl StudentFormAssignmentDao {
             }
         }
 
-        println!("[DEBUG] StudentFormAssignmentDAO: No duplicate assignments found");
         Ok(())
     }
 
@@ -627,7 +623,6 @@ impl StudentFormAssignmentDao {
         school_id: Uuid,
         assignments: Vec<FormAssignment>,
     ) -> Result<Vec<StudentFormAssignment>, AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Starting bulk creation of {} assignments", assignments.len());
 
         let mut client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -644,9 +639,6 @@ impl StudentFormAssignmentDao {
             let is_required = assignment.is_required.unwrap_or(false);
             let status_str = "incomplete"; // Default status
             let assignment_source = "manual"; // Manual assignment source
-
-            println!("[DEBUG] StudentFormAssignmentDAO: Inserting assignment for child {}, form {}",
-                     assignment.child_id, assignment.form_template_id);
 
             let row = transaction.query_one(
                 r#"
@@ -683,7 +675,6 @@ impl StudentFormAssignmentDao {
         transaction.commit().await
             .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} assignments", created_assignments.len());
         Ok(created_assignments)
     }
 
@@ -695,7 +686,6 @@ impl StudentFormAssignmentDao {
         form_template_id: Uuid,
         is_required: bool,
     ) -> Result<(Vec<StudentFormAssignment>, i64, i64), AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Assigning form {} to all active students in school {}", form_template_id, school_id);
 
         let mut client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
@@ -722,7 +712,6 @@ impl StudentFormAssignmentDao {
             })?;
 
         let total_active_students: i64 = total_row.get("total");
-        println!("[DEBUG] StudentFormAssignmentDAO: Total active students in school: {}", total_active_students);
 
         // Get count of students already assigned
         let already_assigned_query = r#"
@@ -741,7 +730,6 @@ impl StudentFormAssignmentDao {
             })?;
 
         let students_already_assigned: i64 = already_assigned_row.get("already_assigned");
-        println!("[DEBUG] StudentFormAssignmentDAO: Students already assigned: {}", students_already_assigned);
 
         // Get all active enrollments that don't have this form assigned yet
         let query = r#"
@@ -770,7 +758,6 @@ impl StudentFormAssignmentDao {
                 AppError::Database(e.to_string())
             })?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Found {} students to assign", rows.len());
 
         // Create assignments for each student
         let mut created_assignments = Vec::new();
@@ -825,7 +812,6 @@ impl StudentFormAssignmentDao {
         transaction.commit().await
             .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} new assignments", created_assignments.len());
 
         Ok((created_assignments, total_active_students, students_already_assigned))
     }
@@ -839,7 +825,6 @@ impl StudentFormAssignmentDao {
         form_template_id: Uuid,
         is_required: bool,
     ) -> Result<(Vec<StudentFormAssignment>, i64, i64), AppError> {
-        println!("[DEBUG] StudentFormAssignmentDAO: Assigning form {} to all active students in class {} of school {}", form_template_id, class_id, school_id);
 
         let mut client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?;
@@ -865,7 +850,6 @@ impl StudentFormAssignmentDao {
             })?;
 
         let total_active_students: i64 = total_row.get("total");
-        println!("[DEBUG] StudentFormAssignmentDAO: Total active students in class: {}", total_active_students);
 
         // Already assigned in class
         let already_assigned_query = r#"
@@ -885,7 +869,6 @@ impl StudentFormAssignmentDao {
             })?;
 
         let students_already_assigned: i64 = already_assigned_row.get("already_assigned");
-        println!("[DEBUG] StudentFormAssignmentDAO: Students already assigned in class: {}", students_already_assigned);
 
         // Eligible students (not yet assigned) in this class
         let query = r#"
@@ -914,7 +897,6 @@ impl StudentFormAssignmentDao {
                 AppError::Database(e.to_string())
             })?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Found {} students to assign in class", rows.len());
 
         let mut created_assignments = Vec::new();
         let assignment_source = "class_override";
@@ -967,7 +949,6 @@ impl StudentFormAssignmentDao {
         transaction.commit().await
             .map_err(|e| AppError::Database(format!("Failed to commit transaction: {}", e)))?;
 
-        println!("[DEBUG] StudentFormAssignmentDAO: Successfully created {} new class assignments", created_assignments.len());
 
         Ok((created_assignments, total_active_students, students_already_assigned))
     }
@@ -1098,5 +1079,107 @@ impl StudentFormAssignmentDao {
                 .flatten()
                 .unwrap_or_else(|| "Admin".to_string()),
         })
+    }
+
+    pub async fn complete_manual_pdf_upload(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+        storage_key: &str,
+        file_name: &str,
+        content_type: &str,
+        file_size_bytes: i64,
+        uploaded_by: &str,
+    ) -> Result<StudentFormAssignment, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let now = Utc::now().naive_utc();
+
+        let row = client.query_one(
+            r#"
+            UPDATE student_form_assignments
+            SET status = 'manually_uploaded',
+                manual_pdf_storage_key = $3,
+                manual_pdf_file_name = $4,
+                manual_pdf_content_type = $5,
+                manual_pdf_file_size_bytes = $6,
+                manual_pdf_uploaded_at = $7,
+                manual_pdf_uploaded_by = $8,
+                submission_source = 'manual_upload',
+                updated_at = $7
+            WHERE id = $1 AND school_id = $2
+            RETURNING *
+            "#,
+            &[
+                &assignment_id,
+                &school_id,
+                &storage_key,
+                &file_name,
+                &content_type,
+                &file_size_bytes,
+                &now,
+                &uploaded_by,
+            ],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        self.row_to_student_form_assignment(row)
+    }
+
+    pub async fn get_manual_pdf_storage_key(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<Option<String>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let row = client.query_opt(
+            r#"
+            SELECT manual_pdf_storage_key
+            FROM student_form_assignments
+            WHERE id = $1 AND school_id = $2
+            "#,
+            &[&assignment_id, &school_id],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(row.and_then(|r| r.try_get("manual_pdf_storage_key").ok()))
+    }
+
+    pub async fn remove_manual_pdf(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<StudentFormAssignment, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let now = Utc::now().naive_utc();
+
+        let row = client.query_one(
+            r#"
+            UPDATE student_form_assignments
+            SET status = 'incomplete',
+                manual_pdf_storage_key = NULL,
+                manual_pdf_file_name = NULL,
+                manual_pdf_content_type = NULL,
+                manual_pdf_file_size_bytes = NULL,
+                manual_pdf_uploaded_at = NULL,
+                manual_pdf_uploaded_by = NULL,
+                submission_source = 'digital',
+                updated_at = $3
+            WHERE id = $1 AND school_id = $2
+            RETURNING *
+            "#,
+            &[&assignment_id, &school_id, &now],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        self.row_to_student_form_assignment(row)
     }
 }

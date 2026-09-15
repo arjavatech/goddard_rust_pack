@@ -20,8 +20,9 @@ use crate::{
         BulkEmployeeReminderResponse, CreateEmployeeFormTemplateRequest, Employee,
         EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate, EmployeeFormSubmission,
         EmployeeFormTemplate, EmployeeInviteRequest, EmployeeInviteResponse, EmployeeWithUser,
-        ResendEmployeeInviteResponse, ReviewEmployeeFormRequest, UpdateEmployeeFormTemplateRequest,
-        UpdateEmployeeRequest,
+        EmployeeManualPdfUploadIntentRequest, EmployeeManualPdfUploadIntentResponse,
+        EmployeeManualPdfCompleteUploadRequest, ResendEmployeeInviteResponse, ReviewEmployeeFormRequest,
+        UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
     models::school::SchoolFeature,
@@ -736,9 +737,19 @@ impl EmployeeService {
         &self,
         employee_id: Uuid,
     ) -> ApiResult<Vec<EmployeeFormAssignmentWithTemplate>> {
-        self.employee_form_assignment_dao
+        let mut assignments = self.employee_form_assignment_dao
             .get_assignments_by_employee(employee_id)
-            .await
+            .await?;
+        let s3_base_url = std::env::var("S3_BASE_URL").unwrap_or_default();
+        for a in &mut assignments {
+            if a.submission_source.as_deref() == Some("manual_upload") {
+                if let Some(key) = &a.manual_pdf_storage_key {
+                    a.recent_pdf_link = Some(format!("{}/{}", s3_base_url.trim_end_matches('/'), key));
+                }
+                a.approved_on = None;
+            }
+        }
+        Ok(assignments)
     }
 
     pub async fn get_assignments_by_school(
@@ -746,9 +757,19 @@ impl EmployeeService {
         school_id: Uuid,
     ) -> ApiResult<Vec<EmployeeFormAssignmentWithTemplate>> {
         self.ensure_enabled(school_id).await?;
-        self.employee_form_assignment_dao
+        let mut assignments = self.employee_form_assignment_dao
             .get_assignments_by_school(school_id)
-            .await
+            .await?;
+        let s3_base_url = std::env::var("S3_BASE_URL").unwrap_or_default();
+        for a in &mut assignments {
+            if a.submission_source.as_deref() == Some("manual_upload") {
+                if let Some(key) = &a.manual_pdf_storage_key {
+                    a.recent_pdf_link = Some(format!("{}/{}", s3_base_url.trim_end_matches('/'), key));
+                }
+                a.approved_on = None;
+            }
+        }
+        Ok(assignments)
     }
 
     pub async fn get_review_queue(
@@ -968,5 +989,135 @@ impl EmployeeService {
             failed_emails,
             message: format!("Sent {} reminder(s), {} failed.", total_sent, total_failed),
         })
+    }
+
+    pub async fn create_employee_manual_pdf_upload_intent(
+        &self,
+        req: EmployeeManualPdfUploadIntentRequest,
+    ) -> Result<EmployeeManualPdfUploadIntentResponse, AppError> {
+        if req.content_type != "application/pdf" {
+            return Err(AppError::Validation("Only PDF files are allowed".to_string()));
+        }
+
+        if req.file_size_bytes > 10 * 1024 * 1024 {
+            return Err(AppError::Validation("File size exceeds 10 MB limit".to_string()));
+        }
+
+        let storage_key = format!(
+            "private/schools/{}/form-assignments/{}/manual/{}.pdf",
+            req.school_id,
+            req.assignment_id,
+            Uuid::new_v4()
+        );
+
+        let upload_url = self.upload_service
+            .create_document_upload_url(&storage_key, &req.content_type, req.file_size_bytes)
+            .await?;
+
+        Ok(EmployeeManualPdfUploadIntentResponse {
+            storage_key,
+            upload_url,
+            expires_in_seconds: 300,
+        })
+    }
+
+    pub async fn complete_employee_manual_pdf_upload(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+        req: EmployeeManualPdfCompleteUploadRequest,
+    ) -> Result<EmployeeFormAssignment, AppError> {
+        self.upload_service
+            .verify_document_object(&req.storage_key, "application/pdf", req.file_size_bytes)
+            .await?;
+
+        let assignment = self.employee_form_assignment_dao
+            .complete_manual_pdf_upload(
+                assignment_id,
+                school_id,
+                &req.storage_key,
+                &req.file_name,
+                "application/pdf",
+                req.file_size_bytes,
+                &req.uploaded_by,
+            )
+            .await?;
+
+        Ok(assignment)
+    }
+
+    pub async fn get_employee_manual_pdf_access_url(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<String, AppError> {
+        let storage_key = self.employee_form_assignment_dao
+            .get_manual_pdf_storage_key(assignment_id, school_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Manual PDF not found".to_string()))?;
+
+        let url = self.upload_service
+            .create_document_access_url(&storage_key, false)
+            .await?;
+
+        Ok(url)
+    }
+
+    pub async fn remove_employee_manual_pdf(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<EmployeeFormAssignment, AppError> {
+        if let Ok(Some(storage_key)) = self.employee_form_assignment_dao.get_manual_pdf_storage_key(assignment_id, school_id).await {
+            let _ = self.upload_service.delete_document_object(&storage_key).await;
+        }
+
+        let assignment = self.employee_form_assignment_dao
+            .remove_manual_pdf(assignment_id, school_id)
+            .await?;
+
+        Ok(assignment)
+    }
+
+    pub async fn upload_employee_manual_pdf(
+        &self,
+        assignment_id: Uuid,
+        school_id: Uuid,
+        file_bytes: Vec<u8>,
+        file_name: String,
+        uploaded_by: String,
+    ) -> Result<EmployeeFormAssignment, AppError> {
+        // Validate file size (max 10 MB)
+        if file_bytes.len() > 10 * 1024 * 1024 {
+            return Err(AppError::Validation("File size exceeds 10 MB limit".to_string()));
+        }
+
+        // Generate S3 storage key
+        let storage_key = format!(
+            "private/schools/{}/form-assignments/{}/manual/{}.pdf",
+            school_id,
+            assignment_id,
+            Uuid::new_v4()
+        );
+
+        // Upload file to S3
+        self.upload_service
+            .upload_document(&storage_key, file_bytes.clone(), "application/pdf")
+            .await?;
+
+        // Update assignment in database
+        let assignment = self.employee_form_assignment_dao
+            .complete_manual_pdf_upload(
+                assignment_id,
+                school_id,
+                &storage_key,
+                &file_name,
+                "application/pdf",
+                file_bytes.len() as i64,
+                &uploaded_by,
+            )
+            .await?;
+
+        Ok(assignment)
     }
 }

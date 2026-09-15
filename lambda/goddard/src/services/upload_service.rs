@@ -3,6 +3,7 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use crate::error::error_types::AppError;
 use crate::models::upload::UploadImageResponse;
 use std::time::Duration;
+use reqwest;
 
 const ALLOWED_CONTENT_TYPES: &[&str] = &[
     "image/jpeg",
@@ -28,7 +29,6 @@ impl UploadService {
         if bucket.is_some() && base_url.is_some() {
             let config = aws_config::load_from_env().await;
             let s3_client = aws_sdk_s3::Client::new(&config);
-            println!("[DEBUG] UploadService initialized (bucket={})", bucket.as_deref().unwrap_or(""));
             UploadService { s3_client: Some(s3_client), bucket, base_url }
         } else {
             println!("[WARN] UploadService disabled - missing S3_UPLOAD_BUCKET or S3_BASE_URL");
@@ -134,6 +134,35 @@ impl UploadService {
         let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
         client.delete_object().bucket(bucket).key(key).send().await
             .map_err(|e| AppError::Internal(format!("Failed to remove S3 object: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn upload_document(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<(), AppError> {
+        // Validate size
+        if bytes.len() as i64 > DOCUMENT_MAX_SIZE_BYTES {
+            return Err(AppError::Validation("File size exceeds 10 MB limit".to_string()));
+        }
+
+        // Generate presigned PUT URL using existing method
+        let presigned_url = self.create_document_upload_url(key, content_type, bytes.len() as i64).await?;
+
+        // PUT file to S3 via presigned URL using reqwest
+        let client = reqwest::Client::new();
+        let response = client
+            .put(&presigned_url)
+            .header("Content-Type", content_type)
+            .header("Content-Length", bytes.len())
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("S3 upload request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(AppError::Internal(format!("S3 upload failed ({}): {}", status, body)));
+        }
+
         Ok(())
     }
 }

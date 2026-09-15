@@ -81,6 +81,13 @@ pub struct EmployeeFormAssignment {
     pub is_active: Option<bool>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
+    pub submission_source: Option<String>,
+    pub manual_pdf_storage_key: Option<String>,
+    pub manual_pdf_file_name: Option<String>,
+    pub manual_pdf_content_type: Option<String>,
+    pub manual_pdf_file_size_bytes: Option<i64>,
+    pub manual_pdf_uploaded_at: Option<NaiveDateTime>,
+    pub manual_pdf_uploaded_by: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -105,6 +112,13 @@ pub struct EmployeeFormAssignmentWithTemplate {
     pub recent_pdf_link: Option<String>,
     pub employee_first_name: Option<String>,
     pub employee_last_name: Option<String>,
+    pub submission_source: Option<String>,
+    pub manual_pdf_storage_key: Option<String>,
+    pub manual_pdf_file_name: Option<String>,
+    pub manual_pdf_content_type: Option<String>,
+    pub manual_pdf_file_size_bytes: Option<i64>,
+    pub manual_pdf_uploaded_at: Option<NaiveDateTime>,
+    pub manual_pdf_uploaded_by: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -294,4 +308,27 @@ pub struct BulkEmployeeReminderResponse {
     pub total_failed: i32,
     pub failed_emails: Vec<String>,
     pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EmployeeManualPdfUploadIntentRequest {
+    pub assignment_id: Uuid,
+    pub school_id: Uuid,
+    pub file_size_bytes: i64,
+    pub content_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EmployeeManualPdfUploadIntentResponse {
+    pub storage_key: String,
+    pub upload_url: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EmployeeManualPdfCompleteUploadRequest {
+    pub storage_key: String,
+    pub file_name: String,
+    pub file_size_bytes: i64,
+    pub uploaded_by: String,
 }

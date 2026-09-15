@@ -89,21 +89,17 @@ impl EnrollmentDao {
 
     // Helper function to get database connection with timeout (same as school DAO)
     async fn get_connection(&self) -> ApiResult<Client> {
-        println!("[EnrollmentDao] Attempting to get database connection with 5s timeout");
         let timeout_duration = Duration::from_secs(5);
         let get_connection = self.pool.get();
 
         match tokio::time::timeout(timeout_duration, get_connection).await {
             Ok(Ok(client)) => {
-                println!("[EnrollmentDao] Database connection acquired successfully");
                 Ok(client)
             },
             Ok(Err(e)) => {
-                println!("[EnrollmentDao] Failed to get connection from pool: {:?}", e);
                 Err(AppError::Database(format!("Failed to get connection from pool: {}", e)))
             },
             Err(_) => {
-                println!("[EnrollmentDao] Database connection timeout after 5s");
                 Err(AppError::Database("Database connection timeout (5s) - database may be unreachable".to_string()))
             }
         }
@@ -330,26 +326,21 @@ impl EnrollmentDao {
 
     // Single transaction method to create child with explicit parent verification
     pub async fn create_child(&self, parent_id: Uuid, school_id: Uuid, first_name: &str, last_name: &str, birth_date: Option<NaiveDate>, gender: Option<&str>, secondary_parent_id: Option<Uuid>) -> ApiResult<CreatedChild> {
-        println!("[DEBUG] [create_child] Starting SINGLE TRANSACTION child creation with parent_id: {}, school_id: {}, secondary_parent_id: {:?}", parent_id, school_id, secondary_parent_id);
 
         use tokio::time::{timeout, Duration};
 
-        println!("[DEBUG] [create_child] Getting database connection with 5s timeout");
         let client_result = timeout(Duration::from_secs(5), self.pool.get()).await;
         let mut client = match client_result {
             Ok(client) => client.map_err(|e| AppError::Database(format!("Failed to get database connection: {}", e)))?,
             Err(_) => return Err(AppError::Database("Timeout getting database connection for child creation".to_string()))
         };
-        println!("[DEBUG] [create_child] Got database connection successfully");
 
         // Single transaction with parent verification to avoid foreign key issues
-        println!("[DEBUG] [create_child] Starting transaction with parent verification");
         let transaction = client.transaction().await
             .map_err(|e| AppError::Database(format!("Failed to start transaction: {}", e)))?;
 
         // First verify parent exists in transaction
         let parent_check_query = "SELECT id FROM users WHERE id = $1 AND school_id = $2 LIMIT 1";
-        println!("[DEBUG] [create_child] Verifying parent exists: {} in school: {}", parent_id, school_id);
 
         let parent_check_result = timeout(Duration::from_secs(5),
             transaction.query_opt(parent_check_query, &[&parent_id, &school_id])
@@ -359,11 +350,9 @@ impl EnrollmentDao {
             Ok(result) => {
                 match result.map_err(|e| AppError::Database(format!("Failed to verify parent: {}", e)))? {
                     Some(_) => {
-                        println!("[DEBUG] [create_child] Parent verified successfully");
                         true
                     },
                     None => {
-                        println!("[DEBUG] [create_child] Parent not found in database");
                         false
                     }
                 }
@@ -378,7 +367,6 @@ impl EnrollmentDao {
 
         // Verify secondary parent exists if provided
         if let Some(sec_parent_id) = secondary_parent_id {
-            println!("[DEBUG] [create_child] Verifying secondary parent exists: {} in school: {}", sec_parent_id, school_id);
             let sec_parent_check_result = timeout(Duration::from_secs(5),
                 transaction.query_opt(parent_check_query, &[&sec_parent_id, &school_id])
             ).await;
@@ -387,11 +375,9 @@ impl EnrollmentDao {
                 Ok(result) => {
                     match result.map_err(|e| AppError::Database(format!("Failed to verify secondary parent: {}", e)))? {
                         Some(_) => {
-                            println!("[DEBUG] [create_child] Secondary parent verified successfully");
                             true
                         },
                         None => {
-                            println!("[DEBUG] [create_child] Secondary parent not found in database");
                             false
                         }
                     }
@@ -408,7 +394,6 @@ impl EnrollmentDao {
         // Now insert child in same transaction
         let child_insert_query = "INSERT INTO children (id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, is_active, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'active', true, NOW(), NOW()) RETURNING id, parent_id, secondary_parent_id, school_id, first_name, last_name, birth_date, gender, status, created_at";
 
-        println!("[DEBUG] [create_child] Inserting child with verified parent(s)");
         let child_result = timeout(Duration::from_secs(10),
             transaction.query_one(child_insert_query, &[&parent_id, &secondary_parent_id, &school_id, &first_name, &last_name, &birth_date, &gender])
         ).await;
@@ -425,7 +410,6 @@ impl EnrollmentDao {
         transaction.commit().await
             .map_err(|e| AppError::Database(format!("Failed to commit child creation: {}", e)))?;
 
-        println!("[DEBUG] [create_child] Child created successfully in single transaction");
 
         Ok(CreatedChild {
             id: row.get("id"),
@@ -679,7 +663,10 @@ impl EnrollmentDao {
                     sfa.recent_edit_link,
                     sfa.recent_pdf_link,
                     sfa.approved_by,
-                    sfa.approved_on
+                    sfa.approved_on,
+                    sfa.submission_source,
+                    sfa.manual_pdf_storage_key,
+                    sfa.manual_pdf_uploaded_at
                 FROM users u
                 LEFT JOIN auth.users au ON au.email = u.email
                 INNER JOIN children c ON (c.parent_id = u.id OR c.secondary_parent_id = u.id)
@@ -738,7 +725,10 @@ impl EnrollmentDao {
                                 'recent_edit_link', recent_edit_link,
                                 'recent_pdf_link', recent_pdf_link,
                                 'approved_by', approved_by,
-                                'approved_on', approved_on
+                                'approved_on', approved_on,
+                                'submission_source', submission_source,
+                                'manual_pdf_storage_key', manual_pdf_storage_key,
+                                'manual_pdf_uploaded_at', manual_pdf_uploaded_at
                             )
                         ELSE NULL END
                     ) FILTER (WHERE form_template_id IS NOT NULL),
@@ -768,8 +758,20 @@ impl EnrollmentDao {
             let forms_json: serde_json::Value = row.get("forms");
 
             // Parse forms from JSON
-            let forms: Vec<FormStatus> = serde_json::from_value(forms_json)
+            let mut forms: Vec<FormStatus> = serde_json::from_value(forms_json)
                 .unwrap_or_else(|_| vec![]);
+
+            // Process each form to handle manual uploads
+            let s3_base_url = std::env::var("S3_BASE_URL").unwrap_or_default();
+            for form in &mut forms {
+                let is_manual = form.submission_source.as_deref() == Some("manual_upload");
+                if is_manual {
+                    if let Some(key) = &form.manual_pdf_storage_key {
+                        form.recent_pdf_link = Some(format!("{}/{}", s3_base_url.trim_end_matches('/'), key));
+                    }
+                    form.approved_on = None;
+                }
+            }
 
             let child = ChildWithForms {
                 child_id: row.get("child_id"),
@@ -1096,7 +1098,10 @@ impl EnrollmentDao {
                 sfa.recent_pdf_link,
                 sfa.approved_by,
                 sfa.approved_on,
-                sfa.assigned_at
+                sfa.assigned_at,
+                sfa.submission_source,
+                sfa.manual_pdf_storage_key,
+                sfa.manual_pdf_uploaded_at
             FROM users u
             LEFT JOIN auth.users au ON au.email = u.email
             LEFT JOIN children c ON c.parent_id = u.id OR c.secondary_parent_id = u.id
@@ -1151,6 +1156,9 @@ impl EnrollmentDao {
             approved_by: row.get("approved_by"),
             approved_on: row.get("approved_on"),
             assigned_at: row.get("assigned_at"),
+            submission_source: row.get("submission_source"),
+            manual_pdf_storage_key: row.get("manual_pdf_storage_key"),
+            manual_pdf_uploaded_at: row.get("manual_pdf_uploaded_at"),
         }).collect())
     }
 

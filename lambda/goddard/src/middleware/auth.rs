@@ -407,7 +407,6 @@ async fn verify_jwt_with_supabase(jwt_token: &str) -> Result<AuthContext, AppErr
         .await
         .map_err(|e| AppError::ExternalService(format!("Failed to parse user data: {}", e)))?;
 
-    println!("[DEBUG] Supabase user data: {:?}", user_data);
 
     // Extract user ID from response
     let user_id_str = user_data.get("id")
@@ -476,13 +475,10 @@ pub async fn jwt_or_api_key_middleware(
 
             match verify_jwt_with_supabase(token).await {
                 Ok(auth_context) => {
-                    println!("[DEBUG] Supabase API JWT Auth Success - User: {}, Role: {:?}, School: {}",
-                        auth_context.email, auth_context.role, auth_context.school_id);
                     request.extensions_mut().insert(auth_context);
                     return Ok(next.run(request).await);
                 }
                 Err(e) => {
-                    println!("[DEBUG] Supabase API JWT validation failed: {:?}", e);
                     // JWT validation failed, will try API key fallback
                 }
             }
@@ -490,7 +486,6 @@ pub async fn jwt_or_api_key_middleware(
     }
 
     // JWT not present or invalid, try API key authentication
-    println!("[DEBUG] JWT authentication failed or not present, trying API key fallback");
     api_key_fallback(headers, request, next).await
 }
 
@@ -516,13 +511,10 @@ pub async fn jwt_or_api_key_admin_only(
                     // Check if user has admin privileges
                     match auth_context.role {
                         UserRole::Admin | UserRole::SuperAdmin => {
-                            println!("[DEBUG] Supabase API JWT Admin Auth Success - User: {}, Role: {:?}",
-                                auth_context.email, auth_context.role);
                             request.extensions_mut().insert(auth_context);
                             return Ok(next.run(request).await);
                         }
                         _ => {
-                            println!("[DEBUG] JWT Auth failed: User does not have admin role");
                             // User is authenticated but not authorized (not admin) - return 403 Forbidden
                             let error_response = ErrorResponse {
                                 success: false,
@@ -537,7 +529,6 @@ pub async fn jwt_or_api_key_admin_only(
                     }
                 }
                 Err(e) => {
-                    println!("[DEBUG] Supabase API JWT validation failed in admin check: {:?}", e);
                     // JWT validation failed, will try API key fallback
                 }
             }
@@ -545,7 +536,6 @@ pub async fn jwt_or_api_key_admin_only(
     }
 
     // JWT not present, invalid, or not admin - try API key authentication
-    println!("[DEBUG] JWT admin authentication failed or not present, trying API key fallback");
     api_key_fallback(headers, request, next).await
 }
 
@@ -571,13 +561,10 @@ pub async fn jwt_or_api_key_superadmin_only(
                     // Check if user has SuperAdmin role ONLY
                     match auth_context.role {
                         UserRole::SuperAdmin => {
-                            println!("[DEBUG] Supabase API JWT SuperAdmin Auth Success - User: {}, Role: {:?}",
-                                auth_context.email, auth_context.role);
                             request.extensions_mut().insert(auth_context);
                             return Ok(next.run(request).await);
                         }
                         _ => {
-                            println!("[DEBUG] JWT Auth failed: User does not have SuperAdmin role");
                             // User is authenticated but not authorized (not SuperAdmin) - return 403 Forbidden
                             let error_response = ErrorResponse {
                                 success: false,
@@ -592,7 +579,6 @@ pub async fn jwt_or_api_key_superadmin_only(
                     }
                 }
                 Err(e) => {
-                    println!("[DEBUG] Supabase API JWT validation failed in SuperAdmin check: {:?}", e);
                     // JWT validation failed, will try API key fallback
                 }
             }
@@ -600,7 +586,6 @@ pub async fn jwt_or_api_key_superadmin_only(
     }
 
     // JWT not present, invalid, or not SuperAdmin - try API key authentication
-    println!("[DEBUG] JWT SuperAdmin authentication failed or not present, trying API key fallback");
     api_key_fallback(headers, request, next).await
 }
 
@@ -610,16 +595,13 @@ async fn api_key_fallback(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    println!("[DEBUG] api_key_fallback: Checking for X-API-Key header");
 
     let api_key = headers
         .get("X-API-Key")
         .and_then(|value| value.to_str().ok());
 
-    println!("[DEBUG] api_key_fallback: X-API-Key present: {}", api_key.is_some());
 
     if api_key.is_none() {
-        println!("[DEBUG] api_key_fallback: No X-API-Key found, returning 401");
         let error_response = ErrorResponse {
             success: false,
             message: "Authentication required. Please provide either Bearer token or X-API-Key header".to_string(),

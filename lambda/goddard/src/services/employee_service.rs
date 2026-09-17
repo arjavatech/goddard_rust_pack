@@ -746,7 +746,6 @@ impl EmployeeService {
                 if let Some(key) = &a.manual_pdf_storage_key {
                     a.recent_pdf_link = Some(format!("{}/{}", s3_base_url.trim_end_matches('/'), key));
                 }
-                a.approved_on = None;
             }
         }
         Ok(assignments)
@@ -766,7 +765,6 @@ impl EmployeeService {
                 if let Some(key) = &a.manual_pdf_storage_key {
                     a.recent_pdf_link = Some(format!("{}/{}", s3_base_url.trim_end_matches('/'), key));
                 }
-                a.approved_on = None;
             }
         }
         Ok(assignments)
@@ -1026,6 +1024,7 @@ impl EmployeeService {
         assignment_id: Uuid,
         school_id: Uuid,
         req: EmployeeManualPdfCompleteUploadRequest,
+        uploader_id: Uuid,
     ) -> Result<EmployeeFormAssignment, AppError> {
         self.upload_service
             .verify_document_object(&req.storage_key, "application/pdf", req.file_size_bytes)
@@ -1040,6 +1039,7 @@ impl EmployeeService {
                 "application/pdf",
                 req.file_size_bytes,
                 &req.uploaded_by,
+                uploader_id,
             )
             .await?;
 
@@ -1086,6 +1086,7 @@ impl EmployeeService {
         file_bytes: Vec<u8>,
         file_name: String,
         uploaded_by: String,
+        uploader_id: Uuid,
     ) -> Result<EmployeeFormAssignment, AppError> {
         // Validate file size (max 10 MB)
         if file_bytes.len() > 10 * 1024 * 1024 {
@@ -1115,6 +1116,7 @@ impl EmployeeService {
                 "application/pdf",
                 file_bytes.len() as i64,
                 &uploaded_by,
+                uploader_id,
             )
             .await?;
 

@@ -43,7 +43,7 @@ pub async fn student_manual_pdf_complete_upload(
     let school_id = Uuid::parse_str(&body.storage_key.split('/').nth(3).unwrap_or(""))
         .map_err(|_| AppError::Validation("Invalid storage key format".to_string()))?;
     check_permission_school_access(&auth, &school_id)?;
-    Ok(Json(svc.complete_manual_pdf_upload(id, school_id, body).await?))
+    Ok(Json(svc.complete_manual_pdf_upload(id, school_id, body, auth.user_id).await?))
 }
 
 pub async fn get_student_manual_pdf_url(
@@ -106,5 +106,5 @@ pub async fn upload_student_manual_pdf(
         uploaded_by = auth.email.clone();
     }
 
-    Ok(Json(svc.upload_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by).await?))
+    Ok(Json(svc.upload_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id).await?))
 }

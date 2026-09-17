@@ -1090,6 +1090,7 @@ impl StudentFormAssignmentDao {
         content_type: &str,
         file_size_bytes: i64,
         uploaded_by: &str,
+        approved_by: Uuid,
     ) -> Result<StudentFormAssignment, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -1099,7 +1100,7 @@ impl StudentFormAssignmentDao {
         let row = client.query_one(
             r#"
             UPDATE student_form_assignments
-            SET status = 'manually_uploaded',
+            SET status = 'approved',
                 manual_pdf_storage_key = $3,
                 manual_pdf_file_name = $4,
                 manual_pdf_content_type = $5,
@@ -1107,6 +1108,8 @@ impl StudentFormAssignmentDao {
                 manual_pdf_uploaded_at = $7,
                 manual_pdf_uploaded_by = $8,
                 submission_source = 'manual_upload',
+                approved_by = $9,
+                approved_on = $7,
                 updated_at = $7
             WHERE id = $1 AND school_id = $2
             RETURNING *
@@ -1120,6 +1123,7 @@ impl StudentFormAssignmentDao {
                 &file_size_bytes,
                 &now,
                 &uploaded_by,
+                &approved_by,
             ],
         )
         .await
@@ -1171,6 +1175,8 @@ impl StudentFormAssignmentDao {
                 manual_pdf_uploaded_at = NULL,
                 manual_pdf_uploaded_by = NULL,
                 submission_source = 'digital',
+                approved_by = NULL,
+                approved_on = NULL,
                 updated_at = $3
             WHERE id = $1 AND school_id = $2
             RETURNING *

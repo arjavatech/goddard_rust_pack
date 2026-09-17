@@ -593,6 +593,7 @@ impl StudentFormAssignmentService {
         assignment_id: Uuid,
         school_id: Uuid,
         req: ManualPdfCompleteUploadRequest,
+        uploader_id: Uuid,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
         // Verify the file exists in S3
         self.upload_service
@@ -609,6 +610,7 @@ impl StudentFormAssignmentService {
                 "application/pdf",
                 req.file_size_bytes,
                 &req.uploaded_by,
+                uploader_id,
             )
             .await?;
 
@@ -660,6 +662,7 @@ impl StudentFormAssignmentService {
         file_bytes: Vec<u8>,
         file_name: String,
         uploaded_by: String,
+        uploader_id: Uuid,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
         // Validate file size (max 10 MB)
         if file_bytes.len() > 10 * 1024 * 1024 {
@@ -689,6 +692,7 @@ impl StudentFormAssignmentService {
                 "application/pdf",
                 file_bytes.len() as i64,
                 &uploaded_by,
+                uploader_id,
             )
             .await?;
 

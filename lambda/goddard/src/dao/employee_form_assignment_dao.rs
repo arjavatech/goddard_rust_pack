@@ -330,6 +330,7 @@ impl EmployeeFormAssignmentDao {
         content_type: &str,
         file_size_bytes: i64,
         uploaded_by: &str,
+        approved_by: Uuid,
     ) -> Result<EmployeeFormAssignment, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -337,7 +338,7 @@ impl EmployeeFormAssignmentDao {
         let row = client.query_one(
             r#"
             UPDATE employee_form_assignments
-            SET status = 'manually_uploaded',
+            SET status = 'approved',
                 manual_pdf_storage_key = $3,
                 manual_pdf_file_name = $4,
                 manual_pdf_content_type = $5,
@@ -345,6 +346,8 @@ impl EmployeeFormAssignmentDao {
                 manual_pdf_uploaded_at = NOW(),
                 manual_pdf_uploaded_by = $7,
                 submission_source = 'manual_upload',
+                approved_by = $8,
+                approved_on = NOW(),
                 updated_at = NOW()
             WHERE id = $1 AND school_id = $2
             RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
@@ -363,6 +366,7 @@ impl EmployeeFormAssignmentDao {
                 &content_type,
                 &file_size_bytes,
                 &uploaded_by,
+                &approved_by,
             ],
         )
         .await
@@ -408,6 +412,8 @@ impl EmployeeFormAssignmentDao {
                 manual_pdf_uploaded_at = NULL,
                 manual_pdf_uploaded_by = NULL,
                 submission_source = 'digital',
+                approved_by = NULL,
+                approved_on = NULL,
                 updated_at = NOW()
             WHERE id = $1 AND school_id = $2
             RETURNING id, school_id, employee_id, user_id, employee_form_template_id,

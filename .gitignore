@@ -1,4 +1,9 @@
-# Claude Flow generated files
+# macOS system files
+.DS_Store
+**/.DS_Store
+
+# Claude Flow and local settings
+.claude/settings.json
 .claude/settings.local.json
 .claude-flow/metrics/system-metrics.json
 claude-flow.config.json

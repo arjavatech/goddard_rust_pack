@@ -1,5 +1,5 @@
 use crate::{
-    dao::AuthDao,
+    dao::{AuthDao, EmployeeDao},
     error::{AppError, ApiResult},
     utils::ValidationUtils,
     services::{SupabaseClient, TapTimeMappingService, supabase_client::UserMetadata},
@@ -154,6 +154,33 @@ pub struct ForgotPasswordResponse {
     pub email: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChangeRoleRequest {
+    pub email: String,
+    pub new_role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangeRoleResponse {
+    pub email: String,
+    pub old_role: String,
+    pub new_role: String,
+    pub success: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub email: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangePasswordResponse {
+    pub email: String,
+    pub success: bool,
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FilteredUserResponse {
     pub school_id: String,
@@ -185,6 +212,7 @@ pub struct AuthService {
     supabase_client: SupabaseClient,
     notification_service: std::sync::Arc<crate::services::NotificationService>,
     taptime_mapping_service: std::sync::Arc<TapTimeMappingService>,
+    employee_dao: EmployeeDao,
 }
 
 impl AuthService {
@@ -194,6 +222,7 @@ impl AuthService {
         supabase_client: SupabaseClient,
         notification_service: std::sync::Arc<crate::services::NotificationService>,
         taptime_mapping_service: std::sync::Arc<TapTimeMappingService>,
+        employee_dao: EmployeeDao,
     ) -> Self {
         Self {
             dao,
@@ -201,6 +230,7 @@ impl AuthService {
             supabase_client,
             notification_service,
             taptime_mapping_service,
+            employee_dao,
         }
     }
 
@@ -925,6 +955,61 @@ impl AuthService {
             email_sent,
             message,
             email_status,
+        })
+    }
+
+    pub async fn change_user_role(&self, request: ChangeRoleRequest) -> ApiResult<ChangeRoleResponse> {
+        ValidationUtils::validate_email(&request.email)?;
+
+        let allowed_roles = vec!["SuperAdmin", "Admin", "Teacher", "Employee", "Parent", "primary-parent", "secondary-parent"];
+        if !allowed_roles.contains(&request.new_role.as_str()) {
+            return Err(AppError::Validation(format!(
+                "Invalid role. Allowed roles: {}",
+                allowed_roles.join(", ")
+            )));
+        }
+
+        let old_user = self.dao.get_user_by_email(&request.email).await?;
+        let old_role = old_user.role.clone();
+
+        let _updated_user = self.dao.update_user_role_by_email(&request.email, &request.new_role).await?;
+
+        self.supabase_client.update_user_role_metadata(old_user.id, &request.new_role).await?;
+
+        if request.new_role == "Employee" {
+            self.employee_dao
+                .create_employee_if_not_exists(old_user.id, old_user.school_id)
+                .await?;
+            tracing::info!("✅ Employee record created for user {} (id: {})", request.email, old_user.id);
+        }
+
+        tracing::info!("✅ User {} role changed from {} to {}", request.email, old_role, request.new_role);
+
+        Ok(ChangeRoleResponse {
+            email: request.email,
+            old_role,
+            new_role: request.new_role,
+            success: true,
+        })
+    }
+
+    pub async fn change_user_password(&self, request: ChangePasswordRequest) -> ApiResult<ChangePasswordResponse> {
+        ValidationUtils::validate_email(&request.email)?;
+
+        if request.new_password.len() < 8 {
+            return Err(AppError::Validation("Password must be at least 8 characters long".to_string()));
+        }
+
+        let user = self.dao.get_user_by_email(&request.email).await?;
+
+        self.supabase_client.update_user_password(user.id, &request.new_password).await?;
+
+        tracing::info!("✅ Password updated for user {}", request.email);
+
+        Ok(ChangePasswordResponse {
+            email: request.email,
+            success: true,
+            message: "Password updated successfully.".to_string(),
         })
     }
 }

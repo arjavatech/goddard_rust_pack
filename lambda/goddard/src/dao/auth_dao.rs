@@ -521,4 +521,38 @@ impl AuthDao {
 
         Ok(row.get("token"))
     }
+
+    pub async fn update_user_role_by_email(&self, email: &str, new_role: &str) -> ApiResult<UserDetails> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let query = r#"
+            UPDATE users
+            SET role = $2, updated_at = NOW()
+            WHERE email = $1 AND (is_active = true OR is_active IS NULL)
+            RETURNING id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at
+        "#;
+
+        match client.query_opt(query, &[&email, &new_role]).await {
+            Ok(Some(row)) => {
+                let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
+                let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
+
+                Ok(UserDetails {
+                    id: row.get("id"),
+                    school_id: row.get("school_id"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    email: row.get("email"),
+                    role: row.get("role"),
+                    is_verified: row.get("is_verified"),
+                    taptime_employee_id: row.get("taptime_employee_id"),
+                    taptime_pin: row.get("taptime_pin"),
+                    created_at,
+                })
+            },
+            Ok(None) => Err(AppError::NotFound("User not found or already deleted".to_string())),
+            Err(e) => Err(AppError::Database(format!("Failed to update user role: {}", e))),
+        }
+    }
 }

@@ -35,6 +35,24 @@ impl EmployeeDao {
         Ok(self.row_to_employee(&row))
     }
 
+    pub async fn create_employee_if_not_exists(
+        &self,
+        user_id: Uuid,
+        school_id: Uuid,
+    ) -> Result<(), AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        client.execute(
+            "INSERT INTO employees (id, user_id, school_id, is_active, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, true, NOW(), NOW())
+             ON CONFLICT (user_id, school_id) DO NOTHING",
+            &[&user_id, &school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to create employee record: {}", e)))?;
+
+        Ok(())
+    }
+
     pub async fn get_employees_by_school(&self, school_id: Uuid) -> Result<Vec<EmployeeWithUser>, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

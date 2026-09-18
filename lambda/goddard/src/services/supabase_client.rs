@@ -1276,4 +1276,77 @@ impl SupabaseClient {
             }
         }
     }
+
+    pub async fn update_user_password(&self, user_id: Uuid, new_password: &str) -> Result<(), AppError> {
+        let response = self.client
+            .put(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&json!({"password": new_password}))
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to update user password: {}", e)))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::ExternalService(format!(
+                "Failed to update user password: {}",
+                error_text
+            )));
+        }
+
+        tracing::info!("✅ Password updated for user {}", user_id);
+        Ok(())
+    }
+
+    pub async fn update_user_role_metadata(&self, user_id: Uuid, new_role: &str) -> Result<(), AppError> {
+        // Step 1: Get current user to preserve existing metadata
+        let response = self.client
+            .get(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to load Supabase user: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(AppError::ExternalService(format!(
+                "Failed to load Supabase user for role update: {}",
+                response.status()
+            )));
+        }
+
+        let user: serde_json::Value = response.json().await
+            .map_err(|e| AppError::ExternalService(format!("Invalid Supabase user response: {}", e)))?;
+
+        // Step 2: Extract and merge metadata
+        let mut metadata = user.get("user_metadata")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+
+        metadata.insert("role".into(), json!(new_role));
+
+        // Step 3: Update user with new metadata
+        let response = self.client
+            .put(&format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&json!({"user_metadata": metadata}))
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Failed to update user role metadata: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(AppError::ExternalService(format!(
+                "Failed to update user role metadata: {}",
+                response.status()
+            )));
+        }
+
+        tracing::info!("✅ Role metadata updated for user {} to {}", user_id, new_role);
+        Ok(())
+    }
 }

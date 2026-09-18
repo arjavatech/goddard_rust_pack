@@ -10,7 +10,7 @@ use serde_json::json;
 use axum::http::StatusCode;
 
 use crate::{
-    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest, ForgotPasswordRequest, ResendAdminInviteRequest}},
+    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest, ForgotPasswordRequest, ResendAdminInviteRequest, ChangeRoleRequest, ChangePasswordRequest}},
     utils::ResponseUtils,
     error::AppError,
     middleware::auth::AuthContext,
@@ -252,5 +252,25 @@ pub async fn resend_admin_invite(
     Json(payload): Json<ResendAdminInviteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let response = auth_service.resend_admin_invite(payload).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// PATCH /users/role (SuperAdmin only)
+/// Change a user's role by email
+pub async fn change_user_role(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<ChangeRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = auth_service.change_user_role(payload).await?;
+    Ok(ResponseUtils::success(response))
+}
+
+/// POST /users/change-password (SuperAdmin only)
+/// Change a user's password by email
+pub async fn change_user_password(
+    State(auth_service): State<Arc<AuthService>>,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let response = auth_service.change_user_password(payload).await?;
     Ok(ResponseUtils::success(response))
 }

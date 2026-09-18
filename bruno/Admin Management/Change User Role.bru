@@ -1,0 +1,82 @@
+meta {
+  name: Change User Role
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/users/role
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "email": "user@example.com",
+    "new_role": "Employee"
+  }
+}
+
+vars:pre-request {
+  user_email: user@example.com
+  new_role: Admin
+}
+
+assert {
+  res.status: eq 200
+  res.body.success: eq true
+  res.body.data.success: eq true
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setVar("changed_role", res.body.data.new_role);
+    console.log("Role changed successfully from", res.body.data.old_role, "to", res.body.data.new_role);
+  }
+}
+
+docs {
+  # Change User Role
+
+  Changes a user's role by email. Both `public.users` table and Supabase Auth metadata are updated synchronously.
+
+  **Authentication**: JWT Bearer Token (SuperAdmin role required)
+
+  **Request Body**:
+  - `email` (string, required) - User's email address
+  - `new_role` (string, required) - New role: `SuperAdmin`, `Admin`, `Teacher`, `Employee`, `Parent`, `primary-parent`, `secondary-parent`
+
+  **Response 200 OK**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "email": "user@example.com",
+      "old_role": "Teacher",
+      "new_role": "Admin",
+      "success": true
+    },
+    "timestamp": "2026-09-18T12:34:56Z"
+  }
+  ```
+
+  **Error 400 - Invalid Role**:
+  ```json
+  {
+    "success": false,
+    "error": "Invalid role. Allowed roles: SuperAdmin, Admin, Teacher, Parent, primary-parent, secondary-parent"
+  }
+  ```
+
+  **Error 404 - User Not Found**:
+  ```json
+  {
+    "success": false,
+    "error": "User not found"
+  }
+  ```
+}

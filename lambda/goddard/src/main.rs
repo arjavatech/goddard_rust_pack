@@ -23,6 +23,7 @@ use controllers::{
         debug_auth_users, delete_admin_user, forgot_password, get_admins_by_school,
         get_auth_verification_status, get_current_user_profile, get_invitation_summary,
         get_users_by_school_and_role, resend_admin_invite, update_admin_user,
+        change_user_role, change_user_password,
     },
     class_form_override_controller::{create_class_form_override, delete_class_form_override},
     classroom_controller::{
@@ -229,6 +230,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         supabase_client.clone(),
         notification_service.clone(),
         taptime_mapping_service.clone(),
+        employee_dao.clone(),
     ));
     let school_service = Arc::new(SchoolService::new(
         school_dao.clone(),
@@ -420,6 +422,16 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
                     delete(delete_admin_user)
                         .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
                 ),
+        )
+        .route(
+            "/users/role",
+            patch(change_user_role)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/users/change-password",
+            post(change_user_password)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
         )
         .with_state(auth_service)
         // School Management APIs (Admin JWT or API Key)

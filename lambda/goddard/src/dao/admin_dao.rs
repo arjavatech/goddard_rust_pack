@@ -46,7 +46,9 @@ impl AdminDao {
             children_count AS (
                 SELECT COUNT(DISTINCT e.child_id) as total
                 FROM enrollments e
+                INNER JOIN children c ON c.id = e.child_id
                 WHERE e.school_id = $1 AND e.is_active = true
+                AND c.status NOT IN ('archive', 'archived')
             ),
             forms_count AS (
                 SELECT COUNT(*) as total

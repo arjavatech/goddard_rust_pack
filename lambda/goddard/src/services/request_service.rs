@@ -99,12 +99,14 @@ impl RequestService {
         if body.quantity < 1 {
             return Err(AppError::Validation("Quantity must be at least 1".to_string()));
         }
-        self.dao.validate_request_settings(
-            body.school_id,
-            body.category.as_deref(),
-            body.location.as_deref(),
-            body.scope == "school",
-        ).await?;
+        if !matches!(auth.role, UserRole::SuperAdmin) {
+            self.dao.validate_request_settings(
+                body.school_id,
+                body.category.as_deref(),
+                body.location.as_deref(),
+                body.scope == "school",
+            ).await?;
+        }
 
         // If frontend sent image as base64, decode and upload to S3
         if let (Some(b64), Some(name), Some(ct)) = (
@@ -202,12 +204,14 @@ impl RequestService {
         let effective_scope = body.scope.as_deref()
             .or(existing.scope.as_deref())
             .unwrap_or("school");
-        self.dao.validate_request_settings(
-            existing.school_id,
-            body.category.as_deref().or(existing.category.as_deref()),
-            body.location.as_deref().or(existing.location.as_deref()),
-            effective_scope == "school",
-        ).await?;
+        if !matches!(auth.role, UserRole::SuperAdmin) {
+            self.dao.validate_request_settings(
+                existing.school_id,
+                body.category.as_deref().or(existing.category.as_deref()),
+                body.location.as_deref().or(existing.location.as_deref()),
+                effective_scope == "school",
+            ).await?;
+        }
         if let (Some(base64), Some(name), Some(content_type)) = (
             body.image_base64.take(),
             body.image_name.take(),
@@ -222,10 +226,17 @@ impl RequestService {
         self.dao.update_request(id, &body).await
     }
 
-    pub async fn pay_request(&self, id: Uuid, mut body: PayRequestBody) -> Result<Request, AppError> {
+    pub async fn pay_request(&self, auth: &AuthContext, id: Uuid, mut body: PayRequestBody) -> Result<Request, AppError> {
         let request = self.dao.get_request_by_id(id).await?
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
         self.ensure_enabled(request.school_id).await?;
+
+        // Admin can only pay requests in their own school
+        if let UserRole::Admin = auth.role {
+            if request.school_id != auth.school_id {
+                return Err(AppError::Authorization("Cannot pay a request from a different school".to_string()));
+            }
+        }
 
         if body.amount_spent <= 0.0 {
             return Err(AppError::Validation("Amount must be greater than 0".to_string()));
@@ -244,6 +255,9 @@ impl RequestService {
             bill_image_url = Some(resp.s3_url);
         }
 
+        let paid_by_name = self.dao.get_user_display_name(auth.user_id).await
+            .unwrap_or_else(|| auth.email.clone());
+
         self.dao.pay_request(
             id,
             body.amount_spent,
@@ -251,6 +265,8 @@ impl RequestService {
             body.purchase_date,
             body.payment_notes.as_deref(),
             bill_image_url.as_deref(),
+            auth.user_id,
+            &paid_by_name,
         ).await
     }
 
@@ -311,7 +327,7 @@ impl RequestService {
         Ok(ExpensesListResponse { data, total, page, limit, summary })
     }
 
-    pub async fn create_manual_expense(&self, body: CreateExpenseBody) -> Result<Request, AppError> {
+    pub async fn create_manual_expense(&self, auth: &AuthContext, mut body: CreateExpenseBody) -> Result<Request, AppError> {
         self.ensure_enabled(body.school_id).await?;
         if body.item.trim().is_empty() {
             return Err(AppError::Validation("Item name cannot be empty".to_string()));
@@ -319,6 +335,27 @@ impl RequestService {
         if body.amount_spent <= 0.0 {
             return Err(AppError::Validation("Amount must be greater than 0".to_string()));
         }
-        self.dao.create_manual_expense(&body).await
+
+        // Set requester_id from auth if not provided
+        if body.requester_id.is_none() {
+            body.requester_id = Some(auth.user_id);
+        }
+
+        // Upload bill image if provided
+        let bill_image_url = if let (Some(b64), Some(name), Some(ct)) = (
+            body.bill_image_base64.take(),
+            body.bill_image_name.take(),
+            body.bill_image_content_type.take(),
+        ) {
+            use base64::{engine::general_purpose::STANDARD, Engine};
+            let bytes = STANDARD.decode(&b64)
+                .map_err(|e| AppError::Validation(format!("Invalid base64 bill image: {}", e)))?;
+            let resp = self.upload_service.upload_image(&name, &ct, bytes).await?;
+            Some(resp.s3_url)
+        } else {
+            None
+        };
+
+        self.dao.create_manual_expense(&body, bill_image_url).await
     }
 }

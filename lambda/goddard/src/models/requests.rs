@@ -32,6 +32,8 @@ pub struct Request {
     pub bill_image: Option<String>,
     pub expected_completion_date: Option<NaiveDate>,
     pub created_at: Option<NaiveDateTime>,
+    pub paid_by_user_id: Option<Uuid>,
+    pub paid_by_name: Option<String>,
 }
 
 // ─── API request bodies ───────────────────────────────────────────────────────
@@ -110,18 +112,27 @@ pub struct PayRequestBody {
 #[serde(rename_all = "camelCase")]
 pub struct CreateExpenseBody {
     pub school_id: Uuid,
+    pub requester_id: Option<Uuid>,
     pub requester_name: String,
     pub requester_role: Option<String>,
     pub item: String,
     pub quantity: Option<i32>,
     pub category: Option<String>,
+    pub location: Option<String>,
     pub scope: Option<String>,
+    pub classroom_id: Option<Uuid>,
     pub classroom_name: Option<String>,
+    pub teacher_id: Option<Uuid>,
     pub teacher_name: Option<String>,
+    pub product_link: Option<String>,
+    pub notes: Option<String>,
     pub amount_spent: f64,
     pub payment_method: String,
     pub purchase_date: NaiveDate,
     pub payment_notes: Option<String>,
+    pub bill_image_base64: Option<String>,
+    pub bill_image_name: Option<String>,
+    pub bill_image_content_type: Option<String>,
 }
 
 // ─── Query params ─────────────────────────────────────────────────────────────

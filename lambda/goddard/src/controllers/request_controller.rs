@@ -59,10 +59,11 @@ pub async fn update_request(
 
 pub async fn pay_request(
     State(service): State<Arc<RequestService>>,
+    Extension(auth): Extension<AuthContext>,
     Path(id): Path<Uuid>,
     Json(body): Json<PayRequestBody>,
 ) -> Result<impl IntoResponse, AppError> {
-    let result = service.pay_request(id, body).await?;
+    let result = service.pay_request(&auth, id, body).await?;
     Ok(ResponseUtils::success(result))
 }
 

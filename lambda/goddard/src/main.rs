@@ -1034,7 +1034,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         )
         .route(
             "/requests/:id/pay",
-            post(pay_request).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(pay_request).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
             "/requests/:id",
@@ -1042,11 +1042,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         )
         .route(
             "/expenses",
-            get(list_expenses).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            get(list_expenses).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
             "/expenses",
-            post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .with_state(request_service)
         .layer(axum_middleware::from_fn(request_id_middleware))

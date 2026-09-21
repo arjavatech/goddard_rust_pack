@@ -46,10 +46,28 @@ impl RequestDao {
             bill_image: row.get("bill_image"),
             expected_completion_date: row.get("expected_completion_date"),
             created_at: row.get("created_at"),
+            paid_by_user_id: row.try_get("paid_by_user_id").unwrap_or(None),
+            paid_by_name: row.try_get("paid_by_name").unwrap_or(None),
         }
     }
 
     // ── Requests ──────────────────────────────────────────────────────────────
+
+    pub async fn get_user_display_name(&self, user_id: Uuid) -> Option<String> {
+        let client = self.pool.get().await.ok()?;
+        let row = client.query_opt(
+            "SELECT first_name, last_name FROM users WHERE id = $1",
+            &[&user_id],
+        ).await.ok()??;
+        let first: Option<String> = row.get("first_name");
+        let last: Option<String> = row.get("last_name");
+        match (first, last) {
+            (Some(f), Some(l)) => Some(format!("{} {}", f, l).trim().to_string()),
+            (Some(f), None) => Some(f),
+            (None, Some(l)) => Some(l),
+            _ => None,
+        }
+    }
 
     pub async fn list_requests(
         &self,
@@ -70,12 +88,13 @@ impl RequestDao {
                     item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
                     status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                    paid_by_user_id, paid_by_name,
                     COUNT(*) OVER() AS total_count,
                     COUNT(*) FILTER (WHERE status = 'Pending') OVER() AS pending_count,
                     COUNT(*) FILTER (WHERE status = 'In Progress') OVER() AS in_progress_count,
                     COUNT(*) FILTER (WHERE status = 'Completed') OVER() AS completed_count
              FROM requests
-             WHERE source = 'request'
+             WHERE source IN ('request', 'manual')
                AND ($1::uuid IS NULL OR school_id = $1)
                AND ($2::uuid IS NULL OR requester_id = $2)
                AND ($3::text IS NULL OR status = $3)
@@ -112,7 +131,8 @@ impl RequestDao {
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                         paid_by_user_id, paid_by_name",
             &[
                 &body.school_id, &body.requester_id, &body.requester_name, &body.requester_role,
                 &body.item, &body.quantity, &body.category, &body.location, &body.scope,
@@ -174,7 +194,8 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                    paid_by_user_id, paid_by_name
              FROM requests WHERE id = $1",
             &[&id],
         ).await.map_err(|e| AppError::Database(format!("Failed to get request: {}", e)))?;
@@ -192,7 +213,8 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       paid_by_user_id, paid_by_name",
             &[&id, &status, &expected_completion_date],
         ).await.map_err(|e| AppError::Database(format!("Failed to update request status: {}", e)))?;
 
@@ -207,6 +229,8 @@ impl RequestDao {
         purchase_date: NaiveDate,
         payment_notes: Option<&str>,
         bill_image: Option<&str>,
+        paid_by_user_id: Uuid,
+        paid_by_name: &str,
     ) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -214,13 +238,15 @@ impl RequestDao {
         let row = client.query_one(
             "UPDATE requests
              SET status = 'Completed', amount_spent = $2, payment_method = $3,
-                 purchase_date = $4, payment_notes = $5, bill_image = $6, expected_completion_date = NULL
+                 purchase_date = $4, payment_notes = $5, bill_image = $6, expected_completion_date = NULL,
+                 paid_by_user_id = $7, paid_by_name = $8
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
-            &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes, &bill_image],
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       paid_by_user_id, paid_by_name",
+            &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes, &bill_image, &paid_by_user_id, &paid_by_name],
         ).await.map_err(|e| AppError::Database(format!("Failed to pay request: {}", e)))?;
 
         Ok(self.row_to_request(&row))
@@ -249,7 +275,8 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       paid_by_user_id, paid_by_name",
             &[&id, &expected_completion_date],
         ).await.map_err(|e| AppError::Database(format!("Failed to update expected completion date: {}", e)))?;
         Ok(self.row_to_request(&row))
@@ -270,7 +297,8 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       paid_by_user_id, paid_by_name",
             &[&id, &body.item, &body.quantity, &body.category, &body.location, &body.scope,
               &body.classroom_id, &body.classroom_name, &body.teacher_id, &body.teacher_name,
               &body.product_link, &body.product_image, &body.notes],
@@ -298,6 +326,7 @@ impl RequestDao {
                     item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
                     status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                    paid_by_user_id, paid_by_name,
                     COUNT(*) OVER() AS total_count
              FROM requests
              WHERE status = 'Completed'
@@ -372,27 +401,33 @@ impl RequestDao {
         })
     }
 
-    pub async fn create_manual_expense(&self, body: &CreateExpenseBody) -> Result<Request, AppError> {
+    pub async fn create_manual_expense(&self, body: &CreateExpenseBody, bill_image_url: Option<String>) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let row = client.query_one(
             "INSERT INTO requests (
-                id, school_id, requester_name, requester_role,
-                item, quantity, category, scope, classroom_name, teacher_name,
+                id, school_id, requester_id, requester_name, requester_role,
+                item, quantity, category, location, scope,
+                classroom_id, classroom_name, teacher_id, teacher_name,
+                product_link, notes, bill_image,
                 status, source, amount_spent, payment_method, purchase_date, payment_notes, created_at
              ) VALUES (
-                gen_random_uuid(), $1, $2, $3,
-                $4, $5, $6, $7, $8, $9,
-                'Completed', 'manual', $10, $11, $12, $13, NOW()
+                gen_random_uuid(), $1, $2, $3, $4,
+                $5, $6, $7, $8, $9,
+                $10, $11, $12, $13,
+                $14, $15, $16,
+                'Completed', 'manual', $17, $18, $19, $20, NOW()
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at",
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                         paid_by_user_id, paid_by_name",
             &[
-                &body.school_id, &body.requester_name, &body.requester_role,
-                &body.item, &body.quantity, &body.category, &body.scope,
-                &body.classroom_name, &body.teacher_name,
+                &body.school_id, &body.requester_id, &body.requester_name, &body.requester_role,
+                &body.item, &body.quantity, &body.category, &body.location, &body.scope,
+                &body.classroom_id, &body.classroom_name, &body.teacher_id, &body.teacher_name,
+                &body.product_link, &body.notes, &bill_image_url,
                 &body.amount_spent, &body.payment_method, &body.purchase_date, &body.payment_notes,
             ],
         ).await.map_err(|e| AppError::Database(format!("Failed to create manual expense: {}", e)))?;

@@ -1,9 +1,10 @@
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
-    Json,
+    Json, Extension,
 };
 use std::sync::Arc;
+use crate::middleware::auth::AuthContext;
 use crate::models::requests::{CreateExpenseBody, ListExpensesParams};
 use crate::services::request_service::RequestService;
 use crate::utils::response::ResponseUtils;
@@ -19,8 +20,9 @@ pub async fn list_expenses(
 
 pub async fn create_expense(
     State(service): State<Arc<RequestService>>,
+    Extension(auth): Extension<AuthContext>,
     Json(body): Json<CreateExpenseBody>,
 ) -> Result<impl IntoResponse, AppError> {
-    let result = service.create_manual_expense(body).await?;
+    let result = service.create_manual_expense(&auth, body).await?;
     Ok(ResponseUtils::created(result))
 }

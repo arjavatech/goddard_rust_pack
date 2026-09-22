@@ -17,6 +17,7 @@ pub mod schema;
 pub mod school;
 pub mod student_form_assignment;
 pub mod student_form_assignment_review;
+pub mod student_form_assignment_revoke;
 pub mod upload;
 
 use chrono::{DateTime, Utc};

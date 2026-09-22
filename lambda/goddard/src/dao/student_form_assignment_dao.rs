@@ -5,6 +5,9 @@ use crate::models::student_form_assignment::{
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
 };
+use crate::models::student_form_assignment_revoke::{
+    RevokeStudentFormAssignmentRequest, RevokeStudentFormAssignmentResponse
+};
 use crate::dao::enrollment_dao::{AssignmentNotificationContext, ReviewNotificationContext};
 use crate::error::AppError;
 use crate::models::form_review_queue::StudentFormReviewQueueItem;
@@ -16,7 +19,9 @@ use tokio_postgres::Row;
 pub struct CompletedFormForZip {
     pub assignment_id: Uuid,
     pub form_name: String,
-    pub recent_pdf_link: String,
+    pub recent_pdf_link: Option<String>,
+    pub submission_source: Option<String>,
+    pub manual_pdf_storage_key: Option<String>,
 }
 
 pub struct StudentFormAssignmentDao {
@@ -390,6 +395,117 @@ impl StudentFormAssignmentDao {
         })
     }
 
+    pub async fn revoke_student_form_assignment(
+        &self,
+        request: &RevokeStudentFormAssignmentRequest,
+    ) -> Result<RevokeStudentFormAssignmentResponse, AppError> {
+
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        // First, get the current notes to append revocation notes
+        let current_notes_row = client.query_opt(
+            "SELECT notes FROM student_form_assignments WHERE id = $1",
+            &[&request.assignment_id],
+        )
+        .await
+        .map_err(|e| {
+            println!("[ERROR] StudentFormAssignmentDAO: Failed to fetch current notes: {}", e);
+            AppError::Database(e.to_string())
+        })?;
+
+        let current_notes: Option<String> = current_notes_row
+            .and_then(|row| row.try_get("notes").ok())
+            .flatten();
+
+        // Append revocation notes to existing notes
+        let updated_notes = match current_notes {
+            Some(existing) => {
+                format!("{}\n\n[REVOKED] {}", existing, request.notes)
+            }
+            None => {
+                format!("[REVOKED] {}", request.notes)
+            }
+        };
+
+        let now = Utc::now().naive_utc();
+
+        let target_status = request.target_status.as_deref().unwrap_or("in_progress");
+
+        let row = client.query_one(
+            r#"
+            UPDATE student_form_assignments
+            SET
+                status = $1,
+                notes = $2,
+                approved_by = NULL,
+                approved_on = NULL,
+                updated_at = $3
+            WHERE id = $4 AND status = 'approved'
+            RETURNING
+                id, school_id, enrollment_id, child_id, form_template_id,
+                assignment_source, status, is_required, assigned_at,
+                notes, approved_by, approved_on, updated_at
+            "#,
+            &[
+                &target_status,
+                &updated_notes,
+                &now,
+                &request.assignment_id,
+            ],
+        )
+        .await
+        .map_err(|e| {
+            println!("[ERROR] StudentFormAssignmentDAO: Revoke update failed: {}", e);
+            // Check if it's a "no rows affected" error
+            if e.to_string().contains("No rows updated") || e.to_string().contains("0 rows") {
+                AppError::Validation("Form is not in approved status and cannot be revoked".to_string())
+            } else {
+                AppError::Database(e.to_string())
+            }
+        })?;
+
+        // Convert status
+        let status = StudentFormAssignmentStatus::InProgress;
+
+        Ok(RevokeStudentFormAssignmentResponse {
+            id: row.try_get("id")
+                .map_err(|e| AppError::Database(format!("Failed to extract id: {}", e)))?,
+            school_id: row.try_get("school_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract school_id: {}", e)))?,
+            enrollment_id: row.try_get("enrollment_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract enrollment_id: {}", e)))?,
+            child_id: row.try_get("child_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract child_id: {}", e)))?,
+            form_template_id: row.try_get("form_template_id")
+                .map_err(|e| AppError::Database(format!("Failed to extract form_template_id: {}", e)))?,
+            assignment_source: row.try_get("assignment_source")
+                .map_err(|e| AppError::Database(format!("Failed to extract assignment_source: {}", e)))?,
+            status,
+            is_required: row.try_get("is_required")
+                .map_err(|e| AppError::Database(format!("Failed to extract is_required: {}", e)))?,
+            assigned_at: {
+                let naive_dt: NaiveDateTime = row.try_get("assigned_at")
+                    .map_err(|e| AppError::Database(format!("Failed to extract assigned_at: {}", e)))?;
+                DateTime::from_naive_utc_and_offset(naive_dt, Utc)
+            },
+            notes: row.try_get("notes")
+                .map_err(|e| AppError::Database(format!("Failed to extract notes: {}", e)))?,
+            approved_by: row.try_get("approved_by")
+                .map_err(|e| AppError::Database(format!("Failed to extract approved_by: {}", e)))?,
+            approved_on: {
+                let naive_dt_opt: Option<NaiveDateTime> = row.try_get("approved_on")
+                    .map_err(|e| AppError::Database(format!("Failed to extract approved_on: {}", e)))?;
+                naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+            },
+            updated_at: {
+                let naive_dt_opt: Option<NaiveDateTime> = row.try_get("updated_at")
+                    .map_err(|e| AppError::Database(format!("Failed to extract updated_at: {}", e)))?;
+                naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
+            },
+        })
+    }
+
     fn row_to_student_form_assignment(&self, row: Row) -> Result<StudentFormAssignment, AppError> {
 
         let status_str: String = match row.try_get("status") {
@@ -484,12 +600,13 @@ impl StudentFormAssignmentDao {
 
         let rows = client.query(
             r#"
-            SELECT sfa.id, ft.form_name, sfa.recent_pdf_link
+            SELECT sfa.id, ft.form_name, sfa.recent_pdf_link,
+                   sfa.submission_source, sfa.manual_pdf_storage_key
             FROM student_form_assignments sfa
             JOIN form_templates ft ON sfa.form_template_id = ft.id
             WHERE sfa.enrollment_id = $1
               AND sfa.status IN ('completed', 'approved')
-              AND sfa.recent_pdf_link IS NOT NULL
+              AND (sfa.recent_pdf_link IS NOT NULL OR sfa.manual_pdf_storage_key IS NOT NULL)
               AND (sfa.is_active = true OR sfa.is_active IS NULL)
             ORDER BY ft.form_name
             "#,
@@ -503,6 +620,8 @@ impl StudentFormAssignmentDao {
                 assignment_id: row.get("id"),
                 form_name: row.get("form_name"),
                 recent_pdf_link: row.get("recent_pdf_link"),
+                submission_source: row.get("submission_source"),
+                manual_pdf_storage_key: row.get("manual_pdf_storage_key"),
             }
         }).collect();
 
@@ -1091,11 +1210,44 @@ impl StudentFormAssignmentDao {
         file_size_bytes: i64,
         uploaded_by: &str,
         approved_by: Uuid,
+        reason: Option<String>,
     ) -> Result<StudentFormAssignment, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         let now = Utc::now().naive_utc();
+
+        // Build the update notes if there's a reason (for replacement)
+        let mut update_notes = String::new();
+        if let Some(r) = reason {
+            if !r.trim().is_empty() {
+                update_notes = format!("[REPLACED] {}", r);
+            }
+        }
+
+        // Fetch current notes to potentially append to them
+        let current_notes_row = if !update_notes.is_empty() {
+            client.query_opt(
+                "SELECT notes FROM student_form_assignments WHERE id = $1",
+                &[&assignment_id],
+            )
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+        } else {
+            None
+        };
+
+        let final_notes: Option<String> = if !update_notes.is_empty() {
+            let current: Option<String> = current_notes_row
+                .and_then(|row| row.try_get("notes").ok())
+                .flatten();
+            match current {
+                Some(existing) => Some(format!("{}\n\n{}", existing, update_notes)),
+                None => Some(update_notes),
+            }
+        } else {
+            None
+        };
 
         let row = client.query_one(
             r#"
@@ -1110,6 +1262,7 @@ impl StudentFormAssignmentDao {
                 submission_source = 'manual_upload',
                 approved_by = $9,
                 approved_on = $7,
+                notes = COALESCE($10, notes),
                 updated_at = $7
             WHERE id = $1 AND school_id = $2
             RETURNING *
@@ -1124,6 +1277,7 @@ impl StudentFormAssignmentDao {
                 &now,
                 &uploaded_by,
                 &approved_by,
+                &final_notes,
             ],
         )
         .await

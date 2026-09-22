@@ -13,6 +13,7 @@ use futures::stream::StreamExt;
 
 use crate::error::error_types::AppError;
 use crate::middleware::auth::{check_permission_admin_or_superadmin, AuthContext};
+use crate::utils::ValidationUtils;
 use crate::models::document_request::{
     CompleteUploadRequest, FileAccessResponse, UploadIntentRequest, UploadIntentResponse,
 };
@@ -486,9 +487,10 @@ pub async fn send_bulk_employee_form_reminders(
 pub async fn employee_manual_pdf_upload_intent(
     State(svc): State<Arc<EmployeeService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(_id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Json(body): Json<EmployeeManualPdfUploadIntentRequest>,
 ) -> Result<Json<EmployeeManualPdfUploadIntentResponse>, AppError> {
+    let _id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &body.school_id)?;
     Ok(Json(svc.create_employee_manual_pdf_upload_intent(body).await?))
 }
@@ -496,9 +498,10 @@ pub async fn employee_manual_pdf_upload_intent(
 pub async fn employee_manual_pdf_complete_upload(
     State(svc): State<Arc<EmployeeService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Json(body): Json<EmployeeManualPdfCompleteUploadRequest>,
 ) -> Result<Json<EmployeeFormAssignment>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     let school_id = Uuid::parse_str(&body.storage_key.split('/').nth(3).unwrap_or(""))
         .map_err(|_| AppError::Validation("Invalid storage key format".to_string()))?;
     check_permission_school_access(&auth, &school_id)?;
@@ -508,9 +511,10 @@ pub async fn employee_manual_pdf_complete_upload(
 pub async fn get_employee_manual_pdf_url(
     State(svc): State<Arc<EmployeeService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Query(q): Query<SchoolQuery>,
 ) -> Result<Json<FileAccessResponse>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &q.school_id)?;
     let url = svc.get_employee_manual_pdf_access_url(id, q.school_id).await?;
     Ok(Json(FileAccessResponse { url, expires_in_seconds: 300 }))
@@ -519,9 +523,10 @@ pub async fn get_employee_manual_pdf_url(
 pub async fn delete_employee_manual_pdf(
     State(svc): State<Arc<EmployeeService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Query(q): Query<SchoolQuery>,
 ) -> Result<Json<EmployeeFormAssignment>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &q.school_id)?;
     Ok(Json(svc.remove_employee_manual_pdf(id, q.school_id).await?))
 }
@@ -529,10 +534,11 @@ pub async fn delete_employee_manual_pdf(
 pub async fn upload_employee_manual_pdf(
     State(svc): State<Arc<EmployeeService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Query(q): Query<SchoolQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<EmployeeFormAssignment>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &q.school_id)?;
 
     let mut file_bytes = Vec::new();

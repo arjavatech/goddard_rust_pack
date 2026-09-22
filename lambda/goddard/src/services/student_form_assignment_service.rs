@@ -8,6 +8,9 @@ use crate::models::student_form_assignment::{
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
 };
+use crate::models::student_form_assignment_revoke::{
+    RevokeStudentFormAssignmentRequest, RevokeStudentFormAssignmentResponse
+};
 use crate::models::email::{FormApprovedNotification, FormAssignedNotification, FormRejectedNotification};
 use crate::models::notification::{notification_type, CreateNotification};
 use crate::services::email_service::{parent_dashboard_url, EmailService};
@@ -303,6 +306,69 @@ impl StudentFormAssignmentService {
         Ok(response)
     }
 
+    pub async fn revoke_student_form_assignment(
+        &self,
+        request: RevokeStudentFormAssignmentRequest,
+    ) -> Result<RevokeStudentFormAssignmentResponse, AppError> {
+
+        // Call DAO to revoke the assignment
+        let response = self.dao
+            .revoke_student_form_assignment(&request)
+            .await?;
+
+        // Send revocation notification email (non-blocking)
+        match self
+            .dao
+            .get_review_notification_context(request.assignment_id, request.revoked_by)
+            .await
+        {
+            Ok(ctx) => {
+                let recipients = match ctx.secondary_parent_email.as_ref() {
+                    Some(sp) if !sp.trim().is_empty() => format!("{},{}", ctx.parent_email, sp),
+                    _ => ctx.parent_email.clone(),
+                };
+                let reviewer_name = format!(
+                    "{} {}",
+                    ctx.reviewer_first_name.trim(),
+                    ctx.reviewer_last_name.trim()
+                )
+                .trim()
+                .to_string();
+                let reviewer_name = if reviewer_name.is_empty() {
+                    "Goddard School Admin".to_string()
+                } else {
+                    reviewer_name
+                };
+                let email_svc = self.email_service.clone();
+                let reason = request.notes.clone();
+
+                tokio::spawn(async move {
+                    let notification = FormRejectedNotification {
+                        parent_email: recipients,
+                        parent_first_name: ctx.parent_first_name,
+                        child_name: ctx.child_full_name,
+                        form_name: ctx.form_name,
+                        reviewer_name,
+                        reviewed_on: Utc::now(),
+                        notes: Some(format!("Your form approval has been revoked. Reason: {}", reason)),
+                        dashboard_url: parent_dashboard_url(),
+                    };
+                    if let Err(e) = email_svc.send_form_rejected_email(notification).await {
+                        eprintln!("[EmailService] form_revoked notification failed (non-fatal): {:?}", e);
+                    }
+                });
+            }
+            Err(e) => {
+                println!(
+                    "[StudentFormAssignmentService] Skipping revocation email — context lookup failed: {:?}",
+                    e
+                );
+            }
+        }
+
+        Ok(response)
+    }
+
     pub async fn validate_api_key(&self, api_key: &str) -> Result<(), AppError> {
 
         // Use the same API key validation as other endpoints
@@ -411,7 +477,28 @@ impl StudentFormAssignmentService {
                 format!("{}_{}.pdf", sanitized, count)
             };
 
-            match client.get(&form.recent_pdf_link).send().await {
+            let pdf_url = if form.submission_source.as_deref() == Some("manual_upload") {
+                match &form.manual_pdf_storage_key {
+                    Some(key) => {
+                        let base = std::env::var("S3_BASE_URL").unwrap_or_default();
+                        format!("{}/{}", base.trim_end_matches('/'), key)
+                    }
+                    None => {
+                        println!("[WARN] Manual upload missing storage key for {}", form.form_name);
+                        continue;
+                    }
+                }
+            } else {
+                match &form.recent_pdf_link {
+                    Some(link) => link.clone(),
+                    None => {
+                        println!("[WARN] No PDF link for {}", form.form_name);
+                        continue;
+                    }
+                }
+            };
+
+            match client.get(&pdf_url).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         match resp.bytes().await {
@@ -611,6 +698,7 @@ impl StudentFormAssignmentService {
                 req.file_size_bytes,
                 &req.uploaded_by,
                 uploader_id,
+                None,
             )
             .await?;
 
@@ -663,6 +751,7 @@ impl StudentFormAssignmentService {
         file_name: String,
         uploaded_by: String,
         uploader_id: Uuid,
+        reason: Option<String>,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
         // Validate file size (max 10 MB)
         if file_bytes.len() > 10 * 1024 * 1024 {
@@ -693,6 +782,7 @@ impl StudentFormAssignmentService {
                 file_bytes.len() as i64,
                 &uploaded_by,
                 uploader_id,
+                reason,
             )
             .await?;
 

@@ -93,6 +93,7 @@ use controllers::{
         get_student_form_review_queue, update_student_form_assignment,
     },
     student_form_assignment_review_controller::review_student_form_assignment,
+    student_form_assignment_revoke_controller::revoke_student_form_assignment,
     student_form_assignment_manual_pdf_controller::{
         student_manual_pdf_upload_intent, student_manual_pdf_complete_upload,
         get_student_manual_pdf_url, delete_student_manual_pdf, upload_student_manual_pdf,
@@ -413,7 +414,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/users/admin",
             get(get_admins_by_school)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only))
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only))
                 .merge(
                     put(update_admin_user)
                         .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
@@ -714,6 +715,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/student-form-assignments/review",
             put(review_student_form_assignment)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/student-form-assignments/revoke",
+            put(revoke_student_form_assignment)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(

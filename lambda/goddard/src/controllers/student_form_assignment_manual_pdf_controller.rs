@@ -12,6 +12,7 @@ use crate::{
         ManualPdfCompleteUploadRequest, StudentFormAssignmentResponse,
     },
     services::StudentFormAssignmentService,
+    utils::ValidationUtils,
 };
 
 #[derive(Deserialize)]
@@ -27,9 +28,10 @@ pub struct FileAccessResponse {
 pub async fn student_manual_pdf_upload_intent(
     State(svc): State<Arc<StudentFormAssignmentService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(_id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Json(body): Json<ManualPdfUploadIntentRequest>,
 ) -> Result<Json<ManualPdfUploadIntentResponse>, AppError> {
+    let _id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &body.school_id)?;
     Ok(Json(svc.create_manual_pdf_upload_intent(body).await?))
 }
@@ -37,9 +39,10 @@ pub async fn student_manual_pdf_upload_intent(
 pub async fn student_manual_pdf_complete_upload(
     State(svc): State<Arc<StudentFormAssignmentService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Json(body): Json<ManualPdfCompleteUploadRequest>,
 ) -> Result<Json<StudentFormAssignmentResponse>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     let school_id = Uuid::parse_str(&body.storage_key.split('/').nth(3).unwrap_or(""))
         .map_err(|_| AppError::Validation("Invalid storage key format".to_string()))?;
     check_permission_school_access(&auth, &school_id)?;
@@ -49,9 +52,10 @@ pub async fn student_manual_pdf_complete_upload(
 pub async fn get_student_manual_pdf_url(
     State(svc): State<Arc<StudentFormAssignmentService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Query(q): Query<SchoolQuery>,
 ) -> Result<Json<FileAccessResponse>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &q.school_id)?;
     let url = svc.get_manual_pdf_access_url(id, q.school_id).await?;
     Ok(Json(FileAccessResponse { url }))
@@ -60,9 +64,10 @@ pub async fn get_student_manual_pdf_url(
 pub async fn delete_student_manual_pdf(
     State(svc): State<Arc<StudentFormAssignmentService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Query(q): Query<SchoolQuery>,
 ) -> Result<Json<StudentFormAssignmentResponse>, AppError> {
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &q.school_id)?;
     Ok(Json(svc.remove_manual_pdf(id, q.school_id).await?))
 }
@@ -70,17 +75,19 @@ pub async fn delete_student_manual_pdf(
 pub async fn upload_student_manual_pdf(
     State(svc): State<Arc<StudentFormAssignmentService>>,
     Extension(auth): Extension<AuthContext>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Query(q): Query<SchoolQuery>,
     mut multipart: axum::extract::Multipart,
 ) -> Result<Json<StudentFormAssignmentResponse>, AppError> {
     use axum::extract::Multipart;
 
+    let id = ValidationUtils::validate_uuid(&id_str)?;
     check_permission_school_access(&auth, &q.school_id)?;
 
     let mut file_bytes = Vec::new();
     let mut file_name = String::new();
     let mut uploaded_by = String::new();
+    let mut reason = String::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|_| AppError::Validation("Invalid multipart data".to_string()))? {
         let name = field.name().unwrap_or("").to_string();
@@ -94,6 +101,10 @@ pub async fn upload_student_manual_pdf(
                 uploaded_by = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read uploaded_by".to_string()))?.to_vec())
                     .unwrap_or_else(|_| auth.email.clone());
             }
+            "reason" => {
+                reason = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read reason".to_string()))?.to_vec())
+                    .unwrap_or_default();
+            }
             _ => {}
         }
     }
@@ -106,5 +117,5 @@ pub async fn upload_student_manual_pdf(
         uploaded_by = auth.email.clone();
     }
 
-    Ok(Json(svc.upload_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id).await?))
+    Ok(Json(svc.upload_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id, Some(reason)).await?))
 }

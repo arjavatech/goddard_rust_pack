@@ -892,7 +892,8 @@ impl EnrollmentDao {
                             jsonb_build_object(
                                 'status', COALESCE(sfa.status, 'incomplete'),
                                 'assigned_at', TO_CHAR(sfa.assigned_at, 'DD-MM-YYYY'),
-                                'due_date', TO_CHAR(ft.due_date, 'DD-MM-YYYY')
+                                'due_date', TO_CHAR(ft.due_date, 'DD-MM-YYYY'),
+                                'assignment_id', sfa.id
                             )
                         )
                         FROM student_form_assignments sfa

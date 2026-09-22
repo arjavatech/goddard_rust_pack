@@ -133,6 +133,9 @@ pub struct CreateExpenseBody {
     pub bill_image_base64: Option<String>,
     pub bill_image_name: Option<String>,
     pub bill_image_content_type: Option<String>,
+    #[serde(alias = "paid_by_name")]
+    pub paid_by_name: Option<String>,
+    pub paid_by_user_id: Option<Uuid>,
 }
 
 // ─── Query params ─────────────────────────────────────────────────────────────

@@ -148,7 +148,7 @@ impl SupabaseClient {
         // Read frontend URL from environment, with fallback to dev URL
         let frontend_url = env::var("FRONTEND_URL").unwrap_or_else(|_| {
             eprintln!("⚠️  FRONTEND_URL not set, using default dev URL");
-            "https://dev.goddard-web.pages.dev".to_string()
+            "https://goddardschool.org".to_string()
         });
 
         let client = Client::builder()

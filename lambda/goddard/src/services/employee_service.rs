@@ -74,7 +74,7 @@ impl EmployeeService {
 
     fn employee_dashboard_url() -> String {
         let base = env::var("FRONTEND_URL")
-            .unwrap_or_else(|_| "https://dev.goddard-web.pages.dev".to_string());
+            .unwrap_or_else(|_| "https://goddardschool.org".to_string());
         format!("{}/employee/dashboard", base)
     }
 

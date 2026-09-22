@@ -341,6 +341,16 @@ impl RequestService {
             body.requester_id = Some(auth.user_id);
         }
 
+        // Set paid_by_user_id from auth if not provided
+        if body.paid_by_user_id.is_none() {
+            body.paid_by_user_id = Some(auth.user_id);
+        }
+
+        // Set paid_by_name from requester_name if not provided
+        if body.paid_by_name.is_none() {
+            body.paid_by_name = Some(body.requester_name.clone());
+        }
+
         // Upload bill image if provided
         let bill_image_url = if let (Some(b64), Some(name), Some(ct)) = (
             body.bill_image_base64.take(),

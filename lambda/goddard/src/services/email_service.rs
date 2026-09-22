@@ -564,5 +564,5 @@ impl EmailService {
 /// Resolve the parent dashboard base URL used in CTA buttons.
 pub fn parent_dashboard_url() -> String {
     std::env::var("PARENT_DASHBOARD_URL")
-        .unwrap_or_else(|_| "https://dev.goddard-web.pages.dev/".to_string())
+        .unwrap_or_else(|_| "https://goddardschool.org/".to_string())
 }

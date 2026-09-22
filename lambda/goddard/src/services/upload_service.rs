@@ -10,6 +10,7 @@ const ALLOWED_CONTENT_TYPES: &[&str] = &[
     "image/png",
     "image/gif",
     "image/webp",
+    "application/pdf",
 ];
 
 pub const DOCUMENT_ALLOWED_CONTENT_TYPES: &[&str] = &["application/pdf", "image/jpeg", "image/png"];
@@ -44,7 +45,7 @@ impl UploadService {
     ) -> Result<UploadImageResponse, AppError> {
         if !ALLOWED_CONTENT_TYPES.contains(&content_type) {
             return Err(AppError::Validation(format!(
-                "Content type '{}' is not allowed. Use JPEG, PNG, GIF, or WebP.",
+                "Content type '{}' is not allowed. Use JPEG, PNG, GIF, WebP, or PDF.",
                 content_type
             )));
         }
@@ -60,6 +61,7 @@ impl UploadService {
             "png" => "png",
             "gif" => "gif",
             "webp" => "webp",
+            "pdf" => "pdf",
             _ => "jpg",
         };
         let key = format!("product-images/{}.{}", uuid::Uuid::new_v4(), safe_ext);

@@ -81,6 +81,7 @@ pub struct CreateInvitationRequestEnhanced {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub role: Option<String>,
+    pub phone_number: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,6 +112,7 @@ pub struct AdminUserResponse {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub phone_number: Option<String>,
     pub taptime_employee_id: Option<String>,
     pub taptime_pin: Option<String>,
 }
@@ -434,7 +436,7 @@ impl AuthService {
             request.first_name.clone(),
             request.last_name.clone(),
             request.role.clone(),
-            None,  // phone_number - not provided in enhanced endpoint
+            request.phone_number.clone(),
             Some(true),  // is_verified = true
         )
         .with_school_name_option(Some(school_name.clone()));  // school_name is guaranteed to exist
@@ -766,6 +768,7 @@ impl AuthService {
             email: updated.email,
             role: updated.role,
             is_verified: updated.is_verified,
+            phone_number: updated.phone_number,
             taptime_employee_id: updated.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: updated.taptime_pin,
         })
@@ -831,6 +834,7 @@ impl AuthService {
             email: u.email,
             role: u.role,
             is_verified: u.is_verified,
+            phone_number: u.phone_number,
             taptime_employee_id: u.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: u.taptime_pin,
         }).collect())

@@ -34,6 +34,7 @@ pub struct UserDetails {
     pub email: String,
     pub role: String,
     pub is_verified: bool,
+    pub phone_number: Option<String>,
     pub taptime_employee_id: Option<Uuid>,
     pub taptime_pin: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -188,6 +189,7 @@ impl AuthDao {
         let query = r#"
             SELECT u.id, u.school_id, u.first_name, u.last_name, u.email, u.role,
                    CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
+                   u.metadata->>'phone_number' as phone_number,
                    u.taptime_employee_id, u.taptime_pin,
                    u.created_at
             FROM users u
@@ -212,6 +214,7 @@ impl AuthDao {
                 email: row.get("email"),
                 role: row.get("role"),
                 is_verified: row.get("is_verified"),
+                phone_number: row.get("phone_number"),
                 taptime_employee_id: row.get("taptime_employee_id"),
                 taptime_pin: row.get("taptime_pin"),
                 created_at,
@@ -244,7 +247,7 @@ impl AuthDao {
                 updated_at = NOW()
             WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
             RETURNING id, school_id, first_name, last_name, email, role,
-                      COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at
+                      COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at
         "#;
 
         match client.query_opt(query, &[&user_id, &first_name, &last_name, &phone_number]).await {
@@ -260,6 +263,7 @@ impl AuthDao {
                     email: row.get("email"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
+                    phone_number: row.get("phone_number"),
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
@@ -295,7 +299,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at FROM users WHERE id = $1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE id = $1";
 
         match client.query_opt(query, &[&user_id]).await {
             Ok(Some(row)) => {
@@ -310,6 +314,7 @@ impl AuthDao {
                     email: row.get("email"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
+                    phone_number: row.get("phone_number"),
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
@@ -324,7 +329,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL) LIMIT 1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL) LIMIT 1";
 
         match client.query_opt(query, &[&email, &school_id]).await {
             Ok(Some(row)) => {
@@ -338,6 +343,7 @@ impl AuthDao {
                     email: row.get("email"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
+                    phone_number: row.get("phone_number"),
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
@@ -352,7 +358,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND (is_active = true OR is_active IS NULL) LIMIT 1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND (is_active = true OR is_active IS NULL) LIMIT 1";
 
         match client.query_opt(query, &[&email]).await {
             Ok(Some(row)) => {
@@ -366,6 +372,7 @@ impl AuthDao {
                     email: row.get("email"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
+                    phone_number: row.get("phone_number"),
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
@@ -380,7 +387,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND school_id = $2 AND is_active = false LIMIT 1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND school_id = $2 AND is_active = false LIMIT 1";
 
         match client.query_opt(query, &[&email, &school_id]).await {
             Ok(Some(row)) => {
@@ -394,6 +401,7 @@ impl AuthDao {
                     email: row.get("email"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
+                    phone_number: row.get("phone_number"),
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
@@ -530,7 +538,7 @@ impl AuthDao {
             UPDATE users
             SET role = $2, updated_at = NOW()
             WHERE email = $1 AND (is_active = true OR is_active IS NULL)
-            RETURNING id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, taptime_employee_id, taptime_pin, created_at
+            RETURNING id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at
         "#;
 
         match client.query_opt(query, &[&email, &new_role]).await {
@@ -546,6 +554,7 @@ impl AuthDao {
                     email: row.get("email"),
                     role: row.get("role"),
                     is_verified: row.get("is_verified"),
+                    phone_number: row.get("phone_number"),
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,

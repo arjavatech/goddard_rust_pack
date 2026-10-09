@@ -43,6 +43,8 @@ impl UploadService {
         content_type: &str,
         bytes: Vec<u8>,
     ) -> Result<UploadImageResponse, AppError> {
+        // Normalize "image/jpg" (non-standard) to "image/jpeg"
+        let content_type = if content_type == "image/jpg" { "image/jpeg" } else { content_type };
         if !ALLOWED_CONTENT_TYPES.contains(&content_type) {
             return Err(AppError::Validation(format!(
                 "Content type '{}' is not allowed. Use JPEG, PNG, GIF, WebP, or PDF.",

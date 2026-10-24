@@ -36,22 +36,32 @@ impl NavCountsDao {
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
                WHERE dra.school_id = $1 AND dr.audience = 'student'
-                 AND dra.status IN ('pending', 'submitted', 'rejected'))            AS student_docs_review,
+                 AND dra.status IN ('pending', 'rejected'))                         AS student_docs_due,
+              (SELECT COUNT(*) FROM document_request_assignments dra
+               JOIN document_requests dr ON dr.id = dra.document_request_id
+               WHERE dra.school_id = $1 AND dr.audience = 'student'
+                 AND dra.status = 'submitted')                                      AS student_docs_review,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
                WHERE dra.school_id = $1 AND dr.audience = 'employee'
-                 AND dra.status IN ('pending', 'submitted', 'rejected'))            AS employee_docs_review
+                 AND dra.status IN ('pending', 'rejected'))                         AS employee_docs_due,
+              (SELECT COUNT(*) FROM document_request_assignments dra
+               JOIN document_requests dr ON dr.id = dra.document_request_id
+               WHERE dra.school_id = $1 AND dr.audience = 'employee'
+                 AND dra.status = 'submitted')                                      AS employee_docs_review
             "#,
             &[&school_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;
 
         Ok(AdminNavCounts {
-            student_forms_due:   row.get::<_, i64>(0),
+            student_forms_due:    row.get::<_, i64>(0),
             student_forms_review: row.get::<_, i64>(1),
-            employee_forms_due:  row.get::<_, i64>(2),
+            employee_forms_due:   row.get::<_, i64>(2),
             employee_forms_review: row.get::<_, i64>(3),
-            student_docs_review: row.get::<_, i64>(4),
-            employee_docs_review: row.get::<_, i64>(5),
+            student_docs_due:     row.get::<_, i64>(4),
+            student_docs_review:  row.get::<_, i64>(5),
+            employee_docs_due:    row.get::<_, i64>(6),
+            employee_docs_review: row.get::<_, i64>(7),
         })
     }
 

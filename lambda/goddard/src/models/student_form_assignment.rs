@@ -32,6 +32,8 @@ pub struct StudentFormAssignment {
     pub manual_pdf_file_size_bytes: Option<i64>,
     pub manual_pdf_uploaded_at: Option<DateTime<Utc>>,
     pub manual_pdf_uploaded_by: Option<String>,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -76,6 +78,8 @@ pub struct StudentFormAssignmentResponse {
     pub manual_pdf_file_size_bytes: Option<i64>,
     pub manual_pdf_uploaded_at: Option<DateTime<Utc>>,
     pub manual_pdf_uploaded_by: Option<String>,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,6 +120,8 @@ impl From<StudentFormAssignment> for StudentFormAssignmentResponse {
             manual_pdf_file_size_bytes: assignment.manual_pdf_file_size_bytes,
             manual_pdf_uploaded_at: assignment.manual_pdf_uploaded_at,
             manual_pdf_uploaded_by: assignment.manual_pdf_uploaded_by,
+            form_academic_year: assignment.form_academic_year,
+            approved_form_name: assignment.approved_form_name,
         }
     }
 }

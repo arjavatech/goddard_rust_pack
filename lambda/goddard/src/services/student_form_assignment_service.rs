@@ -681,6 +681,8 @@ impl StudentFormAssignmentService {
         school_id: Uuid,
         req: ManualPdfCompleteUploadRequest,
         uploader_id: Uuid,
+        form_academic_year: Option<String>,
+        approved_form_name: Option<String>,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
         // Verify the file exists in S3
         self.upload_service
@@ -699,6 +701,8 @@ impl StudentFormAssignmentService {
                 &req.uploaded_by,
                 uploader_id,
                 None,
+                form_academic_year.as_deref(),
+                approved_form_name.as_deref(),
             )
             .await?;
 
@@ -752,6 +756,8 @@ impl StudentFormAssignmentService {
         uploaded_by: String,
         uploader_id: Uuid,
         reason: Option<String>,
+        form_academic_year: Option<String>,
+        approved_form_name: Option<String>,
     ) -> Result<StudentFormAssignmentResponse, AppError> {
         // Validate file size (max 10 MB)
         if file_bytes.len() > 10 * 1024 * 1024 {
@@ -783,9 +789,21 @@ impl StudentFormAssignmentService {
                 &uploaded_by,
                 uploader_id,
                 reason,
+                form_academic_year.as_deref(),
+                approved_form_name.as_deref(),
             )
             .await?;
 
         Ok(assignment.into())
+    }
+
+    pub async fn update_approved_metadata(
+        &self,
+        id: Uuid,
+        school_id: &str,
+        form_academic_year: Option<&str>,
+        approved_form_name: Option<&str>,
+    ) -> Result<serde_json::Value, AppError> {
+        self.dao.update_approved_metadata(id, school_id, form_academic_year, approved_form_name).await
     }
 }

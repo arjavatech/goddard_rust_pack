@@ -321,12 +321,15 @@ impl StudentFormAssignmentDao {
                 notes = $2,
                 approved_by = $3,
                 approved_on = $4,
-                updated_at = $4
+                updated_at = $4,
+                form_academic_year = $6,
+                approved_form_name = $7
             WHERE id = $5
             RETURNING
                 id, school_id, enrollment_id, child_id, form_template_id,
                 assignment_source, status, is_required, assigned_at,
-                notes, approved_by, approved_on, updated_at
+                notes, approved_by, approved_on, updated_at,
+                form_academic_year, approved_form_name
             "#,
             &[
                 &status_str,
@@ -334,6 +337,8 @@ impl StudentFormAssignmentDao {
                 &request.approved_by,
                 &now,
                 &request.assignment_id,
+                &request.form_academic_year,
+                &request.approved_form_name,
             ],
         )
         .await
@@ -392,6 +397,10 @@ impl StudentFormAssignmentDao {
                     .map_err(|e| AppError::Database(format!("Failed to extract updated_at: {}", e)))?;
                 naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
             },
+            form_academic_year: row.try_get("form_academic_year")
+                .map_err(|e| AppError::Database(format!("Failed to extract form_academic_year: {}", e)))?,
+            approved_form_name: row.try_get("approved_form_name")
+                .map_err(|e| AppError::Database(format!("Failed to extract approved_form_name: {}", e)))?,
         })
     }
 
@@ -586,9 +595,53 @@ impl StudentFormAssignmentDao {
                 naive_dt_opt.map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
             },
             manual_pdf_uploaded_by: row.try_get("manual_pdf_uploaded_by").ok().flatten(),
+            form_academic_year: row.try_get("form_academic_year").ok().flatten(),
+            approved_form_name: row.try_get("approved_form_name").ok().flatten(),
         };
 
         Ok(assignment)
+    }
+
+    pub async fn update_approved_metadata(
+        &self,
+        id: Uuid,
+        school_id: &str,
+        form_academic_year: Option<&str>,
+        approved_form_name: Option<&str>,
+    ) -> Result<serde_json::Value, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let school_uuid = Uuid::parse_str(school_id)
+            .map_err(|_| AppError::Validation("Invalid school_id".to_string()))?;
+
+        let row = client.query_opt(
+            r#"
+            UPDATE student_form_assignments
+            SET form_academic_year = COALESCE($3, form_academic_year),
+                approved_form_name  = COALESCE($4, approved_form_name),
+                updated_at          = NOW()
+            WHERE id = $1 AND school_id = $2 AND status = 'approved'
+            RETURNING id, form_academic_year, approved_form_name
+            "#,
+            &[&id, &school_uuid, &form_academic_year, &approved_form_name],
+        )
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        match row {
+            Some(r) => {
+                let result_id: Uuid = r.get("id");
+                let fay: Option<String> = r.try_get("form_academic_year").ok().flatten();
+                let afn: Option<String> = r.try_get("approved_form_name").ok().flatten();
+                Ok(serde_json::json!({
+                    "id": result_id,
+                    "form_academic_year": fay,
+                    "approved_form_name": afn
+                }))
+            }
+            None => Err(AppError::NotFound("Assignment not found or not in approved status".to_string())),
+        }
     }
 
     pub async fn get_completed_assignments_for_zip(
@@ -1211,6 +1264,8 @@ impl StudentFormAssignmentDao {
         uploaded_by: &str,
         approved_by: Uuid,
         reason: Option<String>,
+        form_academic_year: Option<&str>,
+        approved_form_name: Option<&str>,
     ) -> Result<StudentFormAssignment, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -1263,6 +1318,8 @@ impl StudentFormAssignmentDao {
                 approved_by = $9,
                 approved_on = $7,
                 notes = COALESCE($10, notes),
+                form_academic_year = COALESCE($11, form_academic_year),
+                approved_form_name = COALESCE($12, approved_form_name),
                 updated_at = $7
             WHERE id = $1 AND school_id = $2
             RETURNING *
@@ -1278,6 +1335,8 @@ impl StudentFormAssignmentDao {
                 &uploaded_by,
                 &approved_by,
                 &final_notes,
+                &form_academic_year,
+                &approved_form_name,
             ],
         )
         .await

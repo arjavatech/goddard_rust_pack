@@ -666,7 +666,9 @@ impl EnrollmentDao {
                     sfa.approved_on,
                     sfa.submission_source,
                     sfa.manual_pdf_storage_key,
-                    sfa.manual_pdf_uploaded_at
+                    sfa.manual_pdf_uploaded_at,
+                    sfa.approved_form_name,
+                    sfa.form_academic_year
                 FROM users u
                 LEFT JOIN auth.users au ON au.email = u.email
                 INNER JOIN children c ON (c.parent_id = u.id OR c.secondary_parent_id = u.id)
@@ -728,7 +730,9 @@ impl EnrollmentDao {
                                 'approved_on', approved_on,
                                 'submission_source', submission_source,
                                 'manual_pdf_storage_key', manual_pdf_storage_key,
-                                'manual_pdf_uploaded_at', manual_pdf_uploaded_at
+                                'manual_pdf_uploaded_at', manual_pdf_uploaded_at,
+                                'approved_form_name', approved_form_name,
+                                'form_academic_year', form_academic_year
                             )
                         ELSE NULL END
                     ) FILTER (WHERE form_template_id IS NOT NULL),
@@ -1102,7 +1106,9 @@ impl EnrollmentDao {
                 sfa.assigned_at,
                 sfa.submission_source,
                 sfa.manual_pdf_storage_key,
-                sfa.manual_pdf_uploaded_at
+                sfa.manual_pdf_uploaded_at,
+                sfa.approved_form_name,
+                sfa.form_academic_year
             FROM users u
             LEFT JOIN auth.users au ON au.email = u.email
             LEFT JOIN children c ON c.parent_id = u.id OR c.secondary_parent_id = u.id
@@ -1160,6 +1166,8 @@ impl EnrollmentDao {
             submission_source: row.get("submission_source"),
             manual_pdf_storage_key: row.get("manual_pdf_storage_key"),
             manual_pdf_uploaded_at: row.get("manual_pdf_uploaded_at"),
+            approved_form_name: row.get("approved_form_name"),
+            form_academic_year: row.get("form_academic_year"),
         }).collect())
     }
 

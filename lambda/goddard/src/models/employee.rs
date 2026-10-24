@@ -88,6 +88,7 @@ pub struct EmployeeFormAssignment {
     pub manual_pdf_file_size_bytes: Option<i64>,
     pub manual_pdf_uploaded_at: Option<NaiveDateTime>,
     pub manual_pdf_uploaded_by: Option<String>,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -119,6 +120,7 @@ pub struct EmployeeFormAssignmentWithTemplate {
     pub manual_pdf_file_size_bytes: Option<i64>,
     pub manual_pdf_uploaded_at: Option<NaiveDateTime>,
     pub manual_pdf_uploaded_by: Option<String>,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -269,6 +271,21 @@ pub struct ReviewEmployeeFormRequest {
     pub school_id: Uuid,
     pub status: String,
     pub notes: Option<String>,
+    pub approved_form_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RevokeEmployeeFormAssignmentRequest {
+    pub assignment_id: Uuid,
+    pub notes: String,
+    pub revoked_by: Uuid,
+    pub target_status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateEmployeeFormMetadataRequest {
+    pub school_id: Uuid,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -84,6 +84,21 @@ pub struct CompleteUploadRequest {
 pub struct ReviewDocumentAssignmentRequest {
     pub status: String,
     pub reason: Option<String>,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDocumentMetadataRequest {
+    pub school_id: Uuid,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangeDocumentStatusRequest {
+    pub status: String,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -128,6 +143,8 @@ pub struct DocumentAssignmentItem {
     pub latest_content_type: Option<String>,
     pub latest_file_size_bytes: Option<i64>,
     pub version_count: i64,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

@@ -136,7 +136,8 @@ impl DocumentRequestDao {
               CASE WHEN a.status IN ('pending','rejected') AND r.due_date IS NOT NULL AND r.due_date < school_local_now(a.school_id)::date THEN 'overdue' ELSE a.status END,
               COALESCE(c.first_name || ' ' || c.last_name, u.first_name || ' ' || u.last_name),
               p.first_name || ' ' || p.last_name,p.email,cl.name,u.email,a.submitted_at,a.reviewed_at,a.rejection_reason,a.latest_submission_id,s.original_file_name,s.content_type,s.file_size_bytes,
-              (SELECT COUNT(*) FROM document_submissions ds WHERE ds.assignment_id=a.id)
+              (SELECT COUNT(*) FROM document_submissions ds WHERE ds.assignment_id=a.id),
+              a.form_academic_year,a.approved_form_name
               FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id
               LEFT JOIN children c ON c.id=a.child_id LEFT JOIN enrollments e ON e.id=a.enrollment_id LEFT JOIN users p ON p.id=c.parent_id LEFT JOIN classrooms cl ON cl.id=e.classroom_id
               LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id LEFT JOIN document_submissions s ON s.id=a.latest_submission_id
@@ -153,6 +154,7 @@ impl DocumentRequestDao {
 
     fn assignment(row: &Row) -> DocumentAssignmentItem { DocumentAssignmentItem {
         id:row.get(0),request_id:row.get(1),school_id:row.get(2),audience:row.get(3),document_name:row.get(4),instructions:row.get(5),due_date:row.get(6),request_status:row.get(7),status:row.get(8),derived_status:row.get(9),subject_name:row.get::<_,Option<String>>(10).unwrap_or_else(|| "Unknown recipient".into()),parent_name:row.get(11),parent_email:row.get(12),classroom_name:row.get(13),employee_email:row.get(14),submitted_at:row.get(15),reviewed_at:row.get(16),rejection_reason:row.get(17),latest_submission_id:row.get(18),latest_file_name:row.get(19),latest_content_type:row.get(20),latest_file_size_bytes:row.get(21),version_count:row.get(22),
+        form_academic_year:row.try_get(23).ok().flatten(),approved_form_name:row.try_get(24).ok().flatten(),
     }}
 
     pub async fn assignment_access(&self, assignment_id: Uuid, user_id: Uuid, admin: bool) -> ApiResult<(Uuid,String,String)> {
@@ -254,9 +256,27 @@ impl DocumentRequestDao {
         let school_id:Uuid=row.get(0); let request_id:Uuid=row.get(1); let old:String=row.get(2); let submission:Option<Uuid>=row.get(3);
         if old!="submitted" { return Err(AppError::Validation("Only submitted documents can be reviewed".to_string())); }
         let now:chrono::NaiveDateTime=tx.query_one("SELECT school_local_now($1)",&[&school_id]).await.map_err(|e|AppError::Database(e.to_string()))?.get(0);
-        tx.execute("UPDATE document_request_assignments SET status=$2,reviewed_at=$3,reviewed_by=$4,rejection_reason=$5,updated_at=$3 WHERE id=$1", &[&assignment_id,&review.status,&now,&actor_id,&review.reason]).await.map_err(|e|AppError::Database(e.to_string()))?;
+        tx.execute("UPDATE document_request_assignments SET status=$2,reviewed_at=$3,reviewed_by=$4,rejection_reason=$5,form_academic_year=COALESCE($6,form_academic_year),approved_form_name=COALESCE($7,approved_form_name),updated_at=$3 WHERE id=$1", &[&assignment_id,&review.status,&now,&actor_id,&review.reason,&review.form_academic_year,&review.approved_form_name]).await.map_err(|e|AppError::Database(e.to_string()))?;
         tx.execute("INSERT INTO document_audit_events (school_id,document_request_id,assignment_id,submission_id,event_type,actor_id,reason,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", &[&school_id,&request_id,&assignment_id,&submission,&review.status,&actor_id,&review.reason,&now]).await.map_err(|e|AppError::Database(e.to_string()))?;
         tx.commit().await.map_err(|e|AppError::Database(e.to_string()))?; self.assignment_by_id(assignment_id).await
+    }
+
+    pub async fn update_metadata(&self, id: Uuid, school_id: Uuid, req: &UpdateDocumentMetadataRequest) -> ApiResult<DocumentAssignmentItem> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        client.execute(
+            "UPDATE document_request_assignments SET form_academic_year=COALESCE($3,form_academic_year), approved_form_name=COALESCE($4,approved_form_name), updated_at=NOW() WHERE id=$1 AND school_id=$2",
+            &[&id, &school_id, &req.form_academic_year, &req.approved_form_name]
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        self.assignment_by_id(id).await
+    }
+
+    pub async fn change_status(&self, id: Uuid, school_id: Uuid, req: &ChangeDocumentStatusRequest) -> ApiResult<DocumentAssignmentItem> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        client.execute(
+            "UPDATE document_request_assignments SET status=$3, rejection_reason=CASE WHEN $3='rejected' THEN $4 ELSE rejection_reason END, updated_at=NOW() WHERE id=$1 AND school_id=$2",
+            &[&id, &school_id, &req.status, &req.reason]
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        self.assignment_by_id(id).await
     }
 
     pub async fn assignment_by_id(&self,id:Uuid)->ApiResult<DocumentAssignmentItem>{

@@ -297,6 +297,10 @@ pub struct FormStatus {
     pub manual_pdf_storage_key: Option<String>,
     #[serde(default)]
     pub manual_pdf_uploaded_at: Option<NaiveDateTime>,
+    #[serde(default)]
+    pub approved_form_name: Option<String>,
+    #[serde(default)]
+    pub form_academic_year: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

@@ -73,6 +73,18 @@ impl DocumentRequestService {
         }
         Ok(item)
     }
+    pub async fn update_metadata(&self, id: Uuid, school_id: Uuid, req: &UpdateDocumentMetadataRequest) -> ApiResult<DocumentAssignmentItem> {
+        self.dao.update_metadata(id, school_id, req).await
+    }
+    pub async fn change_status(&self, id: Uuid, school_id: Uuid, req: &ChangeDocumentStatusRequest) -> ApiResult<DocumentAssignmentItem> {
+        if !matches!(req.status.as_str(), "pending" | "rejected") {
+            return Err(AppError::Validation("Status must be 'pending' or 'rejected'".into()));
+        }
+        if req.status == "rejected" && req.reason.as_deref().map(|r| r.trim().is_empty()).unwrap_or(true) {
+            return Err(AppError::Validation("Reason required when rejecting".into()));
+        }
+        self.dao.change_status(id, school_id, req).await
+    }
     pub async fn file_url(&self,submission_id:Uuid,user:Uuid,admin:bool,download:bool)->ApiResult<FileAccessResponse>{let assignment=self.dao.submission_assignment(submission_id).await?;self.dao.assignment_access(assignment,user,admin).await?;let(_,key)=self.dao.file_key(submission_id).await?;Ok(FileAccessResponse{url:self.uploads.create_document_access_url(&key,download).await?,expires_in_seconds:300})}
     pub async fn history(&self,assignment_id:Uuid,user:Uuid,admin:bool)->ApiResult<Vec<DocumentAuditEvent>>{self.dao.assignment_access(assignment_id,user,admin).await?;self.dao.history(assignment_id).await}
 }

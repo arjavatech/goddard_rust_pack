@@ -22,6 +22,7 @@ use crate::{
         EmployeeFormTemplate, EmployeeInviteRequest, EmployeeInviteResponse, EmployeeWithUser,
         EmployeeManualPdfUploadIntentRequest, EmployeeManualPdfUploadIntentResponse,
         EmployeeManualPdfCompleteUploadRequest, ResendEmployeeInviteResponse, ReviewEmployeeFormRequest,
+        RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest,
         UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
@@ -837,6 +838,7 @@ impl EmployeeService {
                 &req.status,
                 reviewer_id,
                 req.notes.as_deref(),
+                req.approved_form_name.as_deref(),
             )
             .await?;
 
@@ -875,6 +877,24 @@ impl EmployeeService {
         }
 
         Ok(assignment)
+    }
+
+    pub async fn get_assignment_details(&self, assignment_id: Uuid) -> ApiResult<(Uuid, Uuid, Uuid)> {
+        self.employee_form_assignment_dao
+            .get_assignment_details(assignment_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Employee form assignment not found".into()))
+    }
+
+    pub async fn revoke_assignment(&self, req: RevokeEmployeeFormAssignmentRequest) -> ApiResult<EmployeeFormAssignment> {
+        if req.notes.trim().is_empty() {
+            return Err(AppError::Validation("Revocation reason is required".into()));
+        }
+        self.employee_form_assignment_dao.revoke_assignment(&req).await
+    }
+
+    pub async fn update_form_metadata(&self, id: Uuid, school_id: Uuid, req: UpdateEmployeeFormMetadataRequest) -> ApiResult<EmployeeFormAssignment> {
+        self.employee_form_assignment_dao.update_approved_metadata(id, school_id, &req).await
     }
 
     pub async fn delete_assignment(&self, assignment_id: Uuid, school_id: Uuid) -> ApiResult<()> {
@@ -1025,6 +1045,7 @@ impl EmployeeService {
         school_id: Uuid,
         req: EmployeeManualPdfCompleteUploadRequest,
         uploader_id: Uuid,
+        approved_form_name: Option<String>,
     ) -> Result<EmployeeFormAssignment, AppError> {
         self.upload_service
             .verify_document_object(&req.storage_key, "application/pdf", req.file_size_bytes)
@@ -1040,6 +1061,7 @@ impl EmployeeService {
                 req.file_size_bytes,
                 &req.uploaded_by,
                 uploader_id,
+                approved_form_name.as_deref(),
             )
             .await?;
 
@@ -1087,6 +1109,7 @@ impl EmployeeService {
         file_name: String,
         uploaded_by: String,
         uploader_id: Uuid,
+        approved_form_name: Option<String>,
     ) -> Result<EmployeeFormAssignment, AppError> {
         // Validate file size (max 10 MB)
         if file_bytes.len() > 10 * 1024 * 1024 {
@@ -1117,6 +1140,7 @@ impl EmployeeService {
                 file_bytes.len() as i64,
                 &uploaded_by,
                 uploader_id,
+                approved_form_name.as_deref(),
             )
             .await?;
 

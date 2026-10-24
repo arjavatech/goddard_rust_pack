@@ -727,3 +727,47 @@ pub fn employee_form_reminder_html(
     let cta = cta_button("Complete Form Now", dashboard_url, accent);
     render_shell(accent, &headline, &preheader, &body, &cta)
 }
+
+// =====================================================
+// Help Center message template
+// =====================================================
+
+pub fn help_center_message_html(
+    sender_name: &str,
+    sender_email: &str,
+    sender_role: &str,
+    subject: &str,
+    message: &str,
+    school_name: &str,
+) -> String {
+    let accent = "#0F2D52";
+    let headline = format!("Help Request: {}", html_escape(subject));
+    let preheader = format!(
+        "New help request from {} at {}.",
+        sender_name, school_name
+    );
+
+    let details = details_card(&[
+        ("From", sender_name.to_string()),
+        ("Email", sender_email.to_string()),
+        ("Role", sender_role.to_string()),
+        ("School", school_name.to_string()),
+        ("Subject", subject.to_string()),
+    ]);
+
+    let body = format!(
+        r#"<p>Dear Administrator,</p>
+          <p>A user has submitted a help request via the <strong>{school}</strong> portal.</p>
+          {details}
+          <p style="margin:18px 0 6px 0;"><strong>Message:</strong></p>
+          <div style="background:#f9f9f9;border-left:4px solid {accent};padding:12px 16px;border-radius:4px;color:#444;white-space:pre-wrap;font-size:14px;">{msg}</div>
+          <p style="margin-top:18px;color:#555;">To respond, reply directly to <a href="mailto:{email}" style="color:{accent};">{email}</a>.</p>"#,
+        school = html_escape(school_name),
+        details = details,
+        accent = accent,
+        msg = html_escape(message),
+        email = html_escape(sender_email),
+    );
+
+    render_shell(accent, &headline, &preheader, &body, "")
+}

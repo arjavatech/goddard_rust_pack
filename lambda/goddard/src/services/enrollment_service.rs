@@ -896,6 +896,8 @@ impl EnrollmentService {
                         approved_on,
                         assigned_at: row.assigned_at.map(|dt| dt.format("%d-%m-%Y").to_string()),
                         manual_pdf_uploaded_at: row.manual_pdf_uploaded_at,
+                        approved_form_name: row.approved_form_name.clone(),
+                        form_academic_year: row.form_academic_year.clone(),
                     });
                 }
             }

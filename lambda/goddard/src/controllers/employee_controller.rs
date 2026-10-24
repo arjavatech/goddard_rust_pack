@@ -24,7 +24,8 @@ use crate::models::employee::{
     EmployeeFormAssignment, EmployeeFormAssignmentQueryParams, EmployeeFormTemplate, EmployeeInviteRequest,
     EmployeeManualPdfUploadIntentRequest, EmployeeManualPdfUploadIntentResponse,
     EmployeeManualPdfCompleteUploadRequest, EmployeeQueryParams, ResendEmployeeInviteRequest,
-    ReviewEmployeeFormRequest, UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
+    ReviewEmployeeFormRequest, RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest,
+    UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
 };
 use crate::models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery};
 use crate::services::employee_service::EmployeeService;
@@ -428,6 +429,28 @@ pub async fn delete_employee_form_assignment(
     ))
 }
 
+pub async fn revoke_employee_form_assignment(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Json(req): Json<RevokeEmployeeFormAssignmentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let (school_id, _, _) = svc.get_assignment_details(req.assignment_id).await?;
+    check_permission_admin_or_superadmin(&auth, &school_id)?;
+    let result = svc.revoke_assignment(req).await?;
+    Ok((StatusCode::OK, Json(result)))
+}
+
+pub async fn update_employee_form_metadata(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateEmployeeFormMetadataRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &body.school_id)?;
+    let result = svc.update_form_metadata(id, body.school_id, body).await?;
+    Ok((StatusCode::OK, Json(result)))
+}
+
 // ─── Employee Form Submission webhook ───────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -505,7 +528,7 @@ pub async fn employee_manual_pdf_complete_upload(
     let school_id = Uuid::parse_str(&body.storage_key.split('/').nth(3).unwrap_or(""))
         .map_err(|_| AppError::Validation("Invalid storage key format".to_string()))?;
     check_permission_school_access(&auth, &school_id)?;
-    Ok(Json(svc.complete_employee_manual_pdf_upload(id, school_id, body, auth.user_id).await?))
+    Ok(Json(svc.complete_employee_manual_pdf_upload(id, school_id, body, auth.user_id, None).await?))
 }
 
 pub async fn get_employee_manual_pdf_url(
@@ -544,6 +567,7 @@ pub async fn upload_employee_manual_pdf(
     let mut file_bytes = Vec::new();
     let mut file_name = String::new();
     let mut uploaded_by = String::new();
+    let mut approved_form_name: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|_| AppError::Validation("Invalid multipart data".to_string()))? {
         let name = field.name().unwrap_or("").to_string();
@@ -557,6 +581,11 @@ pub async fn upload_employee_manual_pdf(
                 uploaded_by = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read uploaded_by".to_string()))?.to_vec())
                     .unwrap_or_else(|_| auth.email.clone());
             }
+            "approved_form_name" => {
+                let val = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read approved_form_name".to_string()))?.to_vec())
+                    .unwrap_or_default();
+                if !val.is_empty() { approved_form_name = Some(val); }
+            }
             _ => {}
         }
     }
@@ -569,5 +598,5 @@ pub async fn upload_employee_manual_pdf(
         uploaded_by = auth.email.clone();
     }
 
-    Ok(Json(svc.upload_employee_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id).await?))
+    Ok(Json(svc.upload_employee_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id, approved_form_name).await?))
 }

@@ -46,7 +46,7 @@ pub async fn student_manual_pdf_complete_upload(
     let school_id = Uuid::parse_str(&body.storage_key.split('/').nth(3).unwrap_or(""))
         .map_err(|_| AppError::Validation("Invalid storage key format".to_string()))?;
     check_permission_school_access(&auth, &school_id)?;
-    Ok(Json(svc.complete_manual_pdf_upload(id, school_id, body, auth.user_id).await?))
+    Ok(Json(svc.complete_manual_pdf_upload(id, school_id, body, auth.user_id, None, None).await?))
 }
 
 pub async fn get_student_manual_pdf_url(
@@ -88,6 +88,8 @@ pub async fn upload_student_manual_pdf(
     let mut file_name = String::new();
     let mut uploaded_by = String::new();
     let mut reason = String::new();
+    let mut form_academic_year: Option<String> = None;
+    let mut approved_form_name: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|_| AppError::Validation("Invalid multipart data".to_string()))? {
         let name = field.name().unwrap_or("").to_string();
@@ -105,6 +107,16 @@ pub async fn upload_student_manual_pdf(
                 reason = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read reason".to_string()))?.to_vec())
                     .unwrap_or_default();
             }
+            "form_academic_year" => {
+                let val = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read form_academic_year".to_string()))?.to_vec())
+                    .unwrap_or_default();
+                if !val.is_empty() { form_academic_year = Some(val); }
+            }
+            "approved_form_name" => {
+                let val = String::from_utf8(field.bytes().await.map_err(|_| AppError::Validation("Failed to read approved_form_name".to_string()))?.to_vec())
+                    .unwrap_or_default();
+                if !val.is_empty() { approved_form_name = Some(val); }
+            }
             _ => {}
         }
     }
@@ -117,5 +129,5 @@ pub async fn upload_student_manual_pdf(
         uploaded_by = auth.email.clone();
     }
 
-    Ok(Json(svc.upload_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id, Some(reason)).await?))
+    Ok(Json(svc.upload_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id, Some(reason), form_academic_year, approved_form_name).await?))
 }

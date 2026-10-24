@@ -1,6 +1,6 @@
 use deadpool_postgres::Pool;
 use uuid::Uuid;
-use crate::models::employee::{EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate};
+use crate::models::employee::{EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate, RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest};
 use crate::models::form_review_queue::EmployeeFormReviewQueueItem;
 use crate::error::error_types::AppError;
 
@@ -41,6 +41,7 @@ impl EmployeeFormAssignmentDao {
             manual_pdf_file_size_bytes: row.try_get("manual_pdf_file_size_bytes").ok().flatten(),
             manual_pdf_uploaded_at: row.try_get("manual_pdf_uploaded_at").ok().flatten(),
             manual_pdf_uploaded_by: row.try_get("manual_pdf_uploaded_by").ok().flatten(),
+            approved_form_name: row.try_get("approved_form_name").ok().flatten(),
         }
     }
 
@@ -73,6 +74,7 @@ impl EmployeeFormAssignmentDao {
             manual_pdf_file_size_bytes: row.try_get("manual_pdf_file_size_bytes").ok().flatten(),
             manual_pdf_uploaded_at: row.try_get("manual_pdf_uploaded_at").ok().flatten(),
             manual_pdf_uploaded_by: row.try_get("manual_pdf_uploaded_by").ok().flatten(),
+            approved_form_name: row.try_get("approved_form_name").ok().flatten(),
         }
     }
 
@@ -171,7 +173,8 @@ impl EmployeeFormAssignmentDao {
                     a.approved_by, a.approved_on, a.notes, a.recent_edit_link, a.recent_pdf_link,
                     u.first_name as employee_first_name, u.last_name as employee_last_name,
                     a.submission_source, a.manual_pdf_storage_key, a.manual_pdf_file_name,
-                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by
+                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by,
+                    a.approved_form_name
              FROM employee_form_assignments a
              JOIN employee_form_templates t ON a.employee_form_template_id = t.id
              JOIN users u ON a.user_id = u.id
@@ -194,7 +197,8 @@ impl EmployeeFormAssignmentDao {
                     a.approved_by, a.approved_on, a.notes, a.recent_edit_link, a.recent_pdf_link,
                     u.first_name as employee_first_name, u.last_name as employee_last_name,
                     a.submission_source, a.manual_pdf_storage_key, a.manual_pdf_file_name,
-                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by
+                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by,
+                    a.approved_form_name
              FROM employee_form_assignments a
              JOIN employee_form_templates t ON a.employee_form_template_id = t.id
              JOIN users u ON a.user_id = u.id
@@ -274,19 +278,21 @@ impl EmployeeFormAssignmentDao {
         status: &str,
         approved_by: Uuid,
         notes: Option<&str>,
+        approved_form_name: Option<&str>,
     ) -> Result<EmployeeFormAssignment, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let rows = client.query(
             "UPDATE employee_form_assignments
-             SET status = $3, approved_by = $4, approved_on = NOW(), notes = $5, updated_at = NOW()
+             SET status = $3, approved_by = $4, approved_on = NOW(), notes = $5,
+                 approved_form_name = COALESCE($6, approved_form_name), updated_at = NOW()
              WHERE id = $1 AND school_id = $2
              RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
                        assignment_source, status, is_required, assigned_by, assigned_at,
                        approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
-                       is_active, created_at, updated_at",
-            &[&assignment_id, &school_id, &status, &approved_by, &notes],
+                       is_active, created_at, updated_at, approved_form_name",
+            &[&assignment_id, &school_id, &status, &approved_by, &notes, &approved_form_name],
         ).await.map_err(|e| AppError::Database(format!("Failed to review assignment: {}", e)))?;
 
         if rows.is_empty() {
@@ -306,6 +312,48 @@ impl EmployeeFormAssignmentDao {
         ).await.map_err(|e| AppError::Database(format!("Failed to get assignment details: {}", e)))?;
 
         Ok(row.map(|r| (r.get("school_id"), r.get("employee_id"), r.get("employee_form_template_id"))))
+    }
+
+    pub async fn revoke_assignment(&self, req: &RevokeEmployeeFormAssignmentRequest) -> Result<EmployeeFormAssignment, AppError> {
+        let target = req.target_status.as_deref().unwrap_or("in_progress");
+        if !matches!(target, "in_progress" | "rejected") {
+            return Err(AppError::Validation("target_status must be in_progress or rejected".into()));
+        }
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let rows = client.query(
+            "UPDATE employee_form_assignments
+             SET status=$2, notes=$3, approved_by=NULL, approved_on=NULL, updated_at=NOW()
+             WHERE id=$1
+             RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
+                       assignment_source, status, is_required, assigned_by, assigned_at,
+                       approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
+                       is_active, created_at, updated_at, submission_source, manual_pdf_storage_key,
+                       manual_pdf_file_name, manual_pdf_content_type, manual_pdf_file_size_bytes,
+                       manual_pdf_uploaded_at, manual_pdf_uploaded_by, approved_form_name",
+            &[&req.assignment_id, &target, &req.notes],
+        ).await.map_err(|e| AppError::Database(format!("Failed to revoke assignment: {}", e)))?;
+        if rows.is_empty() { return Err(AppError::NotFound("Employee form assignment not found".into())); }
+        Ok(Self::row_to_assignment(&rows[0]))
+    }
+
+    pub async fn update_approved_metadata(&self, id: Uuid, school_id: Uuid, req: &UpdateEmployeeFormMetadataRequest) -> Result<EmployeeFormAssignment, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let rows = client.query(
+            "UPDATE employee_form_assignments
+             SET approved_form_name=COALESCE($3,approved_form_name), updated_at=NOW()
+             WHERE id=$1 AND school_id=$2
+             RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
+                       assignment_source, status, is_required, assigned_by, assigned_at,
+                       approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
+                       is_active, created_at, updated_at, submission_source, manual_pdf_storage_key,
+                       manual_pdf_file_name, manual_pdf_content_type, manual_pdf_file_size_bytes,
+                       manual_pdf_uploaded_at, manual_pdf_uploaded_by, approved_form_name",
+            &[&id, &school_id, &req.approved_form_name],
+        ).await.map_err(|e| AppError::Database(format!("Failed to update form metadata: {}", e)))?;
+        if rows.is_empty() { return Err(AppError::NotFound("Employee form assignment not found".into())); }
+        Ok(Self::row_to_assignment(&rows[0]))
     }
 
     pub async fn delete_assignment(&self, assignment_id: Uuid, school_id: Uuid) -> Result<(), AppError> {
@@ -331,6 +379,7 @@ impl EmployeeFormAssignmentDao {
         file_size_bytes: i64,
         uploaded_by: &str,
         approved_by: Uuid,
+        approved_form_name: Option<&str>,
     ) -> Result<EmployeeFormAssignment, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -348,6 +397,7 @@ impl EmployeeFormAssignmentDao {
                 submission_source = 'manual_upload',
                 approved_by = $8,
                 approved_on = NOW(),
+                approved_form_name = COALESCE($9, approved_form_name),
                 updated_at = NOW()
             WHERE id = $1 AND school_id = $2
             RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
@@ -356,7 +406,7 @@ impl EmployeeFormAssignmentDao {
                       is_active, created_at, updated_at,
                       submission_source, manual_pdf_storage_key, manual_pdf_file_name,
                       manual_pdf_content_type, manual_pdf_file_size_bytes, manual_pdf_uploaded_at,
-                      manual_pdf_uploaded_by
+                      manual_pdf_uploaded_by, approved_form_name
             "#,
             &[
                 &assignment_id,
@@ -367,6 +417,7 @@ impl EmployeeFormAssignmentDao {
                 &file_size_bytes,
                 &uploaded_by,
                 &approved_by,
+                &approved_form_name,
             ],
         )
         .await

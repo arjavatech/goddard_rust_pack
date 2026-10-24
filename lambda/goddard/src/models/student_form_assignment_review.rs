@@ -9,6 +9,8 @@ pub struct ReviewStudentFormAssignmentRequest {
     pub status: StudentFormAssignmentStatus, // Should be Approved or Rejected
     pub notes: Option<String>,
     pub approved_by: Uuid,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -26,4 +28,13 @@ pub struct ReviewStudentFormAssignmentResponse {
     pub approved_by: Option<Uuid>,
     pub approved_on: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdateApprovedMetadataRequest {
+    pub school_id: String,
+    pub form_academic_year: Option<String>,
+    pub approved_form_name: Option<String>,
 }

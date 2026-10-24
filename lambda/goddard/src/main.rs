@@ -33,12 +33,14 @@ use controllers::{
         device_token_status, register_device_token, unregister_device_token,
     },
     document_request_controller::{
-        complete_document_upload, create_document_request, document_assignment_history,
-        document_file_url, document_recipients, document_review_queue, document_upload_intent,
-        list_document_assignments, list_document_requests, my_document_assignments,
-        publish_document_request, review_document_assignment, send_document_reminders,
+        change_document_status, complete_document_upload, create_document_request,
+        document_assignment_history, document_file_url, document_recipients,
+        document_review_queue, document_upload_intent, list_document_assignments,
+        list_document_requests, my_document_assignments, publish_document_request,
+        review_document_assignment, send_document_reminders, update_document_metadata,
     },
     email_controller::send_bulk_form_reminders,
+    help_center_controller::submit_help_message,
     employee_controller::{
         activate_employee, assign_employee_form, assign_employee_form_to_school,
         bulk_create_employees, complete_employee_template_pdf_upload,
@@ -48,6 +50,7 @@ use controllers::{
         get_employee_by_id, get_employee_form_assignments, get_employee_form_review_queue,
         get_employee_form_templates, get_employee_forms, get_employees, invite_employee,
         remove_employee_template_pdf, resend_employee_invite, review_employee_form_assignment,
+        revoke_employee_form_assignment, update_employee_form_metadata,
         send_bulk_employee_form_reminders, update_employee, update_employee_form_template,
         employee_manual_pdf_upload_intent, employee_manual_pdf_complete_upload,
         get_employee_manual_pdf_url, delete_employee_manual_pdf, upload_employee_manual_pdf,
@@ -70,6 +73,7 @@ use controllers::{
         remove_form_template_pdf, update_form_template,
     },
     hello_controller::{health_check, hello_name, hello_world},
+    nav_counts_controller::{get_admin_nav_counts, get_my_nav_counts},
     notification_controller::{list_notifications, mark_all_read, mark_read, unread_count},
     parent_details_controller::get_parent_details_by_id,
     portal_controller::{
@@ -90,7 +94,7 @@ use controllers::{
         assign_form_to_class_students, assign_form_to_school_students,
         bulk_assign_forms_to_students, create_student_form_assignment,
         delete_student_form_assignment, download_enrollment_forms_zip, get_assignments_by_school,
-        get_student_form_review_queue, update_student_form_assignment,
+        get_student_form_review_queue, update_student_form_assignment, update_approved_metadata,
     },
     student_form_assignment_review_controller::review_student_form_assignment,
     student_form_assignment_revoke_controller::revoke_student_form_assignment,
@@ -106,8 +110,8 @@ use controllers::{
 use dao::{
     AdminDao, AuthDao, ClassFormOverrideDao, ClassroomDao, DeviceTokenDao, DocumentRequestDao,
     EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao, EmployeeFormTemplateDao,
-    EnrollmentDao, FormSubmissionDao, FormTemplateDao, NotificationDao, PortalDao, RequestDao,
-    SchoolDao, StudentFormAssignmentDao, TapTimeMappingDao,
+    EnrollmentDao, FormSubmissionDao, FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, PortalDao,
+    RequestDao, SchoolDao, StudentFormAssignmentDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
@@ -312,6 +316,19 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .without_time()
         .init();
 
+    let nav_counts_router = Router::new()
+        .route(
+            "/nav-counts",
+            get(get_admin_nav_counts)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/my-nav-counts",
+            get(get_my_nav_counts)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .with_state(Arc::new(NavCountsDao::new(pool.clone())));
+
     let taptime_mapping_router = Router::new()
         .route(
             "/taptime/settings",
@@ -377,6 +394,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
 
     // Build the application router
     let app = Router::new()
+        .merge(nav_counts_router)
         .merge(taptime_mapping_router)
         // Health and Info Routes
         .route("/", get(hello_world))
@@ -553,7 +571,18 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             post(send_bulk_form_reminders)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
-        .with_state(email_service)
+        .with_state(email_service.clone())
+        // Help Center (JWT protected - any authenticated user)
+        .route(
+            "/help-center/messages",
+            post(submit_help_message)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .with_state((
+            Arc::new(HelpCenterDao::new(pool.clone())),
+            email_service.clone(),
+            school_dao.clone(),
+        ))
         // In-app Notifications (JWT protected - current user's own notifications)
         .route(
             "/notifications",
@@ -723,6 +752,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
+            "/student-form-assignments/:id/approved-metadata",
+            patch(update_approved_metadata)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
             "/student-form-assignments/assign",
             post(bulk_assign_forms_to_students)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
@@ -809,6 +843,16 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/document-assignments/:id/review",
             post(review_document_assignment)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/document-assignments/:id/metadata",
+            patch(update_document_metadata)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/document-assignments/:id/change-status",
+            post(change_document_status)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
@@ -985,6 +1029,16 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/employee-form-assignments/review",
             put(review_employee_form_assignment)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employee-form-assignments/revoke",
+            post(revoke_employee_form_assignment)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employee-form-assignments/:id/approved-metadata",
+            patch(update_employee_form_metadata)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         // Fillout webhook for employee form submissions (public)

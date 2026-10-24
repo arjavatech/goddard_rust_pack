@@ -15,6 +15,7 @@ use crate::models::student_form_assignment::{
     DeleteStudentFormAssignmentQuery, DeleteStudentFormAssignmentResponse,
     BulkAssignFormRequest, BulkAssignFormResponse,
 };
+use crate::models::student_form_assignment_review::UpdateApprovedMetadataRequest;
 use crate::services::StudentFormAssignmentService;
 
 // Create Student Form Assignment (Protected - Admin/SuperAdmin)
@@ -253,4 +254,24 @@ pub async fn download_enrollment_forms_zip(
         ],
         zip_bytes,
     ).into_response())
+}
+
+pub async fn update_approved_metadata(
+    State(service): State<Arc<StudentFormAssignmentService>>,
+    Extension(auth): Extension<AuthContext>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateApprovedMetadataRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let school_uuid = Uuid::parse_str(&body.school_id)
+        .map_err(|_| AppError::Validation("Invalid school_id".to_string()))?;
+    check_permission_admin_or_superadmin(&auth, &school_uuid)?;
+    let result = service
+        .update_approved_metadata(
+            id,
+            &body.school_id,
+            body.form_academic_year.as_deref(),
+            body.approved_form_name.as_deref(),
+        )
+        .await?;
+    Ok(Json(result))
 }

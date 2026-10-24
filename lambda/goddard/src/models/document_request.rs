@@ -171,6 +171,9 @@ pub struct DocumentAssignmentItem {
     pub version_count: i64,
     pub form_academic_year: Option<String>,
     pub approved_form_name: Option<String>,
+    pub child_id: Option<Uuid>,
+    pub employee_id: Option<Uuid>,
+    pub parent_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]

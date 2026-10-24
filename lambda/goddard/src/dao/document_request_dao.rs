@@ -190,7 +190,7 @@ impl DocumentRequestDao {
               COALESCE(c.first_name || ' ' || c.last_name, u.first_name || ' ' || u.last_name),
               p.first_name || ' ' || p.last_name,p.email,cl.name,u.email,a.submitted_at,a.reviewed_at,a.rejection_reason,a.latest_submission_id,s.original_file_name,s.content_type,s.file_size_bytes,
               (SELECT COUNT(*) FROM document_submissions ds WHERE ds.assignment_id=a.id),
-              a.form_academic_year,a.approved_form_name
+              a.form_academic_year,a.approved_form_name,a.child_id,a.employee_id,c.parent_id
               FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id
               LEFT JOIN children c ON c.id=a.child_id LEFT JOIN enrollments e ON e.id=a.enrollment_id LEFT JOIN users p ON p.id=c.parent_id LEFT JOIN classrooms cl ON cl.id=e.classroom_id
               LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id LEFT JOIN document_submissions s ON s.id=a.latest_submission_id
@@ -208,6 +208,7 @@ impl DocumentRequestDao {
     fn assignment(row: &Row) -> DocumentAssignmentItem { DocumentAssignmentItem {
         id:row.get(0),request_id:row.get(1),school_id:row.get(2),audience:row.get(3),document_name:row.get(4),instructions:row.get(5),due_date:row.get(6),request_status:row.get(7),status:row.get(8),derived_status:row.get(9),subject_name:row.get::<_,Option<String>>(10).unwrap_or_else(|| "Unknown recipient".into()),parent_name:row.get(11),parent_email:row.get(12),classroom_name:row.get(13),employee_email:row.get(14),submitted_at:row.get(15),reviewed_at:row.get(16),rejection_reason:row.get(17),latest_submission_id:row.get(18),latest_file_name:row.get(19),latest_content_type:row.get(20),latest_file_size_bytes:row.get(21),version_count:row.get(22),
         form_academic_year:row.try_get(23).ok().flatten(),approved_form_name:row.try_get(24).ok().flatten(),
+        child_id:row.try_get(25).ok().flatten(),employee_id:row.try_get(26).ok().flatten(),parent_id:row.try_get(27).ok().flatten(),
     }}
 
     pub async fn assignment_access(&self, assignment_id: Uuid, user_id: Uuid, admin: bool) -> ApiResult<(Uuid,String,String)> {

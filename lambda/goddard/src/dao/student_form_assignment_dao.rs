@@ -1,4 +1,4 @@
-use crate::models::student_form_assignment::{
+use crate::models::student_form_assignment::{FormAssignmentDetailItem, ListByTemplateQuery,
     StudentFormAssignment, StudentFormAssignmentStatus, CreateStudentFormAssignmentRequest,
     UpdateStudentFormAssignmentRequest, FormAssignment
 };
@@ -1400,5 +1400,47 @@ impl StudentFormAssignmentDao {
         .map_err(|e| AppError::Database(e.to_string()))?;
 
         self.row_to_student_form_assignment(row)
+    }
+
+    pub async fn list_by_template(&self, q: &ListByTemplateQuery) -> Result<Vec<FormAssignmentDetailItem>, crate::error::AppError> {
+        let client = self.pool.get().await.map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+        let rows = client.query(
+            r#"
+            SELECT sfa.id, sfa.child_id, sfa.form_template_id, ft.form_name,
+                   sfa.status::text,
+                   c.first_name || ' ' || c.last_name AS student_name,
+                   c.parent_id,
+                   parent.first_name || ' ' || parent.last_name AS parent_name,
+                   parent.email AS parent_email,
+                   cl.name AS classroom_name,
+                   sfa.assigned_at
+            FROM student_form_assignments sfa
+            JOIN form_templates ft ON ft.id = sfa.form_template_id
+            JOIN children c ON c.id = sfa.child_id
+            JOIN users parent ON parent.id = c.parent_id
+            LEFT JOIN enrollments e ON e.id = sfa.enrollment_id
+            LEFT JOIN classrooms cl ON cl.id = e.classroom_id
+            WHERE sfa.school_id = $1
+              AND ($2::uuid IS NULL OR sfa.form_template_id = $2)
+              AND ($3::text IS NULL OR sfa.status::text = $3)
+              AND ($4::text IS NULL OR (c.first_name || ' ' || c.last_name) ILIKE '%' || $4 || '%')
+              AND (sfa.is_active = true OR sfa.is_active IS NULL)
+            ORDER BY sfa.assigned_at DESC
+            "#,
+            &[&q.school_id, &q.form_template_id, &q.status, &q.search],
+        ).await.map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+        Ok(rows.iter().map(|row| FormAssignmentDetailItem {
+            id: row.get("id"),
+            child_id: row.get("child_id"),
+            form_template_id: row.get("form_template_id"),
+            form_name: row.get("form_name"),
+            status: row.get("status"),
+            student_name: row.get("student_name"),
+            parent_id: row.get("parent_id"),
+            parent_name: row.get("parent_name"),
+            parent_email: row.get("parent_email"),
+            classroom_name: row.get("classroom_name"),
+            assigned_at: row.get("assigned_at"),
+        }).collect())
     }
 }

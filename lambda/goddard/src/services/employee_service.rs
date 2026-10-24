@@ -24,6 +24,7 @@ use crate::{
         EmployeeManualPdfCompleteUploadRequest, ResendEmployeeInviteResponse, ReviewEmployeeFormRequest,
         RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest,
         UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
+        ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem,
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
     models::school::SchoolFeature,
@@ -1145,5 +1146,9 @@ impl EmployeeService {
             .await?;
 
         Ok(assignment)
+    }
+
+    pub async fn list_form_assignments_by_template(&self, q: &ListEmployeeFormsByTemplateQuery) -> ApiResult<Vec<EmployeeFormAssignmentDetailItem>> {
+        self.employee_form_assignment_dao.list_by_template(q).await
     }
 }

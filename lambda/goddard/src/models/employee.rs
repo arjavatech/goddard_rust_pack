@@ -349,3 +349,23 @@ pub struct EmployeeManualPdfCompleteUploadRequest {
     pub file_size_bytes: i64,
     pub uploaded_by: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListEmployeeFormsByTemplateQuery {
+    pub school_id: Uuid,
+    pub form_template_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EmployeeFormAssignmentDetailItem {
+    pub id: Uuid,
+    pub employee_id: Uuid,
+    pub employee_form_template_id: Uuid,
+    pub form_name: String,
+    pub status: Option<String>,
+    pub employee_name: String,
+    pub employee_email: Option<String>,
+    pub assigned_at: Option<NaiveDateTime>,
+}

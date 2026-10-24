@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -153,6 +153,29 @@ pub struct FailedAssignment {
 pub struct BulkAssignFormResponse {
     pub successful: Vec<StudentFormAssignmentResponse>,
     pub failed: Vec<FailedAssignment>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ListByTemplateQuery {
+    pub school_id: Uuid,
+    pub form_template_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub search: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct FormAssignmentDetailItem {
+    pub id: Uuid,
+    pub child_id: Uuid,
+    pub form_template_id: Uuid,
+    pub form_name: String,
+    pub status: Option<String>,
+    pub student_name: String,
+    pub parent_id: Option<Uuid>,
+    pub parent_name: String,
+    pub parent_email: String,
+    pub classroom_name: Option<String>,
+    pub assigned_at: Option<NaiveDateTime>,
 }
 
 // Assign form to all active students in a school

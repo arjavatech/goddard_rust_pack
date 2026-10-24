@@ -55,6 +55,7 @@ use controllers::{
         send_bulk_employee_form_reminders, update_employee, update_employee_form_template,
         employee_manual_pdf_upload_intent, employee_manual_pdf_complete_upload,
         get_employee_manual_pdf_url, delete_employee_manual_pdf, upload_employee_manual_pdf,
+        list_employee_form_assignments_by_template,
     },
     enrollment_controller::{
         activate_invite, activate_parent, add_child, bulk_add_secondary_parents,
@@ -96,6 +97,7 @@ use controllers::{
         bulk_assign_forms_to_students, create_student_form_assignment,
         delete_student_form_assignment, download_enrollment_forms_zip, get_assignments_by_school,
         get_student_form_review_queue, update_student_form_assignment, update_approved_metadata,
+        list_form_assignments_by_template,
     },
     student_form_assignment_review_controller::review_student_form_assignment,
     student_form_assignment_revoke_controller::revoke_student_form_assignment,
@@ -728,6 +730,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
+            "/student-form-assignments/list",
+            get(list_form_assignments_by_template)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
             "/student-form-assignments",
             get(get_assignments_by_school)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
@@ -1020,6 +1027,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/employee-form-assignments/review-queue",
             get(get_employee_form_review_queue)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employee-form-assignments/list",
+            get(list_employee_form_assignments_by_template)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(

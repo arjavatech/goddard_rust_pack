@@ -1,6 +1,6 @@
 use deadpool_postgres::Pool;
 use uuid::Uuid;
-use crate::models::employee::{EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate, RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest};
+use crate::models::employee::{EmployeeFormAssignment, EmployeeFormAssignmentWithTemplate, RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest, ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem};
 use crate::models::form_review_queue::EmployeeFormReviewQueueItem;
 use crate::error::error_types::AppError;
 
@@ -481,5 +481,39 @@ impl EmployeeFormAssignmentDao {
         .map_err(|e| AppError::Database(format!("Failed to remove manual PDF upload: {}", e)))?;
 
         Ok(Self::row_to_assignment(&row))
+    }
+
+    pub async fn list_by_template(&self, q: &ListEmployeeFormsByTemplateQuery) -> Result<Vec<EmployeeFormAssignmentDetailItem>, AppError> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        let rows = client.query(
+            r#"
+            SELECT efa.id, efa.employee_id, efa.employee_form_template_id,
+                   eft.form_name, efa.status::text,
+                   u.first_name || ' ' || u.last_name AS employee_name,
+                   u.email AS employee_email,
+                   efa.assigned_at
+            FROM employee_form_assignments efa
+            JOIN employees e ON e.id = efa.employee_id
+            JOIN users u ON u.id = e.user_id
+            JOIN employee_form_templates eft ON eft.id = efa.employee_form_template_id
+            WHERE efa.school_id = $1
+              AND ($2::uuid IS NULL OR efa.employee_form_template_id = $2)
+              AND ($3::text IS NULL OR efa.status::text = $3)
+              AND ($4::text IS NULL OR (u.first_name || ' ' || u.last_name) ILIKE '%' || $4 || '%')
+              AND (efa.is_active = true OR efa.is_active IS NULL)
+            ORDER BY efa.assigned_at DESC
+            "#,
+            &[&q.school_id, &q.form_template_id, &q.status, &q.search],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(rows.iter().map(|row| EmployeeFormAssignmentDetailItem {
+            id: row.get("id"),
+            employee_id: row.get("employee_id"),
+            employee_form_template_id: row.get("employee_form_template_id"),
+            form_name: row.get("form_name"),
+            status: row.get("status"),
+            employee_name: row.get("employee_name"),
+            employee_email: row.get("employee_email"),
+            assigned_at: row.get("assigned_at"),
+        }).collect())
     }
 }

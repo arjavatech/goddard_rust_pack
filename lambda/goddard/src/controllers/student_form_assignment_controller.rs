@@ -14,6 +14,7 @@ use crate::models::student_form_assignment::{
     StudentFormAssignmentResponse, GetStudentFormAssignmentsQuery,
     DeleteStudentFormAssignmentQuery, DeleteStudentFormAssignmentResponse,
     BulkAssignFormRequest, BulkAssignFormResponse,
+    ListByTemplateQuery, FormAssignmentDetailItem,
 };
 use crate::models::student_form_assignment_review::UpdateApprovedMetadataRequest;
 use crate::services::StudentFormAssignmentService;
@@ -274,4 +275,13 @@ pub async fn update_approved_metadata(
         )
         .await?;
     Ok(Json(result))
+}
+
+pub async fn list_form_assignments_by_template(
+    State(service): State<Arc<StudentFormAssignmentService>>,
+    Extension(auth): Extension<AuthContext>,
+    Query(q): Query<ListByTemplateQuery>,
+) -> Result<Json<Vec<FormAssignmentDetailItem>>, AppError> {
+    check_permission_admin_or_superadmin(&auth, &q.school_id)?;
+    Ok(Json(service.list_by_template(&q).await?))
 }

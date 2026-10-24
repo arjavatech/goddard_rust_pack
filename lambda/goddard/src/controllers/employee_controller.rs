@@ -26,6 +26,7 @@ use crate::models::employee::{
     EmployeeManualPdfCompleteUploadRequest, EmployeeQueryParams, ResendEmployeeInviteRequest,
     ReviewEmployeeFormRequest, RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest,
     UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
+    ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem,
 };
 use crate::models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery};
 use crate::services::employee_service::EmployeeService;
@@ -599,4 +600,13 @@ pub async fn upload_employee_manual_pdf(
     }
 
     Ok(Json(svc.upload_employee_manual_pdf(id, q.school_id, file_bytes, file_name, uploaded_by, auth.user_id, approved_form_name).await?))
+}
+
+pub async fn list_employee_form_assignments_by_template(
+    State(svc): State<Arc<EmployeeService>>,
+    Extension(auth): Extension<AuthContext>,
+    Query(q): Query<ListEmployeeFormsByTemplateQuery>,
+) -> Result<Json<Vec<EmployeeFormAssignmentDetailItem>>, AppError> {
+    check_permission_admin_or_superadmin(&auth, &q.school_id)?;
+    Ok(Json(svc.list_form_assignments_by_template(&q).await?))
 }

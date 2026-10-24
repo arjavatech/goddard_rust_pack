@@ -3,7 +3,8 @@ use crate::models::student_form_assignment::{
     StudentFormAssignment, StudentFormAssignmentResponse, CreateStudentFormAssignmentRequest,
     UpdateStudentFormAssignmentRequest, DeleteStudentFormAssignmentResponse,
     BulkAssignFormRequest, BulkAssignFormResponse, FailedAssignment,
-    ManualPdfUploadIntentRequest, ManualPdfUploadIntentResponse, ManualPdfCompleteUploadRequest
+    ManualPdfUploadIntentRequest, ManualPdfUploadIntentResponse, ManualPdfCompleteUploadRequest,
+    ListByTemplateQuery, FormAssignmentDetailItem,
 };
 use crate::models::student_form_assignment_review::{
     ReviewStudentFormAssignmentRequest, ReviewStudentFormAssignmentResponse
@@ -805,5 +806,9 @@ impl StudentFormAssignmentService {
         approved_form_name: Option<&str>,
     ) -> Result<serde_json::Value, AppError> {
         self.dao.update_approved_metadata(id, school_id, form_academic_year, approved_form_name).await
+    }
+
+    pub async fn list_by_template(&self, q: &ListByTemplateQuery) -> Result<Vec<FormAssignmentDetailItem>, AppError> {
+        self.dao.list_by_template(q).await
     }
 }

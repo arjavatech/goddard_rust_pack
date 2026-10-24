@@ -47,7 +47,7 @@ impl DocumentRequestService {
         let (school_id,_,request_status)=self.dao.assignment_access(assignment_id,user,admin).await?;
         if request_status != "active" { return Err(AppError::Validation("This document request is closed".into())); }
         let assignment_status = self.dao.assignment_status(assignment_id).await?;
-        if !matches!(assignment_status.as_str(), "pending" | "submitted" | "rejected") {
+        if !matches!(assignment_status.as_str(), "pending" | "submitted" | "rejected") && !(admin && assignment_status == "approved") {
             return Err(AppError::Validation(if assignment_status == "approved" { "Approved documents are locked and cannot be replaced".into() } else { "This document is not currently available for upload".into() }));
         }
         if !crate::services::upload_service::DOCUMENT_ALLOWED_CONTENT_TYPES.contains(&data.content_type.as_str()) || data.file_size_bytes <= 0 || data.file_size_bytes > crate::services::upload_service::DOCUMENT_MAX_SIZE_BYTES { return Err(AppError::Validation("Upload a PDF, JPG/JPEG, or PNG no larger than 10 MB".into())); }
@@ -61,7 +61,13 @@ impl DocumentRequestService {
         if request_status != "active" || !data.storage_key.starts_with(&format!("private/schools/{}/document-assignments/{}/",school_id,assignment_id)) { return Err(AppError::Validation("Invalid document upload".into())); }
         self.uploads.verify_document_object(&data.storage_key,&data.content_type,data.file_size_bytes).await?;
         let item=self.dao.complete_upload(assignment_id,user,data).await?;
-        self.notifications.notify_school_admins(CreateNotification{school_id,notification_type:"document_submitted".into(),title:"Document ready for review".into(),body:format!("{} was submitted for {}.",item.subject_name,item.document_name),related_entity_id:Some(assignment_id),related_entity_type:Some("document_assignment".into()),action_url:Some(if item.audience=="student" {"/admin/documents/review".into()} else {"/admin/employee-documents/review".into()})}, None).await;
+        if data.auto_approve.unwrap_or(false) {
+            for user_id in self.dao.recipient_users(item.request_id,Some(assignment_id)).await? {
+                self.notifications.notify_user(user_id,CreateNotification{school_id,notification_type:"document_approved".into(),title:"Document approved".into(),body:format!("{} has been approved.",item.document_name),related_entity_id:Some(assignment_id),related_entity_type:Some("document_assignment".into()),action_url:Some(if item.audience=="student" {"/dashboard/documents".into()} else {"/employee/documents".into()})}).await;
+            }
+        } else {
+            self.notifications.notify_school_admins(CreateNotification{school_id,notification_type:"document_submitted".into(),title:"Document ready for review".into(),body:format!("{} was submitted for {}.",item.subject_name,item.document_name),related_entity_id:Some(assignment_id),related_entity_type:Some("document_assignment".into()),action_url:Some(if item.audience=="student" {"/admin/documents/review".into()} else {"/admin/employee-documents/review".into()})}, None).await;
+        }
         Ok(item)
     }
     pub async fn review(&self,assignment_id:Uuid,actor:Uuid,data:&ReviewDocumentAssignmentRequest)->ApiResult<DocumentAssignmentItem>{

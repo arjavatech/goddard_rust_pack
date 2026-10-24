@@ -78,6 +78,9 @@ pub struct CompleteUploadRequest {
     pub content_type: String,
     pub file_size_bytes: i64,
     pub checksum_sha256: Option<String>,
+    pub auto_approve: Option<bool>,
+    pub approved_form_name: Option<String>,
+    pub form_academic_year: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

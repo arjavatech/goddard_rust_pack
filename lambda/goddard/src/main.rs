@@ -33,11 +33,12 @@ use controllers::{
         device_token_status, register_device_token, unregister_device_token,
     },
     document_request_controller::{
-        change_document_status, complete_document_upload, create_document_request,
-        document_assignment_history, document_file_url, document_recipients,
-        document_review_queue, document_upload_intent, list_document_assignments,
-        list_document_requests, my_document_assignments, publish_document_request,
-        review_document_assignment, send_document_reminders, update_document_metadata,
+        assign_document_recipients, change_document_status, complete_document_upload,
+        create_document_request, document_assignment_history, document_file_url,
+        document_recipients, document_review_queue, document_upload_intent,
+        list_document_assignments, list_document_requests, my_document_assignments,
+        publish_document_request, review_document_assignment, send_document_reminders,
+        update_document_metadata, update_document_request,
     },
     email_controller::send_bulk_form_reminders,
     help_center_controller::submit_help_message,
@@ -807,6 +808,16 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/document-request-recipients",
             get(document_recipients).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/document-requests/:id",
+            patch(update_document_request)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/document-requests/:id/assign",
+            post(assign_document_recipients)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
             "/document-requests/:id/publish",

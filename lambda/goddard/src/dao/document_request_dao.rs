@@ -90,11 +90,13 @@ impl DocumentRequestDao {
         Ok(rows.iter().map(Self::summary).collect())
     }
 
-    pub async fn recipients(&self, school_id: Uuid, audience: &str) -> ApiResult<Vec<DocumentRecipient>> {
+    pub async fn recipients(&self, school_id: Uuid, audience: &str, request_id: Option<Uuid>) -> ApiResult<Vec<DocumentRecipient>> {
         let client=self.pool.get().await.map_err(|e|AppError::Database(e.to_string()))?;
+        let rid = request_id.unwrap_or(Uuid::nil());
         let rows=if audience=="student" {
             client.query(
-                "SELECT c.id, c.first_name || ' ' || c.last_name, p.email, cl.name
+                "SELECT c.id, c.first_name || ' ' || c.last_name, p.email, cl.name,
+                        EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND child_id=c.id) AS is_assigned
                  FROM enrollments e
                  JOIN children c ON c.id=e.child_id
                  JOIN users p ON p.id=c.parent_id
@@ -104,12 +106,63 @@ impl DocumentRequestDao {
                    AND COALESCE(c.is_active,true)=true
                    AND COALESCE(p.is_active,true)=true
                  ORDER BY c.first_name,c.last_name",
-                &[&school_id],
+                &[&school_id, &rid],
             ).await
         } else {
-            client.query("SELECT e.id, u.first_name || ' ' || u.last_name, u.email, NULL::text FROM employees e JOIN users u ON u.id=e.user_id WHERE e.school_id=$1 AND COALESCE(e.is_active,true)=true ORDER BY u.first_name,u.last_name", &[&school_id]).await
+            client.query(
+                "SELECT e.id, u.first_name || ' ' || u.last_name, u.email, NULL::text,
+                        EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND employee_id=e.id) AS is_assigned
+                 FROM employees e JOIN users u ON u.id=e.user_id
+                 WHERE e.school_id=$1 AND COALESCE(e.is_active,true)=true
+                 ORDER BY u.first_name,u.last_name",
+                &[&school_id, &rid],
+            ).await
         }.map_err(|e|AppError::Database(e.to_string()))?;
-        Ok(rows.into_iter().map(|row|DocumentRecipient{id:row.get(0),name:row.get(1),email:row.get(2),classroom_name:row.get(3)}).collect())
+        Ok(rows.into_iter().map(|row|DocumentRecipient{id:row.get(0),name:row.get(1),email:row.get(2),classroom_name:row.get(3),is_assigned:row.get(4)}).collect())
+    }
+
+    pub async fn update_request(&self, id: Uuid, body: &UpdateDocumentRequestBody) -> ApiResult<DocumentRequestSummary> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        if body.document_name.trim().is_empty() { return Err(AppError::Validation("Document name is required".into())); }
+        let affected = client.execute(
+            "UPDATE document_requests SET document_name=$3, instructions=$4, due_date=$5, updated_at=NOW() WHERE id=$1 AND school_id=$2",
+            &[&id, &body.school_id, &body.document_name, &body.instructions, &body.due_date]
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        if affected == 0 { return Err(AppError::NotFound("Document request not found".into())); }
+        self.get_request_summary(id).await
+    }
+
+    pub async fn assign_recipients(&self, request_id: Uuid, body: &AssignRecipientsRequest) -> ApiResult<AssignRecipientsResponse> {
+        let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
+        let row = client.query_opt("SELECT school_id, audience FROM document_requests WHERE id=$1 AND school_id=$2", &[&request_id, &body.school_id]).await.map_err(|e| AppError::Database(e.to_string()))?.ok_or_else(|| AppError::NotFound("Document request not found".into()))?;
+        let school_id: Uuid = row.get(0); let audience: String = row.get(1);
+        let now = Self::local_now(&client, school_id).await?;
+        let newly_assigned: u64 = if body.target == "all" {
+            if audience == "student" {
+                client.execute(
+                    "INSERT INTO document_request_assignments (document_request_id, school_id, enrollment_id, child_id, assigned_at, created_at, updated_at) SELECT $1, e.school_id, e.id, c.id, $2, $2, $2 FROM enrollments e JOIN children c ON c.id=e.child_id WHERE e.school_id=$3 AND COALESCE(e.is_active,true)=true ON CONFLICT (document_request_id, child_id) DO NOTHING",
+                    &[&request_id, &now, &school_id]
+                ).await.map_err(|e| AppError::Database(e.to_string()))?
+            } else {
+                client.execute(
+                    "INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1, school_id, id, $2, $2, $2 FROM employees WHERE school_id=$3 AND COALESCE(is_active,true)=true ON CONFLICT (document_request_id, employee_id) DO NOTHING",
+                    &[&request_id, &now, &school_id]
+                ).await.map_err(|e| AppError::Database(e.to_string()))?
+            }
+        } else {
+            let ids = if audience == "student" { body.child_ids.as_deref().unwrap_or(&[]) } else { body.employee_ids.as_deref().unwrap_or(&[]) };
+            if ids.is_empty() { return Err(AppError::Validation("Select at least one recipient".into())); }
+            let mut count = 0u64;
+            for id in ids {
+                count += if audience == "student" {
+                    client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, enrollment_id, child_id, assigned_at, created_at, updated_at) SELECT $1,$2,e.id,c.id,$3,$3,$3 FROM children c JOIN enrollments e ON e.child_id=c.id WHERE c.id=$4 AND c.school_id=$2 ON CONFLICT (document_request_id, child_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?
+                } else {
+                    client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1,$2,id,$3,$3,$3 FROM employees WHERE id=$4 AND school_id=$2 ON CONFLICT (document_request_id, employee_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?
+                };
+            }
+            count
+        };
+        Ok(AssignRecipientsResponse { newly_assigned })
     }
 
     pub async fn get_request_summary(&self, request_id: Uuid) -> ApiResult<DocumentRequestSummary> {

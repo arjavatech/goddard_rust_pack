@@ -28,7 +28,9 @@ impl DocumentRequestService {
         Ok(summary)
     }
     pub async fn list(&self, q:&DocumentRequestQuery)->ApiResult<Vec<DocumentRequestSummary>>{self.dao.list_requests(q).await}
-    pub async fn recipients(&self, school_id:Uuid, audience:&str)->ApiResult<Vec<DocumentRecipient>>{self.dao.recipients(school_id,audience).await}
+    pub async fn recipients(&self, school_id:Uuid, audience:&str, request_id:Option<Uuid>)->ApiResult<Vec<DocumentRecipient>>{self.dao.recipients(school_id,audience,request_id).await}
+    pub async fn update(&self, id:Uuid, body:&UpdateDocumentRequestBody)->ApiResult<DocumentRequestSummary>{self.dao.update_request(id,body).await}
+    pub async fn assign(&self, id:Uuid, body:&AssignRecipientsRequest)->ApiResult<AssignRecipientsResponse>{self.dao.assign_recipients(id,body).await}
     pub async fn request_summary(&self, id:Uuid)->ApiResult<DocumentRequestSummary>{self.dao.get_request_summary(id).await}
     pub async fn assignment_school(&self, assignment_id:Uuid, user:Uuid, admin:bool)->ApiResult<Uuid>{Ok(self.dao.assignment_access(assignment_id,user,admin).await?.0)}
     pub async fn submission_assignment(&self, submission_id:Uuid)->ApiResult<Uuid>{self.dao.submission_assignment(submission_id).await}

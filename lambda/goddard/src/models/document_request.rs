@@ -62,6 +62,29 @@ pub struct DocumentRecipient {
     pub name: String,
     pub email: Option<String>,
     pub classroom_name: Option<String>,
+    #[serde(default)]
+    pub is_assigned: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDocumentRequestBody {
+    pub school_id: Uuid,
+    pub document_name: String,
+    pub instructions: Option<String>,
+    pub due_date: Option<NaiveDate>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignRecipientsRequest {
+    pub school_id: Uuid,
+    pub target: String,
+    pub child_ids: Option<Vec<Uuid>>,
+    pub employee_ids: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AssignRecipientsResponse {
+    pub newly_assigned: u64,
 }
 
 #[derive(Debug, Deserialize)]

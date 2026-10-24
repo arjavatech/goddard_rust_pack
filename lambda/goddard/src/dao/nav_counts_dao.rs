@@ -36,11 +36,11 @@ impl NavCountsDao {
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
                WHERE dra.school_id = $1 AND dr.audience = 'student'
-                 AND dra.status = 'submitted')                                      AS student_docs_review,
+                 AND dra.status IN ('pending', 'submitted', 'rejected'))            AS student_docs_review,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
                WHERE dra.school_id = $1 AND dr.audience = 'employee'
-                 AND dra.status = 'submitted')                                      AS employee_docs_review
+                 AND dra.status IN ('pending', 'submitted', 'rejected'))            AS employee_docs_review
             "#,
             &[&school_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;

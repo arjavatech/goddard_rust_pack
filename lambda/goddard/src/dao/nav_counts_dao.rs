@@ -15,7 +15,7 @@ impl NavCountsDao {
     }
 
     /// Six COUNT(*) subqueries in one round-trip for admin badge counts.
-    pub async fn get_admin_counts(&self, school_id: Uuid) -> Result<AdminNavCounts, AppError> {
+    pub async fn get_admin_counts(&self, school_id: Uuid, user_id: Uuid) -> Result<AdminNavCounts, AppError> {
         let client = self.pool.get().await
             .map_err(|e: deadpool_postgres::PoolError| AppError::Database(e.to_string()))?;
         let row = client.query_one(
@@ -48,9 +48,18 @@ impl NavCountsDao {
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
                WHERE dra.school_id = $1 AND dr.audience = 'employee'
-                 AND dra.status = 'submitted')                                      AS employee_docs_review
+                 AND dra.status = 'submitted')                                      AS employee_docs_review,
+              (SELECT COUNT(*) FROM surveys
+               WHERE school_id = $1 AND status = 'published' AND is_template = false
+                 AND audience IN ('all_staff', 'everyone')
+                 AND is_anonymous = false
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND NOT EXISTS (
+                   SELECT 1 FROM survey_responses
+                   WHERE survey_id = surveys.id AND respondent_id = $2
+                 ))                                                                  AS surveys_pending
             "#,
-            &[&school_id],
+            &[&school_id, &user_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;
 
         Ok(AdminNavCounts {
@@ -62,6 +71,7 @@ impl NavCountsDao {
             student_docs_review:  row.get::<_, i64>(5),
             employee_docs_due:    row.get::<_, i64>(6),
             employee_docs_review: row.get::<_, i64>(7),
+            surveys_pending:      row.get::<_, i64>(8),
         })
     }
 
@@ -80,7 +90,16 @@ impl NavCountsDao {
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN children c ON c.id = dra.child_id
                WHERE (c.parent_id = $1 OR c.secondary_parent_id = $1)
-                 AND dra.school_id = $2 AND dra.status = 'pending') AS docs_pending
+                 AND dra.school_id = $2 AND dra.status = 'pending') AS docs_pending,
+              (SELECT COUNT(*) FROM surveys
+               WHERE school_id = $2 AND status = 'published' AND is_template = false
+                 AND audience IN ('parents', 'everyone')
+                 AND is_anonymous = false
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND NOT EXISTS (
+                   SELECT 1 FROM survey_responses
+                   WHERE survey_id = surveys.id AND respondent_id = $1
+                 ))                                                  AS surveys_pending
             "#,
             &[&user_id, &school_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;
@@ -88,6 +107,7 @@ impl NavCountsDao {
         Ok(MyNavCounts {
             forms_pending: row.get::<_, i64>(0),
             docs_pending:  row.get::<_, i64>(1),
+            surveys_pending: row.get::<_, i64>(2),
         })
     }
 
@@ -104,7 +124,16 @@ impl NavCountsDao {
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN employees e ON e.id = dra.employee_id
                WHERE e.user_id = $1 AND dra.school_id = $2
-                 AND dra.status = 'pending')                          AS docs_pending
+                 AND dra.status = 'pending')                          AS docs_pending,
+              (SELECT COUNT(*) FROM surveys
+               WHERE school_id = $2 AND status = 'published' AND is_template = false
+                 AND audience IN ('employees', 'all_staff', 'everyone')
+                 AND is_anonymous = false
+                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND NOT EXISTS (
+                   SELECT 1 FROM survey_responses
+                   WHERE survey_id = surveys.id AND respondent_id = $1
+                 ))                                                    AS surveys_pending
             "#,
             &[&user_id, &school_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;
@@ -112,6 +141,7 @@ impl NavCountsDao {
         Ok(MyNavCounts {
             forms_pending: row.get::<_, i64>(0),
             docs_pending:  row.get::<_, i64>(1),
+            surveys_pending: row.get::<_, i64>(2),
         })
     }
 }

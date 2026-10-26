@@ -1,5 +1,6 @@
 pub mod admin_dao;
 pub mod auth_dao;
+pub mod survey_dao;
 pub mod nav_counts_dao;
 pub mod help_center_dao;
 pub mod class_form_override_dao;
@@ -23,6 +24,7 @@ pub mod taptime_mapping_dao;
 
 pub use admin_dao::AdminDao;
 pub use auth_dao::AuthDao;
+pub use survey_dao::SurveyDao;
 pub use nav_counts_dao::NavCountsDao;
 pub use help_center_dao::HelpCenterDao;
 pub use class_form_override_dao::ClassFormOverrideDao;

@@ -10,10 +10,12 @@ pub struct AdminNavCounts {
     pub student_docs_review: i64,
     pub employee_docs_due: i64,
     pub employee_docs_review: i64,
+    pub surveys_pending: i64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct MyNavCounts {
     pub forms_pending: i64,
     pub docs_pending: i64,
+    pub surveys_pending: i64,
 }

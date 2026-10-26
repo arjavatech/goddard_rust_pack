@@ -14,7 +14,7 @@ pub async fn get_admin_nav_counts(
     Extension(auth): Extension<AuthContext>,
     State(dao): State<Arc<NavCountsDao>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let counts = dao.get_admin_counts(auth.school_id).await?;
+    let counts = dao.get_admin_counts(auth.school_id, auth.user_id).await?;
     Ok(ResponseUtils::success(counts))
 }
 

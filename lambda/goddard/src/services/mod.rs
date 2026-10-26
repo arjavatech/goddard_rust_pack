@@ -1,5 +1,6 @@
 pub mod admin_service;
 pub mod auth_service;
+pub mod survey_service;
 pub mod class_form_override_service;
 pub mod classroom_service;
 pub mod document_request_service;
@@ -25,6 +26,7 @@ pub mod upload_service;
 
 pub use admin_service::AdminService;
 pub use auth_service::AuthService;
+pub use survey_service::SurveyService;
 pub use class_form_override_service::ClassFormOverrideService;
 pub use classroom_service::ClassroomService;
 pub use document_request_service::DocumentRequestService;

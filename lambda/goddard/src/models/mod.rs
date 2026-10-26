@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod nav_counts;
+pub mod survey;
 pub mod class_form_override;
 pub mod help_center;
 pub mod classroom;

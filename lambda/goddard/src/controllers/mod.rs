@@ -1,4 +1,5 @@
 pub mod admin_controller;
+pub mod survey_controller;
 pub mod auth_verification_controller;
 pub mod class_form_override_controller;
 pub mod classroom_controller;

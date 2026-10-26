@@ -65,6 +65,11 @@ use controllers::{
         promote_enrollment, resend_parent_confirmation, update_child_status,
     },
     expense_controller::{create_expense, list_expenses},
+    survey_controller::{
+        close_survey, create_survey, delete_survey, get_public_survey, get_survey,
+        get_survey_report, list_my_surveys, list_surveys, list_templates, publish_survey,
+        reopen_survey, submit_anonymous_response, submit_survey_response, update_survey,
+    },
     form_submission_controller::{
         create_form_submission_webhook, get_form_resume_link, get_form_submission_by_id,
         get_form_submission_versions, get_latest_form_submission, update_form_submission_status,
@@ -114,7 +119,7 @@ use dao::{
     AdminDao, AuthDao, ClassFormOverrideDao, ClassroomDao, DeviceTokenDao, DocumentRequestDao,
     EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao, EmployeeFormTemplateDao,
     EnrollmentDao, FormSubmissionDao, FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, PortalDao,
-    RequestDao, SchoolDao, StudentFormAssignmentDao, TapTimeMappingDao,
+    RequestDao, SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
@@ -125,7 +130,7 @@ use services::{
     AdminService, AuthService, ClassFormOverrideService, ClassroomService, DocumentRequestService,
     EmailService, EmployeeService, EnrollmentService, FilloutService, FormSubmissionService,
     FormTemplateService, NotificationPushTrigger, NotificationService, PortalService,
-    RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient,
+    RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient, SurveyService,
     TapTimeMappingService, TapTimeService, UploadService,
 };
 use std::sync::Arc;
@@ -295,6 +300,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         notification_service.clone(),
         email_service.clone(),
     ));
+
+    let survey_service = Arc::new(SurveyService::new(SurveyDao::new(pool.clone())));
 
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
@@ -1132,6 +1139,65 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .with_state(request_service)
+        // Surveys
+        .route(
+            "/surveys",
+            get(list_surveys).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys",
+            post(create_survey).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/templates",
+            get(list_templates).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id",
+            get(get_survey).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/surveys/:id",
+            patch(update_survey).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id",
+            delete(delete_survey).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id/publish",
+            patch(publish_survey).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id/close",
+            patch(close_survey).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id/reopen",
+            patch(reopen_survey).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id/report",
+            get(get_survey_report).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/:id/responses",
+            post(submit_survey_response)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/surveys/:id/responses/public",
+            post(submit_anonymous_response), // no auth — anonymous surveys
+        )
+        .route(
+            "/surveys/:id/public",
+            get(get_public_survey), // no auth — anonymous survey fetch
+        )
+        .route(
+            "/my-surveys",
+            get(list_my_surveys).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .with_state(survey_service)
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)); // 10 MB

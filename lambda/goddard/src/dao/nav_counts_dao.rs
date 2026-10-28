@@ -22,7 +22,7 @@ impl NavCountsDao {
             r#"
             SELECT
               (SELECT COUNT(*) FROM student_form_assignments
-               WHERE school_id = $1 AND status = 'incomplete'
+               WHERE school_id = $1 AND status IN ('incomplete', 'rejected')
                  AND COALESCE(is_active, true) = true)                              AS student_forms_due,
               (SELECT COUNT(*) FROM student_form_assignments
                WHERE school_id = $1 AND status IN ('in_progress', 'manually_uploaded')
@@ -85,7 +85,7 @@ impl NavCountsDao {
               (SELECT COUNT(*) FROM student_form_assignments sfa
                JOIN children c ON c.id = sfa.child_id
                WHERE (c.parent_id = $1 OR c.secondary_parent_id = $1)
-                 AND sfa.school_id = $2 AND sfa.status = 'incomplete'
+                 AND sfa.school_id = $2 AND sfa.status IN ('incomplete', 'rejected')
                  AND COALESCE(sfa.is_active, true) = true)   AS forms_pending,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN children c ON c.id = dra.child_id

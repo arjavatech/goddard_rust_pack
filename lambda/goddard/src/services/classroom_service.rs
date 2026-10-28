@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::dao::classroom_dao::ClassroomDao;
 use crate::dao::school_dao::SchoolDao;
 use crate::error::error_types::AppError;
-use crate::models::classroom::{Classroom, CreateClassroomRequest, UpdateClassroomRequest};
+use crate::models::classroom::{Classroom, ClassroomListResponse, CreateClassroomRequest, UpdateClassroomRequest};
 use crate::models::notification::{notification_type, CreateNotification};
 use crate::services::NotificationService;
 
@@ -69,7 +69,7 @@ impl ClassroomService {
         Ok(classroom)
     }
 
-    pub async fn get_classrooms_by_school(&self, school_id: Uuid) -> Result<Vec<Classroom>, AppError> {
+    pub async fn get_classrooms_by_school(&self, school_id: Uuid) -> Result<Vec<ClassroomListResponse>, AppError> {
         self.dao.get_classrooms_by_school(&school_id).await
     }
 

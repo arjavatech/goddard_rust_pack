@@ -44,6 +44,8 @@ pub struct ClassroomResponse {
 pub struct ClassroomListResponse {
     pub id: Uuid,
     pub class_name: String,
+    pub student_count: i64,
+    pub parent_count: i64,
 }
 
 impl From<Classroom> for ClassroomResponse {
@@ -66,6 +68,8 @@ impl From<Classroom> for ClassroomListResponse {
         Self {
             id: classroom.id,
             class_name: classroom.name,
+            student_count: 0,
+            parent_count: 0,
         }
     }
 }

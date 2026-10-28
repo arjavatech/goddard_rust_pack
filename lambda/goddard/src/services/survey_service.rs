@@ -40,7 +40,12 @@ impl SurveyService {
         }
         // Force to the authenticated user's school
         req.school_id = auth.school_id;
-        self.dao.create_survey(&req, auth.user_id).await
+        let total_targeted = if req.status.as_deref() == Some("published") {
+            self.dao.count_targeted(auth.school_id, &req.audience, req.classroom_id).await?
+        } else {
+            0
+        };
+        self.dao.create_survey(&req, auth.user_id, total_targeted).await
     }
 
     pub async fn list_surveys(
@@ -129,7 +134,7 @@ impl SurveyService {
         }
         let _ = auth;
         let total = self.dao.count_targeted(
-            detail.survey.id,
+            detail.survey.school_id,
             &detail.survey.audience,
             detail.survey.classroom_id,
         ).await?;
@@ -203,7 +208,29 @@ impl SurveyService {
     }
 
     pub async fn get_report(&self, id: Uuid, _auth: &AuthContext) -> ApiResult<SurveyReportDto> {
-        self.dao.get_report(id).await
+        let mut report = self.dao.get_report(id).await?;
+        if matches!(report.survey.status.as_str(), "published" | "expired") {
+            if let Ok(count) = self.dao.count_targeted(
+                report.survey.school_id,
+                &report.survey.audience,
+                report.survey.classroom_id,
+            ).await {
+                if count != report.survey.total_targeted {
+                    let _ = self.dao.update_total_targeted(id, count).await;
+                    report.survey.total_targeted = count;
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    pub async fn get_target_count(
+        &self,
+        school_id: Uuid,
+        audience: &str,
+        classroom_id: Option<Uuid>,
+    ) -> ApiResult<i32> {
+        self.dao.count_targeted(school_id, audience, classroom_id).await
     }
 
     pub fn dao_ref(&self) -> &SurveyDao {

@@ -134,6 +134,17 @@ pub async fn reopen_survey(
     Ok(Json(svc.reopen_survey(id, &auth).await?))
 }
 
+// ── Admin: get target audience count ─────────────────────────────────────────
+
+pub async fn get_target_count(
+    State(svc): State<Arc<SurveyService>>,
+    Extension(auth): Extension<AuthContext>,
+    Query(params): Query<TargetCountQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let count = svc.get_target_count(auth.school_id, &params.audience, params.classroom_id).await?;
+    Ok(Json(serde_json::json!({ "count": count })))
+}
+
 // ── Admin: survey report ──────────────────────────────────────────────────────
 
 pub async fn get_survey_report(

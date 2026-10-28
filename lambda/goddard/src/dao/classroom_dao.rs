@@ -1,7 +1,7 @@
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
 use uuid::Uuid;
-use crate::models::classroom::{Classroom, CreateClassroomRequest, UpdateClassroomRequest};
+use crate::models::classroom::{Classroom, ClassroomListResponse, CreateClassroomRequest, UpdateClassroomRequest};
 use crate::error::error_types::AppError;
 
 #[derive(Clone)]
@@ -49,27 +49,35 @@ impl ClassroomDao {
         Ok(Self::row_to_classroom(&row))
     }
 
-    pub async fn get_classrooms_by_school(&self, school_id: &Uuid) -> Result<Vec<Classroom>, AppError> {
+    pub async fn get_classrooms_by_school(&self, school_id: &Uuid) -> Result<Vec<ClassroomListResponse>, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let stmt = client.prepare(
-            r#"
-            SELECT id, name, school_id, age_group, capacity, enrolled_count, is_active,
-                   created_at, updated_at
-            FROM classrooms
-            WHERE school_id = $1 AND (is_active = true OR is_active IS NULL)
-            ORDER BY name ASC
-            "#
+        let rows = client.query(
+            r#"SELECT
+                 c.id,
+                 c.name,
+                 (SELECT COUNT(DISTINCT e.child_id)
+                  FROM enrollments e
+                  WHERE e.classroom_id = c.id) AS student_count,
+                 (SELECT COUNT(DISTINCT u.id)
+                  FROM users u
+                  JOIN children ch ON (ch.parent_id = u.id OR ch.secondary_parent_id = u.id)
+                  JOIN enrollments e ON e.child_id = ch.id
+                  WHERE e.classroom_id = c.id AND u.is_active = true) AS parent_count
+               FROM classrooms c
+               WHERE c.school_id = $1 AND (c.is_active = true OR c.is_active IS NULL)
+               ORDER BY c.name ASC"#,
+            &[school_id],
         ).await
-        .map_err(|e| AppError::Database(format!("Failed to prepare statement: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Failed to fetch classrooms: {}", e)))?;
 
-        let rows = client.query(&stmt, &[school_id])
-            .await
-            .map_err(|e| AppError::Database(format!("Failed to fetch classrooms: {}", e)))?;
-
-        let classrooms = rows.iter().map(Self::row_to_classroom).collect();
-        Ok(classrooms)
+        Ok(rows.iter().map(|row| ClassroomListResponse {
+            id:            row.get("id"),
+            class_name:    row.get("name"),
+            student_count: row.get("student_count"),
+            parent_count:  row.get("parent_count"),
+        }).collect())
     }
 
     pub async fn update_classroom(&self, request: &UpdateClassroomRequest) -> Result<Classroom, AppError> {

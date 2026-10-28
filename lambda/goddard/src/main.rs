@@ -67,8 +67,9 @@ use controllers::{
     expense_controller::{create_expense, list_expenses},
     survey_controller::{
         close_survey, create_survey, delete_survey, get_public_survey, get_survey,
-        get_survey_report, list_my_surveys, list_surveys, list_templates, publish_survey,
-        reopen_survey, submit_anonymous_response, submit_survey_response, update_survey,
+        get_survey_report, get_target_count, list_my_surveys, list_surveys, list_templates,
+        publish_survey, reopen_survey, submit_anonymous_response, submit_survey_response,
+        update_survey,
     },
     form_submission_controller::{
         create_form_submission_webhook, get_form_resume_link, get_form_submission_by_id,
@@ -1151,6 +1152,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/surveys/templates",
             get(list_templates).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/surveys/target-count",
+            get(get_target_count).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .route(
             "/surveys/:id",

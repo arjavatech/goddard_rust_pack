@@ -51,13 +51,8 @@ pub async fn get_classrooms_by_school(
 
     match classroom_service.get_classrooms_by_school(school_id).await {
         Ok(classrooms) => {
-            let response: Vec<ClassroomListResponse> = classrooms
-                .into_iter()
-                .map(ClassroomListResponse::from)
-                .collect();
-
-            tracing::info!("Successfully fetched {} classrooms", response.len());
-            Ok((StatusCode::OK, Json(response)))
+            tracing::info!("Successfully fetched {} classrooms", classrooms.len());
+            Ok((StatusCode::OK, Json(classrooms)))
         }
         Err(e) => {
             tracing::error!("Database error: {:?}", e);

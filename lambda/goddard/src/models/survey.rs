@@ -5,6 +5,13 @@ use uuid::Uuid;
 // ── Request DTOs ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+pub struct TargetCountQuery {
+    pub school_id: Uuid,
+    pub audience: String,
+    pub classroom_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateSurveyRequest {
     pub school_id: Uuid,
     pub title: String,

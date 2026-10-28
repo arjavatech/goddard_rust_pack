@@ -83,6 +83,7 @@ impl SurveyDao {
         &self,
         req: &CreateSurveyRequest,
         created_by: Uuid,
+        total_targeted: i32,
     ) -> ApiResult<SurveyDetail> {
         let mut client = self.pool.get().await
             .map_err(|e: deadpool_postgres::PoolError| AppError::Database(e.to_string()))?;
@@ -96,13 +97,13 @@ impl SurveyDao {
         let row = tx.query_one(
             r#"INSERT INTO surveys
                (school_id, title, description, audience, classroom_id, status,
-                is_anonymous, is_template, expires_at, published_at, created_by, created_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+                is_anonymous, is_template, expires_at, published_at, total_targeted, created_by, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
                RETURNING id"#,
             &[
                 &req.school_id, &req.title, &req.description, &req.audience,
                 &req.classroom_id, &status, &req.is_anonymous, &req.is_template,
-                &req.expires_at, &published_at, &created_by,
+                &req.expires_at, &published_at, &total_targeted, &created_by,
             ],
         ).await.map_err(|e| AppError::Database(e.to_string()))?;
 
@@ -359,6 +360,7 @@ impl SurveyDao {
                  AND s.status IN ('published', 'expired')
                  AND s.is_template = false
                  AND s.is_anonymous = false
+                 AND (SELECT created_at FROM users WHERE id = $1) <= s.published_at
                  AND {}
                ORDER BY
                  CASE WHEN sr.id IS NULL THEN 0 ELSE 1 END,
@@ -705,32 +707,50 @@ impl SurveyDao {
         let count: i64 = match audience {
             "parents" => {
                 let row = client.query_one(
-                    "SELECT COUNT(DISTINCT u.id)::bigint FROM users u \
-                     WHERE u.school_id = $1 AND u.role = 'parent' AND u.is_active = true",
+                    "SELECT COUNT(DISTINCT u.id)::bigint \
+                     FROM users u \
+                     INNER JOIN children c ON (c.parent_id = u.id OR c.secondary_parent_id = u.id) \
+                     WHERE u.school_id = $1 \
+                       AND u.role IN ('Parent','secondary-parent') \
+                       AND u.is_active = true",
                     &[&school_id],
                 ).await.map_err(|e| AppError::Database(e.to_string()))?;
                 row.get(0)
             }
             "employees" => {
                 let row = client.query_one(
-                    "SELECT COUNT(DISTINCT u.id)::bigint FROM users u \
-                     WHERE u.school_id = $1 AND u.role = 'teacher' AND u.is_active = true",
+                    "SELECT COUNT(DISTINCT e.user_id)::bigint \
+                     FROM employees e \
+                     WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)",
                     &[&school_id],
                 ).await.map_err(|e| AppError::Database(e.to_string()))?;
                 row.get(0)
             }
             "all_staff" => {
                 let row = client.query_one(
-                    "SELECT COUNT(DISTINCT u.id)::bigint FROM users u \
-                     WHERE u.school_id = $1 AND u.role IN ('teacher','admin','super_admin') AND u.is_active = true",
+                    "SELECT (\
+                         SELECT COUNT(DISTINCT e.user_id) FROM employees e \
+                         WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)\
+                     ) + (\
+                         SELECT COUNT(DISTINCT u.id) FROM users u \
+                         WHERE u.school_id = $1 AND u.role = 'Admin' AND (u.is_active = true OR u.is_active IS NULL)\
+                     )",
                     &[&school_id],
                 ).await.map_err(|e| AppError::Database(e.to_string()))?;
                 row.get(0)
             }
             "everyone" => {
                 let row = client.query_one(
-                    "SELECT COUNT(DISTINCT u.id)::bigint FROM users u \
-                     WHERE u.school_id = $1 AND u.is_active = true",
+                    "SELECT (\
+                         SELECT COUNT(DISTINCT e.user_id) FROM employees e \
+                         WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)\
+                     ) + (\
+                         SELECT COUNT(DISTINCT u.id) FROM users u \
+                         WHERE u.school_id = $1 AND u.role = 'Admin' AND (u.is_active = true OR u.is_active IS NULL)\
+                     ) + (\
+                         SELECT COUNT(DISTINCT u.id) FROM users u \
+                         WHERE u.school_id = $1 AND u.role IN ('Parent','primary-parent','secondary-parent') AND u.is_active = true\
+                     )",
                     &[&school_id],
                 ).await.map_err(|e| AppError::Database(e.to_string()))?;
                 row.get(0)
@@ -752,5 +772,15 @@ impl SurveyDao {
             _ => 0,
         };
         Ok(count as i32)
+    }
+
+    pub async fn update_total_targeted(&self, id: Uuid, count: i32) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e: deadpool_postgres::PoolError| AppError::Database(e.to_string()))?;
+        client.execute(
+            "UPDATE surveys SET total_targeted = $1, updated_at = NOW() WHERE id = $2",
+            &[&count, &id],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
     }
 }

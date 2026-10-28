@@ -30,6 +30,11 @@ impl SurveyService {
         if req.questions.is_empty() {
             return Err(AppError::Validation("At least one question is required".to_string()));
         }
+        if let Some(exp) = req.expires_at {
+            if exp.date_naive() < chrono::Utc::now().date_naive() {
+                return Err(AppError::Validation("Expiry date cannot be in the past".to_string()));
+            }
+        }
         for q in &req.questions {
             self.validate_question(q)?;
         }
@@ -84,6 +89,11 @@ impl SurveyService {
                 return Err(AppError::Validation("Survey title cannot be empty".to_string()));
             }
         }
+        if let Some(exp) = req.expires_at {
+            if exp.date_naive() < chrono::Utc::now().date_naive() {
+                return Err(AppError::Validation("Expiry date cannot be in the past".to_string()));
+            }
+        }
         if let Some(ref qs) = req.questions {
             for q in qs {
                 self.validate_question(q)?;
@@ -109,6 +119,13 @@ impl SurveyService {
             return Err(AppError::Validation(format!(
                 "Cannot publish survey with status '{}'", detail.survey.status
             )));
+        }
+        if let Some(exp) = detail.survey.expires_at {
+            if exp < chrono::Utc::now() {
+                return Err(AppError::Validation(
+                    "Cannot publish survey: the expiry date has already passed. Please update the expiry date first.".to_string()
+                ));
+            }
         }
         let _ = auth;
         let total = self.dao.count_targeted(

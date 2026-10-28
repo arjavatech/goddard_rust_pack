@@ -59,7 +59,15 @@ impl SurveyDao {
     const SURVEY_SELECT: &'static str = r#"
         SELECT
             s.id, s.school_id, s.title, s.description, s.audience, s.classroom_id,
-            cl.name AS classroom_name, s.status, s.is_anonymous, s.is_template,
+            cl.name AS classroom_name,
+            CASE
+                WHEN s.status = 'published'
+                     AND s.expires_at IS NOT NULL
+                     AND s.expires_at < NOW()
+                THEN 'expired'
+                ELSE s.status
+            END AS status,
+            s.is_anonymous, s.is_template,
             s.expires_at, s.published_at, s.created_at, s.total_targeted,
             u.first_name || ' ' || u.last_name AS created_by_name,
             (SELECT COUNT(*)::bigint FROM survey_responses WHERE survey_id = s.id)  AS total_responded,

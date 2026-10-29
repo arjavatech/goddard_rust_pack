@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod conference;
 pub mod nav_counts;
 pub mod survey;
 pub mod class_form_override;

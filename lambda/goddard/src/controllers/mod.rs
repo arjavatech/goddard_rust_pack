@@ -1,4 +1,5 @@
 pub mod admin_controller;
+pub mod conference_controller;
 pub mod survey_controller;
 pub mod auth_verification_controller;
 pub mod class_form_override_controller;
@@ -24,3 +25,4 @@ pub mod student_form_assignment_review_controller;
 pub mod student_form_assignment_revoke_controller;
 pub mod student_form_assignment_manual_pdf_controller;
 pub mod taptime_mapping_controller;
+pub mod upload_controller;

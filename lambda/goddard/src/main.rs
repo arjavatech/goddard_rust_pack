@@ -65,6 +65,13 @@ use controllers::{
         promote_enrollment, resend_parent_confirmation, update_child_status,
     },
     expense_controller::{create_expense, list_expenses},
+    upload_controller::upload_image,
+    conference_controller::{
+        book_slot, cancel_booking, create_conference, delete_conference, get_conference,
+        get_conference_report, get_conference_slots, get_conference_stats,
+        list_conferences, list_my_bookings, list_my_conferences,
+        send_conference_reminders, update_booking, update_conference,
+    },
     survey_controller::{
         close_survey, create_survey, delete_survey, get_public_survey, get_survey,
         get_survey_report, get_target_count, list_my_surveys, list_surveys, list_templates,
@@ -117,10 +124,11 @@ use controllers::{
     },
 };
 use dao::{
-    AdminDao, AuthDao, ClassFormOverrideDao, ClassroomDao, DeviceTokenDao, DocumentRequestDao,
-    EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao, EmployeeFormTemplateDao,
-    EnrollmentDao, FormSubmissionDao, FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, PortalDao,
-    RequestDao, SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
+    AdminDao, AuthDao, ClassFormOverrideDao, ClassroomDao, ConferenceDao, DeviceTokenDao,
+    DocumentRequestDao, EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
+    EmployeeFormTemplateDao, EnrollmentDao, FormSubmissionDao, FormTemplateDao, HelpCenterDao,
+    NavCountsDao, NotificationDao, PortalDao, RequestDao, SchoolDao, StudentFormAssignmentDao,
+    SurveyDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
@@ -128,11 +136,11 @@ use middleware::auth::{
 };
 use middleware::{cors::add_cors_headers, request_id::request_id_middleware};
 use services::{
-    AdminService, AuthService, ClassFormOverrideService, ClassroomService, DocumentRequestService,
-    EmailService, EmployeeService, EnrollmentService, FilloutService, FormSubmissionService,
-    FormTemplateService, NotificationPushTrigger, NotificationService, PortalService,
-    RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient, SurveyService,
-    TapTimeMappingService, TapTimeService, UploadService,
+    AdminService, AuthService, ClassFormOverrideService, ClassroomService, ConferenceService,
+    DocumentRequestService, EmailService, EmployeeService, EnrollmentService, FilloutService,
+    FormSubmissionService, FormTemplateService, NotificationPushTrigger, NotificationService,
+    PortalService, RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient,
+    SurveyService, TapTimeMappingService, TapTimeService, UploadService,
 };
 use std::sync::Arc;
 
@@ -303,6 +311,12 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     ));
 
     let survey_service = Arc::new(SurveyService::new(SurveyDao::new(pool.clone())));
+
+    let conference_service = Arc::new(ConferenceService::new(
+        ConferenceDao::new(pool.clone()),
+        email_service.clone(),
+        upload_service.clone(),
+    ));
 
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
@@ -1203,6 +1217,70 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             get(list_my_surveys).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
         .with_state(survey_service)
+        // Conference APIs
+        .route(
+            "/conferences",
+            get(list_conferences).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences",
+            post(create_conference).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences/stats",
+            get(get_conference_stats).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences/:id",
+            get(get_conference).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/conferences/:id",
+            patch(update_conference).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences/:id",
+            delete(delete_conference).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences/:id/report",
+            get(get_conference_report).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences/:id/remind",
+            post(send_conference_reminders).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/conferences/:id/slots",
+            get(get_conference_slots).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/my-conferences",
+            get(list_my_conferences).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/conference-bookings",
+            post(book_slot).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/my-conference-bookings",
+            get(list_my_bookings).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/conference-bookings/:id",
+            patch(update_booking).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/conference-bookings/:id",
+            delete(cancel_booking).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .with_state(conference_service)
+        // Image upload
+        .route(
+            "/uploads/image",
+            post(upload_image).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .with_state(upload_service)
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)); // 10 MB

@@ -771,3 +771,140 @@ pub fn help_center_message_html(
 
     render_shell(accent, &headline, &preheader, &body, "")
 }
+
+// ── Conference Emails ─────────────────────────────────────────────────────────
+
+pub fn conference_created_html(
+    parent_name: &str,
+    title: &str,
+    date: &str,
+    description: &str,
+    school_name: &str,
+    child_names: &[String],
+    image_url: Option<&str>,
+    book_url: &str,
+) -> String {
+    let accent = "#1e4b83";
+    let headline = format!("New Conference Scheduled: {}", html_escape(title));
+    let preheader = format!("A parent-teacher conference has been scheduled at {}.", html_escape(school_name));
+
+    let image_block = if let Some(url) = image_url {
+        format!(
+            r#"<img src="{url}" alt="Conference" style="width:100%;max-height:200px;object-fit:cover;border-radius:6px;margin-bottom:20px;" />"#,
+            url = url
+        )
+    } else {
+        String::new()
+    };
+
+    let children_block = if !child_names.is_empty() {
+        let items: String = child_names.iter()
+            .map(|n| format!(r#"<li style="margin:4px 0;color:#333;">{}</li>"#, html_escape(n)))
+            .collect();
+        format!(
+            r#"<p style="margin:0 0 8px 0;color:#444;font-weight:600;">Your child(ren) enrolled in this conference:</p>
+               <ul style="margin:0 0 20px 0;padding-left:20px;">{items}</ul>"#,
+            items = items
+        )
+    } else {
+        String::new()
+    };
+
+    let body = format!(
+        r#"{image_block}
+          <p style="margin:0 0 16px 0;">Hi <strong>{parent}</strong>,</p>
+          <p style="margin:0 0 20px 0;">A new parent-teacher conference has been scheduled at <strong>{school}</strong>.</p>
+          <table style="width:100%;border-collapse:collapse;margin:0 0 20px 0;">
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;width:140px;">Conference</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{title}</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;">Date</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{date}</td></tr>
+          </table>
+          <p style="margin:0 0 20px 0;color:#444;">{desc}</p>
+          {children_block}
+          <p style="margin:0 0 20px 0;color:#444;">Please log in to book your preferred time slot. Slots are limited — book early to get your preferred time.</p>
+          <p style="text-align:center;margin:28px 0;">
+            <a href="{url}" style="display:inline-block;padding:14px 32px;background:{accent};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">Book Your Slot</a>
+          </p>"#,
+        image_block = image_block,
+        parent = html_escape(parent_name),
+        school = html_escape(school_name),
+        title = html_escape(title),
+        date = html_escape(date),
+        desc = html_escape(description),
+        children_block = children_block,
+        url = book_url,
+        accent = accent,
+    );
+    render_shell(accent, &headline, &preheader, &body, "")
+}
+
+pub fn conference_booking_confirmed_html(
+    title: &str,
+    date: &str,
+    time_slot: &str,
+    child_name: &str,
+    classroom_name: &str,
+    school_name: &str,
+    dashboard_url: &str,
+) -> String {
+    let accent = "#16a34a";
+    let headline = format!("Booking Confirmed – {}", html_escape(title));
+    let preheader = format!("Your conference slot for {} on {} has been confirmed.", html_escape(child_name), date);
+    let body = format!(
+        r#"<p style="margin:0 0 16px 0;">Your parent-teacher conference slot has been confirmed at <strong>{school}</strong>.</p>
+          <table style="width:100%;border-collapse:collapse;margin:0 0 20px 0;">
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;width:140px;">Conference</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{title}</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;">Child</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{child}</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;">Classroom</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{classroom}</td></tr>
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;">Date</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{date}</td></tr>
+            <tr><td style="padding:10px 0;color:#555;">Time</td><td style="padding:10px 0;font-weight:600;color:#16a34a;font-size:16px;">{slot}</td></tr>
+          </table>
+          <p style="margin:0 0 16px 0;color:#444;">Please arrive a few minutes early. You can view or change your booking from your parent portal.</p>
+          <p style="text-align:center;margin:28px 0;">
+            <a href="{url}" style="display:inline-block;padding:14px 32px;background:{accent};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">View My Bookings</a>
+          </p>"#,
+        school = html_escape(school_name),
+        title = html_escape(title),
+        child = html_escape(child_name),
+        classroom = html_escape(classroom_name),
+        date = html_escape(date),
+        slot = html_escape(time_slot),
+        url = dashboard_url,
+        accent = accent,
+    );
+    render_shell(accent, &headline, &preheader, &body, "")
+}
+
+pub fn conference_reminder_html(
+    title: &str,
+    date: &str,
+    deadline: Option<&str>,
+    school_name: &str,
+    book_url: &str,
+) -> String {
+    let accent = "#d97706";
+    let headline = format!("Reminder: Book Your Conference Slot – {}", html_escape(title));
+    let preheader = format!("Don't forget to book your slot for {} at {}.", html_escape(title), html_escape(school_name));
+    let deadline_line = deadline.map(|d| format!(
+        r#"<p style="margin:0 0 16px 0;color:#b45309;"><strong>Booking deadline: {}</strong></p>"#,
+        html_escape(d)
+    )).unwrap_or_default();
+    let body = format!(
+        r#"<p style="margin:0 0 16px 0;">This is a friendly reminder that you haven't booked a slot for the upcoming parent-teacher conference at <strong>{school}</strong>.</p>
+          <table style="width:100%;border-collapse:collapse;margin:0 0 20px 0;">
+            <tr><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;color:#555;width:140px;">Conference</td><td style="padding:10px 0;border-bottom:1px solid #e8eaf0;font-weight:600;color:#1a2332;">{title}</td></tr>
+            <tr><td style="padding:10px 0;color:#555;">Date</td><td style="padding:10px 0;font-weight:600;color:#1a2332;">{date}</td></tr>
+          </table>
+          {deadline}
+          <p style="margin:0 0 20px 0;color:#444;">Slots are filling up — please log in and reserve your time as soon as possible.</p>
+          <p style="text-align:center;margin:28px 0;">
+            <a href="{url}" style="display:inline-block;padding:14px 32px;background:{accent};color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:15px;">Book My Slot Now</a>
+          </p>"#,
+        school = html_escape(school_name),
+        title = html_escape(title),
+        date = html_escape(date),
+        deadline = deadline_line,
+        url = book_url,
+        accent = accent,
+    );
+    render_shell(accent, &headline, &preheader, &body, "")
+}

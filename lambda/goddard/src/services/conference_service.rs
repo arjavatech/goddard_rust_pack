@@ -167,6 +167,13 @@ impl ConferenceService {
     // ── Delete ────────────────────────────────────────────────────────────────
 
     pub async fn delete_conference(&self, id: Uuid, _auth: &AuthContext) -> ApiResult<()> {
+        let booked = self.dao.get_conference_booking_count(id).await?;
+        if booked > 0 {
+            return Err(AppError::Conflict(format!(
+                "Cannot delete: this conference has {} active booking(s). Cancel all bookings first.",
+                booked
+            )));
+        }
         self.dao.delete_conference(id).await
     }
 

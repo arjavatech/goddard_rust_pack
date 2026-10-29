@@ -311,6 +311,17 @@ impl ConferenceDao {
         Ok(())
     }
 
+    pub async fn get_conference_booking_count(&self, conference_id: Uuid) -> ApiResult<i64> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let row = client.query_one(
+            "SELECT COUNT(*)::BIGINT AS count FROM conference_bookings \
+             WHERE conference_id = $1 AND status = 'booked'",
+            &[&conference_id],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(row.get("count"))
+    }
+
     // ── Stats ─────────────────────────────────────────────────────────────────
 
     pub async fn get_conference_stats(&self, school_id: Uuid) -> ApiResult<ConferenceStats> {

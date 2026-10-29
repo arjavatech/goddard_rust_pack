@@ -797,23 +797,24 @@ impl ConferenceDao {
 
         let rows = client.query(
             r#"SELECT DISTINCT u.id AS parent_id,
-                      u.first_name || ' ' || u.last_name AS parent_name,
-                      u.email AS parent_email,
+                      COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '') AS parent_name,
+                      COALESCE(u.email, '') AS parent_email,
                       ch.id AS child_id,
-                      ch.first_name || ' ' || ch.last_name AS child_name
+                      COALESCE(ch.first_name, '') || ' ' || COALESCE(ch.last_name, '') AS child_name
                FROM conference_classrooms cc
                JOIN enrollments e ON e.classroom_id = cc.classroom_id
                JOIN children ch ON ch.id = e.child_id
                JOIN users u ON (u.id = ch.parent_id OR u.id = ch.secondary_parent_id)
                WHERE cc.conference_id = $1
                  AND ch.status = 'active'
+                 AND COALESCE(u.email, '') != ''
                  AND NOT EXISTS (
                    SELECT 1 FROM conference_bookings cb
                    WHERE cb.conference_id = $1
                      AND cb.child_id = ch.id
                      AND cb.status = 'booked'
                  )
-               ORDER BY u.first_name, u.last_name"#,
+               ORDER BY parent_name"#,
             &[&conference_id],
         ).await.map_err(|e| AppError::Database(e.to_string()))?;
 
@@ -834,16 +835,17 @@ impl ConferenceDao {
 
         let rows = client.query(
             r#"SELECT DISTINCT u.id AS parent_id,
-                      u.first_name || ' ' || u.last_name AS parent_name,
-                      u.email AS parent_email,
+                      COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '') AS parent_name,
+                      COALESCE(u.email, '') AS parent_email,
                       ch.id AS child_id,
-                      ch.first_name || ' ' || ch.last_name AS child_name
+                      COALESCE(ch.first_name, '') || ' ' || COALESCE(ch.last_name, '') AS child_name
                FROM conference_classrooms cc
                JOIN enrollments e ON e.classroom_id = cc.classroom_id
                JOIN children ch ON ch.id = e.child_id
                JOIN users u ON (u.id = ch.parent_id OR u.id = ch.secondary_parent_id)
                WHERE cc.conference_id = $1
                  AND ch.status = 'active'
+                 AND COALESCE(u.email, '') != ''
                ORDER BY parent_name"#,
             &[&conference_id],
         ).await.map_err(|e| AppError::Database(e.to_string()))?;

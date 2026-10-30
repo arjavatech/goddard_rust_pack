@@ -274,8 +274,6 @@ impl ConferenceDao {
         if let Some(classrooms) = &req.classrooms {
             tx.execute("DELETE FROM conference_classrooms WHERE conference_id = $1", &[&conf_id])
                 .await.map_err(|e| AppError::Database(e.to_string()))?;
-            tx.execute("DELETE FROM conference_slots WHERE conference_id = $1", &[&conf_id])
-                .await.map_err(|e| AppError::Database(e.to_string()))?;
 
             for cr in classrooms {
                 tx.execute(
@@ -283,15 +281,57 @@ impl ConferenceDao {
                     &[&conf_id, &cr.classroom_id],
                 ).await.map_err(|e| AppError::Database(e.to_string()))?;
 
+                // Fetch existing slots with booking counts for this classroom
+                let existing = tx.query(
+                    r#"SELECT cs.id,
+                              COALESCE(COUNT(cb.id), 0)::BIGINT AS booking_count
+                       FROM conference_slots cs
+                       LEFT JOIN conference_bookings cb ON cb.slot_id = cs.id
+                       WHERE cs.conference_id = $1 AND cs.classroom_id = $2
+                       GROUP BY cs.id"#,
+                    &[&conf_id, &cr.classroom_id],
+                ).await.map_err(|e| AppError::Database(e.to_string()))?;
+
+                use std::collections::{HashMap, HashSet};
+                let existing_counts: HashMap<Uuid, i64> = existing.iter()
+                    .map(|r| (r.get::<_, Uuid>("id"), r.get::<_, i64>("booking_count")))
+                    .collect();
+
+                let payload_ids: HashSet<Uuid> = cr.slots.iter()
+                    .filter_map(|s| s.id)
+                    .collect();
+
+                // Delete removed slots — only if they have no bookings
+                for (slot_id, booking_count) in &existing_counts {
+                    if !payload_ids.contains(slot_id) {
+                        if *booking_count > 0 {
+                            return Err(AppError::Validation(
+                                "Cannot remove a slot that has existing bookings".to_string()
+                            ));
+                        }
+                        tx.execute("DELETE FROM conference_slots WHERE id = $1", &[slot_id])
+                            .await.map_err(|e| AppError::Database(e.to_string()))?;
+                    }
+                }
+
+                // Update existing slots / insert new ones
                 for s in &cr.slots {
                     let start: chrono::NaiveTime = s.start_time.parse()
                         .map_err(|_| AppError::Validation(format!("Invalid start_time: {}", s.start_time)))?;
                     let end: chrono::NaiveTime = s.end_time.parse()
                         .map_err(|_| AppError::Validation(format!("Invalid end_time: {}", s.end_time)))?;
-                    tx.execute(
-                        "INSERT INTO conference_slots (conference_id, classroom_id, start_time, end_time, capacity) VALUES ($1, $2, $3, $4, $5)",
-                        &[&conf_id, &cr.classroom_id, &start, &end, &s.capacity],
-                    ).await.map_err(|e| AppError::Database(e.to_string()))?;
+
+                    if let Some(slot_id) = s.id {
+                        tx.execute(
+                            "UPDATE conference_slots SET start_time = $2, end_time = $3, capacity = $4 WHERE id = $1",
+                            &[&slot_id, &start, &end, &s.capacity],
+                        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+                    } else {
+                        tx.execute(
+                            "INSERT INTO conference_slots (conference_id, classroom_id, start_time, end_time, capacity) VALUES ($1, $2, $3, $4, $5)",
+                            &[&conf_id, &cr.classroom_id, &start, &end, &s.capacity],
+                        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+                    }
                 }
             }
         }
@@ -587,6 +627,7 @@ impl ConferenceDao {
                JOIN children ch ON ch.id = e.child_id
                WHERE c.school_id = $1
                  AND (ch.parent_id = $2 OR ch.secondary_parent_id = $2)
+                 AND ch.status = 'active'
                  AND ($3::UUID IS NULL OR ch.id = $3)
                ORDER BY c.conference_date ASC"#,
             &[&school_id, &parent_id, &child_id],

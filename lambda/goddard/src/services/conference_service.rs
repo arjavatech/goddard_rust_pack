@@ -385,10 +385,11 @@ impl ConferenceService {
     }
 
     fn validate_slots(&self, slots: &[crate::models::conference::SlotInput]) -> ApiResult<()> {
+        let mut parsed: Vec<(chrono::NaiveTime, chrono::NaiveTime)> = Vec::new();
         for s in slots {
-            let start: chrono::NaiveTime = s.start_time.parse()
+            let start = s.start_time.parse::<chrono::NaiveTime>()
                 .map_err(|_| AppError::Validation(format!("Invalid start_time: {}", s.start_time)))?;
-            let end: chrono::NaiveTime = s.end_time.parse()
+            let end = s.end_time.parse::<chrono::NaiveTime>()
                 .map_err(|_| AppError::Validation(format!("Invalid end_time: {}", s.end_time)))?;
             if end <= start {
                 return Err(AppError::Validation(
@@ -398,6 +399,15 @@ impl ConferenceService {
             if s.capacity < 1 {
                 return Err(AppError::Validation("Slot capacity must be at least 1".to_string()));
             }
+            for (ps, pe) in &parsed {
+                if start < *pe && end > *ps {
+                    return Err(AppError::Validation(format!(
+                        "Time slot {}-{} overlaps with an existing slot",
+                        s.start_time, s.end_time
+                    )));
+                }
+            }
+            parsed.push((start, end));
         }
         Ok(())
     }

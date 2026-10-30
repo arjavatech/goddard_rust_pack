@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SlotInput {
+    pub id: Option<Uuid>,   // present for existing slots; absent for new ones
     pub start_time: String, // "HH:MM"
     pub end_time: String,   // "HH:MM"
     pub capacity: i32,

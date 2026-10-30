@@ -1,4 +1,5 @@
 pub mod admin_dao;
+pub mod admin_permission_dao;
 pub mod auth_dao;
 pub mod conference_dao;
 pub mod survey_dao;
@@ -24,6 +25,7 @@ pub mod student_form_assignment_dao;
 pub mod taptime_mapping_dao;
 
 pub use admin_dao::AdminDao;
+pub use admin_permission_dao::AdminPermissionDao;
 pub use auth_dao::AuthDao;
 pub use conference_dao::ConferenceDao;
 pub use survey_dao::SurveyDao;

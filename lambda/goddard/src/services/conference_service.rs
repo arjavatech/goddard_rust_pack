@@ -2,10 +2,12 @@ use std::sync::Arc;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::dao::admin_permission_dao::AdminPermissionDao;
 use crate::dao::conference_dao::ConferenceDao;
 use crate::dao::school_dao::SchoolDao;
 use crate::error::{ApiResult, AppError};
 use crate::middleware::auth::AuthContext;
+use crate::models::admin_permission::MANAGE_CONFERENCES;
 use crate::models::conference::*;
 use crate::models::schema::UserRole;
 use crate::models::school::SchoolFeature;
@@ -24,11 +26,12 @@ pub struct ConferenceService {
     email: Arc<EmailService>,
     upload: Arc<UploadService>,
     schools: SchoolDao,
+    admin_permissions: AdminPermissionDao,
 }
 
 impl ConferenceService {
-    pub fn new(dao: ConferenceDao, email: Arc<EmailService>, upload: Arc<UploadService>, schools: SchoolDao) -> Self {
-        Self { dao, email, upload, schools }
+    pub fn new(dao: ConferenceDao, email: Arc<EmailService>, upload: Arc<UploadService>, schools: SchoolDao, admin_permissions: AdminPermissionDao) -> Self {
+        Self { dao, email, upload, schools, admin_permissions }
     }
 
     // ── Admin: create ─────────────────────────────────────────────────────────
@@ -40,6 +43,7 @@ impl ConferenceService {
     ) -> ApiResult<ConferenceListItem> {
         if !matches!(auth.role, UserRole::SuperAdmin) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Conference).await?;
+            self.admin_permissions.ensure_permission(auth, MANAGE_CONFERENCES).await?;
         }
         req.school_id = auth.school_id;
 
@@ -124,6 +128,7 @@ impl ConferenceService {
         let sid = if matches!(auth.role, UserRole::SuperAdmin) { school_id } else { auth.school_id };
         if !matches!(auth.role, UserRole::SuperAdmin) {
             self.schools.ensure_feature_enabled(sid, SchoolFeature::Conference).await?;
+            self.admin_permissions.ensure_permission(auth, MANAGE_CONFERENCES).await?;
         }
         self.dao.list_conferences(sid).await
     }

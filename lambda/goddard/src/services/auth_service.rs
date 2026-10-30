@@ -71,7 +71,8 @@ pub struct CreateInvitationRequest {
     pub school_id: String,
     pub first_name: String,
     pub last_name: String,
-    pub phone_number: Option<String>,  // Only phone_number is optional
+    pub phone_number: Option<String>,
+    pub permissions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +83,7 @@ pub struct CreateInvitationRequestEnhanced {
     pub last_name: Option<String>,
     pub role: Option<String>,
     pub phone_number: Option<String>,
+    pub permissions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +117,7 @@ pub struct AdminUserResponse {
     pub phone_number: Option<String>,
     pub taptime_employee_id: Option<String>,
     pub taptime_pin: Option<String>,
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +126,7 @@ pub struct UpdateAdminRequest {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
+    pub permissions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,6 +201,7 @@ pub struct FilteredUserResponse {
     pub taptime_employee_id: Option<String>,
     pub taptime_pin: Option<String>,
     pub school_data: Option<SchoolResponse>,
+    pub admin_permissions: Option<Vec<String>>,
 }
 
 fn email_status_message(status: &str, default_ok: &str) -> String {
@@ -444,6 +449,14 @@ impl AuthService {
         // STEP 4: Create user in Supabase (no email) then send 7-day branded invite
         let user_id = self.supabase_client.create_user_only_in_supabase(&request.email, metadata).await?;
 
+        if let Some(perms) = request.permissions {
+            if let Ok(uid) = uuid::Uuid::parse_str(&user_id) {
+                if let Err(e) = self.dao.update_admin_user(uid, None, None, None, Some(perms)).await {
+                    tracing::warn!("Failed to set permissions for new admin {}: {}", uid, e);
+                }
+            }
+        }
+
         let role_str = request.role.as_deref().unwrap_or("Admin");
         let first_name_str = request.first_name.as_deref().unwrap_or("");
         let last_name_str = request.last_name.as_deref().unwrap_or("");
@@ -552,6 +565,14 @@ impl AuthService {
         .with_school_name(school_name.clone());
 
         let user_id = self.supabase_client.create_user_only_in_supabase(&request.email, metadata).await?;
+
+        if let Some(perms) = request.permissions {
+            if let Ok(uid) = uuid::Uuid::parse_str(&user_id) {
+                if let Err(e) = self.dao.update_admin_user(uid, None, None, None, Some(perms)).await {
+                    tracing::warn!("Failed to set permissions for new admin {}: {}", uid, e);
+                }
+            }
+        }
 
         let invite_token = self.dao
             .create_invite_token(&request.email, "Admin", school_uuid)
@@ -723,6 +744,7 @@ impl AuthService {
                 taptime_employee_id: None,
                 taptime_pin: None,
                 school_data: None,
+                admin_permissions: None,
             });
         }
 
@@ -752,11 +774,19 @@ impl AuthService {
             auth_user_id
         };
 
+        // Only SuperAdmin can change permissions
+        let permissions_to_update = if matches!(auth_role, crate::models::schema::UserRole::SuperAdmin) {
+            request.permissions
+        } else {
+            None
+        };
+
         let updated = self.dao.update_admin_user(
             target_user_id,
             request.first_name,
             request.last_name,
             request.phone_number,
+            permissions_to_update,
         ).await?;
         self.reconcile_taptime_user(updated.school_id, &updated.id.to_string()).await;
 
@@ -771,6 +801,7 @@ impl AuthService {
             phone_number: updated.phone_number,
             taptime_employee_id: updated.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: updated.taptime_pin,
+            permissions: updated.permissions,
         })
     }
 
@@ -837,6 +868,7 @@ impl AuthService {
             phone_number: u.phone_number,
             taptime_employee_id: u.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: u.taptime_pin,
+            permissions: u.permissions,
         }).collect())
     }
 
@@ -888,6 +920,12 @@ impl AuthService {
             _ => None,
         };
 
+        let admin_permissions = if user.role.to_lowercase() == "admin" {
+            Some(user.permissions.clone())
+        } else {
+            None
+        };
+
         Ok(FilteredUserResponse {
             school_id: user.school_id.to_string(),
             role: user.role,
@@ -899,6 +937,7 @@ impl AuthService {
             taptime_employee_id: user.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: user.taptime_pin,
             school_data,
+            admin_permissions,
         })
     }
 

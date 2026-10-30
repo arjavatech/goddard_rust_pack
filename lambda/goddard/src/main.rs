@@ -124,11 +124,11 @@ use controllers::{
     },
 };
 use dao::{
-    AdminDao, AuthDao, ClassFormOverrideDao, ClassroomDao, ConferenceDao, DeviceTokenDao,
-    DocumentRequestDao, EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
-    EmployeeFormTemplateDao, EnrollmentDao, FormSubmissionDao, FormTemplateDao, HelpCenterDao,
-    NavCountsDao, NotificationDao, PortalDao, RequestDao, SchoolDao, StudentFormAssignmentDao,
-    SurveyDao, TapTimeMappingDao,
+    AdminDao, AdminPermissionDao, AuthDao, ClassFormOverrideDao, ClassroomDao, ConferenceDao,
+    DeviceTokenDao, DocumentRequestDao, EmployeeDao, EmployeeFormAssignmentDao,
+    EmployeeFormSubmissionDao, EmployeeFormTemplateDao, EnrollmentDao, FormSubmissionDao,
+    FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, PortalDao, RequestDao,
+    SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
@@ -310,13 +310,16 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         email_service.clone(),
     ));
 
-    let survey_service = Arc::new(SurveyService::new(SurveyDao::new(pool.clone()), school_dao.clone()));
+    let admin_permission_dao = AdminPermissionDao::new(pool.clone());
+
+    let survey_service = Arc::new(SurveyService::new(SurveyDao::new(pool.clone()), school_dao.clone(), admin_permission_dao.clone()));
 
     let conference_service = Arc::new(ConferenceService::new(
         ConferenceDao::new(pool.clone()),
         email_service.clone(),
         upload_service.clone(),
         school_dao.clone(),
+        admin_permission_dao.clone(),
     ));
 
     let employee_service = Arc::new(EmployeeService::new(

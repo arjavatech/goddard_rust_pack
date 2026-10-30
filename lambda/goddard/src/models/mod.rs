@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod admin_permission;
 pub mod conference;
 pub mod nav_counts;
 pub mod survey;

@@ -1,9 +1,11 @@
 use uuid::Uuid;
 
+use crate::dao::admin_permission_dao::AdminPermissionDao;
 use crate::dao::school_dao::SchoolDao;
 use crate::dao::survey_dao::SurveyDao;
 use crate::error::{ApiResult, AppError};
 use crate::middleware::auth::AuthContext;
+use crate::models::admin_permission::MANAGE_SURVEYS;
 use crate::models::schema::UserRole;
 use crate::models::school::SchoolFeature;
 use crate::models::survey::*;
@@ -12,11 +14,12 @@ use crate::models::survey::*;
 pub struct SurveyService {
     dao: SurveyDao,
     schools: SchoolDao,
+    admin_permissions: AdminPermissionDao,
 }
 
 impl SurveyService {
-    pub fn new(dao: SurveyDao, schools: SchoolDao) -> Self {
-        Self { dao, schools }
+    pub fn new(dao: SurveyDao, schools: SchoolDao, admin_permissions: AdminPermissionDao) -> Self {
+        Self { dao, schools, admin_permissions }
     }
 
     pub async fn create_survey(
@@ -26,6 +29,7 @@ impl SurveyService {
     ) -> ApiResult<SurveyDetail> {
         if !matches!(auth.role, UserRole::SuperAdmin) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Survey).await?;
+            self.admin_permissions.ensure_permission(auth, MANAGE_SURVEYS).await?;
         }
         if req.title.trim().is_empty() {
             return Err(AppError::Validation("Survey title cannot be empty".to_string()));
@@ -63,6 +67,7 @@ impl SurveyService {
         let q = SurveyListQuery { school_id: auth.school_id, ..query };
         if !matches!(auth.role, UserRole::SuperAdmin) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Survey).await?;
+            self.admin_permissions.ensure_permission(auth, MANAGE_SURVEYS).await?;
         }
         self.dao.list_surveys(&q).await
     }

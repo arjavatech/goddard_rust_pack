@@ -38,6 +38,7 @@ pub struct UserDetails {
     pub taptime_employee_id: Option<Uuid>,
     pub taptime_pin: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -191,7 +192,7 @@ impl AuthDao {
                    CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
                    u.metadata->>'phone_number' as phone_number,
                    u.taptime_employee_id, u.taptime_pin,
-                   u.created_at
+                   u.created_at, COALESCE(u.permissions, '[]'::jsonb) as permissions
             FROM users u
             LEFT JOIN auth.users au ON au.email = u.email
             WHERE u.school_id = $1 AND u.role = 'Admin' AND (u.is_active = true OR u.is_active IS NULL)
@@ -218,6 +219,10 @@ impl AuthDao {
                 taptime_employee_id: row.get("taptime_employee_id"),
                 taptime_pin: row.get("taptime_pin"),
                 created_at,
+                permissions: {
+                    let v: serde_json::Value = row.get("permissions");
+                    serde_json::from_value(v).unwrap_or_default()
+                },
             });
         }
 
@@ -231,9 +236,12 @@ impl AuthDao {
         first_name: Option<String>,
         last_name: Option<String>,
         phone_number: Option<String>,
+        permissions: Option<Vec<String>>,
     ) -> ApiResult<UserDetails> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let perms_json: Option<serde_json::Value> = permissions.map(|p| serde_json::json!(p));
 
         let query = r#"
             UPDATE users
@@ -244,13 +252,15 @@ impl AuthDao {
                         COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('phone_number', $4::text)
                     ELSE metadata
                 END,
+                permissions = CASE WHEN $5::jsonb IS NOT NULL THEN $5::jsonb ELSE permissions END,
                 updated_at = NOW()
             WHERE id = $1 AND role = 'Admin' AND (is_active = true OR is_active IS NULL)
             RETURNING id, school_id, first_name, last_name, email, role,
-                      COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at
+                      COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number,
+                      taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions
         "#;
 
-        match client.query_opt(query, &[&user_id, &first_name, &last_name, &phone_number]).await {
+        match client.query_opt(query, &[&user_id, &first_name, &last_name, &phone_number, &perms_json]).await {
             Ok(Some(row)) => {
                 let created_at_naive: chrono::NaiveDateTime = row.get("created_at");
                 let created_at = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(created_at_naive, chrono::Utc);
@@ -267,6 +277,10 @@ impl AuthDao {
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
+                    permissions: {
+                        let v: serde_json::Value = row.get("permissions");
+                        serde_json::from_value(v).unwrap_or_default()
+                    },
                 })
             },
             Ok(None) => Err(AppError::NotFound("Admin user not found or already deleted".to_string())),
@@ -299,7 +313,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE id = $1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions FROM users WHERE id = $1";
 
         match client.query_opt(query, &[&user_id]).await {
             Ok(Some(row)) => {
@@ -318,6 +332,10 @@ impl AuthDao {
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
+                    permissions: {
+                        let v: serde_json::Value = row.get("permissions");
+                        serde_json::from_value(v).unwrap_or_default()
+                    },
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found".to_string())),
@@ -329,7 +347,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL) LIMIT 1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions FROM users WHERE email = $1 AND school_id = $2 AND (is_active = true OR is_active IS NULL) LIMIT 1";
 
         match client.query_opt(query, &[&email, &school_id]).await {
             Ok(Some(row)) => {
@@ -347,6 +365,10 @@ impl AuthDao {
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
+                    permissions: {
+                        let v: serde_json::Value = row.get("permissions");
+                        serde_json::from_value(v).unwrap_or_default()
+                    },
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found. Please enter correct email.".to_string())),
@@ -358,7 +380,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND (is_active = true OR is_active IS NULL) LIMIT 1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions FROM users WHERE email = $1 AND (is_active = true OR is_active IS NULL) LIMIT 1";
 
         match client.query_opt(query, &[&email]).await {
             Ok(Some(row)) => {
@@ -376,6 +398,10 @@ impl AuthDao {
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
+                    permissions: {
+                        let v: serde_json::Value = row.get("permissions");
+                        serde_json::from_value(v).unwrap_or_default()
+                    },
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found. Please enter correct email.".to_string())),
@@ -387,7 +413,7 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at FROM users WHERE email = $1 AND school_id = $2 AND is_active = false LIMIT 1";
+        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions FROM users WHERE email = $1 AND school_id = $2 AND is_active = false LIMIT 1";
 
         match client.query_opt(query, &[&email, &school_id]).await {
             Ok(Some(row)) => {
@@ -405,6 +431,10 @@ impl AuthDao {
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
+                    permissions: {
+                        let v: serde_json::Value = row.get("permissions");
+                        serde_json::from_value(v).unwrap_or_default()
+                    },
                 })
             },
             Ok(None) => Err(AppError::NotFound("Soft-deleted user not found".to_string())),
@@ -538,7 +568,7 @@ impl AuthDao {
             UPDATE users
             SET role = $2, updated_at = NOW()
             WHERE email = $1 AND (is_active = true OR is_active IS NULL)
-            RETURNING id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at
+            RETURNING id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions
         "#;
 
         match client.query_opt(query, &[&email, &new_role]).await {
@@ -558,6 +588,10 @@ impl AuthDao {
                     taptime_employee_id: row.get("taptime_employee_id"),
                     taptime_pin: row.get("taptime_pin"),
                     created_at,
+                    permissions: {
+                        let v: serde_json::Value = row.get("permissions");
+                        serde_json::from_value(v).unwrap_or_default()
+                    },
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found or already deleted".to_string())),

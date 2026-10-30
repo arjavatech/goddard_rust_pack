@@ -93,7 +93,11 @@ impl SchoolService {
         match tokio::time::timeout(timeout_duration, create_operation).await {
             Ok(Ok(school)) => {
                 println!("[SchoolService] School created successfully: id={}", school.id);
-                Ok(SchoolResponse::from(school))
+                let features = self.dao.get_features(school.id).await.unwrap_or_default();
+                let mut response = SchoolResponse::from(school);
+                response.conference_enabled = features.conference_enabled;
+                response.survey_enabled = features.survey_enabled;
+                Ok(response)
             },
             Ok(Err(e)) => {
                 println!("[SchoolService] School creation failed with error: {:?}", e);
@@ -154,7 +158,11 @@ impl SchoolService {
         }
 
         let school = self.dao.update_school(&request).await?;
-        Ok(SchoolResponse::from(school))
+        let features = self.dao.get_features(school.id).await.unwrap_or_default();
+        let mut response = SchoolResponse::from(school);
+        response.conference_enabled = features.conference_enabled;
+        response.survey_enabled = features.survey_enabled;
+        Ok(response)
     }
 
     pub async fn delete_school(&self, school_id: &Uuid) -> ApiResult<DeleteSchoolResponse> {
@@ -254,6 +262,8 @@ impl SchoolService {
             subdomain: request.school.subdomain.clone(),
             timezone: request.school.timezone.clone(),
             settings: request.school.settings.clone(),
+            conference_enabled: request.school.conference_enabled,
+            survey_enabled: request.school.survey_enabled,
         };
 
         println!("[SchoolService] Creating school with 10s timeout");
@@ -295,8 +305,12 @@ impl SchoolService {
                 println!("[SchoolService] SuperAdmin user created successfully: user_id={}", user_id);
                 println!("[SchoolService] School and owner creation completed successfully");
 
+                let features = self.dao.get_features(school.id).await.unwrap_or_default();
+                let mut school_response = SchoolResponse::from(school);
+                school_response.conference_enabled = features.conference_enabled;
+                school_response.survey_enabled = features.survey_enabled;
                 Ok(CreateSchoolWithOwnerResponse {
-                    school: SchoolResponse::from(school),
+                    school: school_response,
                     owner: OwnerCreatedResponse {
                         user_id,
                         email: request.owner.email,

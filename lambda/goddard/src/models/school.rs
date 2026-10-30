@@ -10,6 +10,8 @@ pub struct SchoolFeatures {
     pub employee_management_enabled: bool,
     pub expense_management_enabled: bool,
     pub taptime_enabled: bool,
+    pub conference_enabled: bool,
+    pub survey_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -18,6 +20,8 @@ pub enum SchoolFeature {
     EmployeeManagement,
     ExpenseManagement,
     TapTime,
+    Conference,
+    Survey,
 }
 
 impl SchoolFeature {
@@ -27,6 +31,8 @@ impl SchoolFeature {
             Self::EmployeeManagement => features.employee_management_enabled,
             Self::ExpenseManagement => features.expense_management_enabled,
             Self::TapTime => features.taptime_enabled,
+            Self::Conference => features.conference_enabled,
+            Self::Survey => features.survey_enabled,
         }
     }
 
@@ -36,6 +42,8 @@ impl SchoolFeature {
             Self::EmployeeManagement => "Employee Management",
             Self::ExpenseManagement => "Expense Management",
             Self::TapTime => "TapTime",
+            Self::Conference => "Conference",
+            Self::Survey => "Survey",
         }
     }
 }
@@ -60,6 +68,8 @@ pub struct CreateSchoolRequest {
     pub subdomain: String,
     pub timezone: Option<String>,
     pub settings: Option<Value>,
+    pub conference_enabled: Option<bool>,
+    pub survey_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +79,8 @@ pub struct UpdateSchoolRequest {
     pub subdomain: String,
     pub timezone: Option<String>,
     pub settings: Option<Value>,
+    pub conference_enabled: Option<bool>,
+    pub survey_enabled: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,6 +96,8 @@ pub struct SchoolResponse {
     pub employee_management_enabled: bool,
     pub expense_management_enabled: bool,
     pub taptime_enabled: bool,
+    pub conference_enabled: bool,
+    pub survey_enabled: bool,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
@@ -116,6 +130,8 @@ impl From<School> for SchoolResponse {
             employee_management_enabled: false,
             expense_management_enabled: false,
             taptime_enabled: false,
+            conference_enabled: false,
+            survey_enabled: false,
             created_at: school.created_at,
             updated_at: school.updated_at,
         }
@@ -172,6 +188,8 @@ pub struct SchoolInfo {
     pub subdomain: String,
     pub timezone: Option<String>,
     pub settings: Option<Value>,
+    pub conference_enabled: Option<bool>,
+    pub survey_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -3,10 +3,12 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::dao::conference_dao::ConferenceDao;
+use crate::dao::school_dao::SchoolDao;
 use crate::error::{ApiResult, AppError};
 use crate::middleware::auth::AuthContext;
 use crate::models::conference::*;
 use crate::models::schema::UserRole;
+use crate::models::school::SchoolFeature;
 use crate::services::email_service::EmailService;
 use crate::services::email_templates;
 use crate::services::upload_service::UploadService;
@@ -21,11 +23,12 @@ pub struct ConferenceService {
     dao: ConferenceDao,
     email: Arc<EmailService>,
     upload: Arc<UploadService>,
+    schools: SchoolDao,
 }
 
 impl ConferenceService {
-    pub fn new(dao: ConferenceDao, email: Arc<EmailService>, upload: Arc<UploadService>) -> Self {
-        Self { dao, email, upload }
+    pub fn new(dao: ConferenceDao, email: Arc<EmailService>, upload: Arc<UploadService>, schools: SchoolDao) -> Self {
+        Self { dao, email, upload, schools }
     }
 
     // ── Admin: create ─────────────────────────────────────────────────────────
@@ -35,6 +38,9 @@ impl ConferenceService {
         mut req: CreateConferenceRequest,
         auth: &AuthContext,
     ) -> ApiResult<ConferenceListItem> {
+        if !matches!(auth.role, UserRole::SuperAdmin) {
+            self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Conference).await?;
+        }
         req.school_id = auth.school_id;
 
         // If image sent as base64, upload to S3 and set image_url
@@ -116,6 +122,9 @@ impl ConferenceService {
         auth: &AuthContext,
     ) -> ApiResult<Vec<ConferenceListItem>> {
         let sid = if matches!(auth.role, UserRole::SuperAdmin) { school_id } else { auth.school_id };
+        if !matches!(auth.role, UserRole::SuperAdmin) {
+            self.schools.ensure_feature_enabled(sid, SchoolFeature::Conference).await?;
+        }
         self.dao.list_conferences(sid).await
     }
 

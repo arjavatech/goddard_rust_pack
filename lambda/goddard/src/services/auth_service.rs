@@ -880,6 +880,8 @@ impl AuthService {
                 employee_management_enabled: features.employee_management_enabled,
                 expense_management_enabled: features.expense_management_enabled,
                 taptime_enabled: features.taptime_enabled,
+                conference_enabled: features.conference_enabled,
+                survey_enabled: features.survey_enabled,
                 created_at: school.created_at,
                 updated_at: school.updated_at,
             }),

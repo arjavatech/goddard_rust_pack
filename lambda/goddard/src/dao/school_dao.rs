@@ -65,7 +65,7 @@ impl SchoolDao {
     pub async fn get_features(&self, school_id: Uuid) -> ApiResult<SchoolFeatures> {
         let client = self.get_connection().await?;
         client.query_opt(
-            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
+            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled, conference_enabled, survey_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
             &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to load school features: {e}")))?
             .map(|row| SchoolFeatures {
@@ -73,6 +73,8 @@ impl SchoolDao {
                 employee_management_enabled: row.get("employee_management_enabled"),
                 expense_management_enabled: row.get("expense_management_enabled"),
                 taptime_enabled: row.get("taptime_enabled"),
+                conference_enabled: row.get("conference_enabled"),
+                survey_enabled: row.get("survey_enabled"),
             })
             .ok_or_else(|| AppError::NotFound("School not found".into()))
     }
@@ -91,6 +93,8 @@ impl SchoolDao {
         let subdomain = request.subdomain.clone();
         let timezone = request.timezone.clone().unwrap_or_else(|| "EST".to_string());
         let settings = request.settings.clone();
+        let conference_enabled = request.conference_enabled.unwrap_or(false);
+        let survey_enabled = request.survey_enabled.unwrap_or(false);
 
         self.execute_with_connection(|client| async move {
 
@@ -101,14 +105,16 @@ impl SchoolDao {
 
             let query = format!(
                 r#"
-                INSERT INTO schools (id, name, subdomain, timezone, settings, is_active, created_at)
-                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW())
+                INSERT INTO schools (id, name, subdomain, timezone, settings, is_active, created_at, conference_enabled, survey_enabled)
+                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW(), {}, {})
                 RETURNING id, name, subdomain, timezone, settings, NULL::jsonb AS request_categories, NULL::jsonb AS location, is_active, created_at, updated_at
                 "#,
                 name.replace('\'', "''"),
                 subdomain.replace('\'', "''"),
                 timezone.replace('\'', "''"),
-                settings_json
+                settings_json,
+                conference_enabled,
+                survey_enabled
             );
 
             let result = client.simple_query(&query).await
@@ -242,6 +248,8 @@ impl SchoolDao {
                 subdomain = '{}',
                 timezone = '{}',
                 settings = jsonb_set(COALESCE(settings, '{{}}'::jsonb), '{{timezone}}', to_jsonb('{}'::text), true),
+                conference_enabled = {},
+                survey_enabled = {},
                 updated_at = NOW()
             WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
             RETURNING id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at
@@ -250,6 +258,8 @@ impl SchoolDao {
             request.subdomain.replace('\'', "''"),
             request.timezone.clone().unwrap_or_else(|| "EST".to_string()).replace('\'', "''"),
             request.timezone.clone().unwrap_or_else(|| "EST".to_string()).replace('\'', "''"),
+            request.conference_enabled.unwrap_or(false),
+            request.survey_enabled.unwrap_or(false),
             request.id
         );
 

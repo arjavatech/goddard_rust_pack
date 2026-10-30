@@ -1,19 +1,22 @@
 use uuid::Uuid;
 
+use crate::dao::school_dao::SchoolDao;
 use crate::dao::survey_dao::SurveyDao;
 use crate::error::{ApiResult, AppError};
 use crate::middleware::auth::AuthContext;
 use crate::models::schema::UserRole;
+use crate::models::school::SchoolFeature;
 use crate::models::survey::*;
 
 #[derive(Clone)]
 pub struct SurveyService {
     dao: SurveyDao,
+    schools: SchoolDao,
 }
 
 impl SurveyService {
-    pub fn new(dao: SurveyDao) -> Self {
-        Self { dao }
+    pub fn new(dao: SurveyDao, schools: SchoolDao) -> Self {
+        Self { dao, schools }
     }
 
     pub async fn create_survey(
@@ -21,6 +24,9 @@ impl SurveyService {
         mut req: CreateSurveyRequest,
         auth: &AuthContext,
     ) -> ApiResult<SurveyDetail> {
+        if !matches!(auth.role, UserRole::SuperAdmin) {
+            self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Survey).await?;
+        }
         if req.title.trim().is_empty() {
             return Err(AppError::Validation("Survey title cannot be empty".to_string()));
         }
@@ -55,6 +61,9 @@ impl SurveyService {
     ) -> ApiResult<Vec<SurveyListItem>> {
         // Force school_id to auth context
         let q = SurveyListQuery { school_id: auth.school_id, ..query };
+        if !matches!(auth.role, UserRole::SuperAdmin) {
+            self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Survey).await?;
+        }
         self.dao.list_surveys(&q).await
     }
 

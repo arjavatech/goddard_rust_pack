@@ -310,12 +310,13 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         email_service.clone(),
     ));
 
-    let survey_service = Arc::new(SurveyService::new(SurveyDao::new(pool.clone())));
+    let survey_service = Arc::new(SurveyService::new(SurveyDao::new(pool.clone()), school_dao.clone()));
 
     let conference_service = Arc::new(ConferenceService::new(
         ConferenceDao::new(pool.clone()),
         email_service.clone(),
         upload_service.clone(),
+        school_dao.clone(),
     ));
 
     let employee_service = Arc::new(EmployeeService::new(

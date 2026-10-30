@@ -99,7 +99,22 @@ impl NavCountsDao {
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
                    WHERE survey_id = surveys.id AND respondent_id = $1
-                 ))                                                  AS surveys_pending
+                 ))                                                  AS surveys_pending,
+              (SELECT COUNT(DISTINCT conf.id)
+               FROM conferences conf
+               JOIN conference_classrooms cc ON cc.conference_id = conf.id
+               JOIN enrollments e ON e.classroom_id = cc.classroom_id
+               JOIN children ch ON ch.id = e.child_id
+               WHERE (ch.parent_id = $1 OR ch.secondary_parent_id = $1)
+                 AND conf.school_id = $2
+                 AND conf.conference_date >= CURRENT_DATE
+                 AND ch.status = 'active'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM conference_bookings cb
+                   WHERE cb.conference_id = conf.id
+                     AND cb.child_id = ch.id
+                     AND cb.status = 'booked'
+                 ))                                                  AS conferences_available
             "#,
             &[&user_id, &school_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;
@@ -108,6 +123,7 @@ impl NavCountsDao {
             forms_pending: row.get::<_, i64>(0),
             docs_pending:  row.get::<_, i64>(1),
             surveys_pending: row.get::<_, i64>(2),
+            conferences_available: row.get::<_, i64>(3),
         })
     }
 
@@ -142,6 +158,7 @@ impl NavCountsDao {
             forms_pending: row.get::<_, i64>(0),
             docs_pending:  row.get::<_, i64>(1),
             surveys_pending: row.get::<_, i64>(2),
+            conferences_available: 0,
         })
     }
 }

@@ -18,4 +18,5 @@ pub struct MyNavCounts {
     pub forms_pending: i64,
     pub docs_pending: i64,
     pub surveys_pending: i64,
+    pub conferences_available: i64,
 }

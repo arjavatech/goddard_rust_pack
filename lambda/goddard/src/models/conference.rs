@@ -31,8 +31,11 @@ pub struct CreateConferenceRequest {
     pub classrooms: Vec<ClassroomSlotsInput>,
 }
 
+fn uuid_nil() -> Uuid { Uuid::nil() }
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateConferenceRequest {
+    #[serde(default = "uuid_nil")]
     pub id: Uuid,
     pub title: Option<String>,
     pub description: Option<String>,

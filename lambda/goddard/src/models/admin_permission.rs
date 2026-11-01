@@ -4,6 +4,7 @@ pub const MANAGE_EXPENSES:    &str = "manage_expenses";
 pub const MANAGE_TAPTIME:     &str = "manage_taptime";
 pub const MANAGE_CONFERENCES: &str = "manage_conferences";
 pub const MANAGE_SURVEYS:     &str = "manage_surveys";
+pub const MANAGE_DRIVE:       &str = "manage_drive";
 
 pub const ALL_PERMISSIONS: &[&str] = &[
     MANAGE_PARENTS,
@@ -12,4 +13,5 @@ pub const ALL_PERMISSIONS: &[&str] = &[
     MANAGE_TAPTIME,
     MANAGE_CONFERENCES,
     MANAGE_SURVEYS,
+    MANAGE_DRIVE,
 ];

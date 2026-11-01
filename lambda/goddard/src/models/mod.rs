@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_permission;
 pub mod conference;
+pub mod drive;
 pub mod nav_counts;
 pub mod survey;
 pub mod class_form_override;

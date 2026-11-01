@@ -189,7 +189,7 @@ impl FormTemplateService {
     pub async fn pdf_access_url(&self, id: Uuid, school_id: Uuid, download: bool) -> ApiResult<FileAccessResponse> {
         let template = self.dao.get_form_template_by_id(id, school_id).await?.ok_or_else(|| AppError::NotFound("Form template not found".into()))?;
         let key = template.pdf_storage_key.ok_or_else(|| AppError::NotFound("No PDF template is attached".into()))?;
-        Ok(FileAccessResponse { url: self.upload_service.create_document_access_url(&key, download).await?, expires_in_seconds: 300 })
+        Ok(FileAccessResponse { url: self.upload_service.create_document_access_url(&key, download, None).await?, expires_in_seconds: 300 })
     }
 
     pub async fn remove_pdf(&self, id: Uuid, school_id: Uuid) -> ApiResult<()> {

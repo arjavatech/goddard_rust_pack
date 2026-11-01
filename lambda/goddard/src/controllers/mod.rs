@@ -1,5 +1,6 @@
 pub mod admin_controller;
 pub mod conference_controller;
+pub mod drive_controller;
 pub mod survey_controller;
 pub mod auth_verification_controller;
 pub mod class_form_override_controller;

@@ -914,6 +914,7 @@ impl AuthService {
                 taptime_enabled: features.taptime_enabled,
                 conference_enabled: features.conference_enabled,
                 survey_enabled: features.survey_enabled,
+                drive_enabled: features.drive_enabled,
                 created_at: school.created_at,
                 updated_at: school.updated_at,
             }),

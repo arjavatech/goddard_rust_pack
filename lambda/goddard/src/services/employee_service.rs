@@ -616,7 +616,7 @@ impl EmployeeService {
         Ok(FileAccessResponse {
             url: self
                 .upload_service
-                .create_document_access_url(&key, download)
+                .create_document_access_url(&key, download, None)
                 .await?,
             expires_in_seconds: 300,
         })
@@ -1080,7 +1080,7 @@ impl EmployeeService {
             .ok_or_else(|| AppError::NotFound("Manual PDF not found".to_string()))?;
 
         let url = self.upload_service
-            .create_document_access_url(&storage_key, false)
+            .create_document_access_url(&storage_key, false, None)
             .await?;
 
         Ok(url)

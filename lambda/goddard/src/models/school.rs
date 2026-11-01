@@ -12,6 +12,7 @@ pub struct SchoolFeatures {
     pub taptime_enabled: bool,
     pub conference_enabled: bool,
     pub survey_enabled: bool,
+    pub drive_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -22,6 +23,7 @@ pub enum SchoolFeature {
     TapTime,
     Conference,
     Survey,
+    Drive,
 }
 
 impl SchoolFeature {
@@ -33,6 +35,7 @@ impl SchoolFeature {
             Self::TapTime => features.taptime_enabled,
             Self::Conference => features.conference_enabled,
             Self::Survey => features.survey_enabled,
+            Self::Drive => features.drive_enabled,
         }
     }
 
@@ -44,6 +47,7 @@ impl SchoolFeature {
             Self::TapTime => "TapTime",
             Self::Conference => "Conference",
             Self::Survey => "Survey",
+            Self::Drive => "Drive",
         }
     }
 }
@@ -98,6 +102,7 @@ pub struct SchoolResponse {
     pub taptime_enabled: bool,
     pub conference_enabled: bool,
     pub survey_enabled: bool,
+    pub drive_enabled: bool,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
@@ -132,6 +137,7 @@ impl From<School> for SchoolResponse {
             taptime_enabled: false,
             conference_enabled: false,
             survey_enabled: false,
+            drive_enabled: false,
             created_at: school.created_at,
             updated_at: school.updated_at,
         }

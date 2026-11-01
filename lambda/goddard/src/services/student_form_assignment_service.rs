@@ -723,7 +723,7 @@ impl StudentFormAssignmentService {
 
         // Generate presigned GET URL
         let url = self.upload_service
-            .create_document_access_url(&storage_key, false)
+            .create_document_access_url(&storage_key, false, None)
             .await?;
 
         Ok(url)

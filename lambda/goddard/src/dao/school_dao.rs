@@ -65,7 +65,7 @@ impl SchoolDao {
     pub async fn get_features(&self, school_id: Uuid) -> ApiResult<SchoolFeatures> {
         let client = self.get_connection().await?;
         client.query_opt(
-            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled, conference_enabled, survey_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
+            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled, conference_enabled, survey_enabled, COALESCE(drive_enabled, false) AS drive_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
             &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to load school features: {e}")))?
             .map(|row| SchoolFeatures {
@@ -75,6 +75,7 @@ impl SchoolDao {
                 taptime_enabled: row.get("taptime_enabled"),
                 conference_enabled: row.get("conference_enabled"),
                 survey_enabled: row.get("survey_enabled"),
+                drive_enabled: row.get("drive_enabled"),
             })
             .ok_or_else(|| AppError::NotFound("School not found".into()))
     }

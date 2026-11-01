@@ -72,6 +72,12 @@ use controllers::{
         list_conferences, list_my_bookings, list_my_conferences,
         send_conference_reminders, update_booking, update_conference,
     },
+    drive_controller::{
+        copy_item as copy_drive_item, create_folder, delete_item as delete_drive_item,
+        get_download_url, get_upload_url, list_admins as list_drive_admins,
+        list_items as list_drive_items, move_item as move_drive_item,
+        register_file, rename_item,
+    },
     survey_controller::{
         close_survey, create_survey, delete_survey, get_public_survey, get_survey,
         get_survey_report, get_target_count, list_my_surveys, list_surveys, list_templates,
@@ -125,7 +131,7 @@ use controllers::{
 };
 use dao::{
     AdminDao, AdminPermissionDao, AuthDao, ClassFormOverrideDao, ClassroomDao, ConferenceDao,
-    DeviceTokenDao, DocumentRequestDao, EmployeeDao, EmployeeFormAssignmentDao,
+    DeviceTokenDao, DocumentRequestDao, DriveDao, EmployeeDao, EmployeeFormAssignmentDao,
     EmployeeFormSubmissionDao, EmployeeFormTemplateDao, EnrollmentDao, FormSubmissionDao,
     FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, PortalDao, RequestDao,
     SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
@@ -137,10 +143,11 @@ use middleware::auth::{
 use middleware::{cors::add_cors_headers, request_id::request_id_middleware};
 use services::{
     AdminService, AuthService, ClassFormOverrideService, ClassroomService, ConferenceService,
-    DocumentRequestService, EmailService, EmployeeService, EnrollmentService, FilloutService,
-    FormSubmissionService, FormTemplateService, NotificationPushTrigger, NotificationService,
-    PortalService, RequestService, SchoolService, StudentFormAssignmentService, SupabaseClient,
-    SurveyService, TapTimeMappingService, TapTimeService, UploadService,
+    DocumentRequestService, DriveService, EmailService, EmployeeService, EnrollmentService,
+    FilloutService, FormSubmissionService, FormTemplateService, NotificationPushTrigger,
+    NotificationService, PortalService, RequestService, SchoolService,
+    StudentFormAssignmentService, SupabaseClient, SurveyService, TapTimeMappingService,
+    TapTimeService, UploadService,
 };
 use std::sync::Arc;
 
@@ -317,6 +324,13 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
     let conference_service = Arc::new(ConferenceService::new(
         ConferenceDao::new(pool.clone()),
         email_service.clone(),
+        upload_service.clone(),
+        school_dao.clone(),
+        admin_permission_dao.clone(),
+    ));
+
+    let drive_service = Arc::new(DriveService::new(
+        DriveDao::new(pool.clone()),
         upload_service.clone(),
         school_dao.clone(),
         admin_permission_dao.clone(),
@@ -1285,6 +1299,48 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             post(upload_image).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
         .with_state(upload_service)
+        // Drive APIs
+        .route(
+            "/drive/upload-url",
+            post(get_upload_url).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/file",
+            post(register_file).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/folder",
+            post(create_folder).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items",
+            get(list_drive_items).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/:id/url",
+            get(get_download_url).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/:id",
+            patch(rename_item).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/:id",
+            delete(delete_drive_item).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/:id/move",
+            patch(move_drive_item).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/items/:id/copy",
+            post(copy_drive_item).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/drive/admins",
+            get(list_drive_admins).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .with_state(drive_service)
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)); // 10 MB

@@ -16,6 +16,8 @@ const ALLOWED_CONTENT_TYPES: &[&str] = &[
 pub const DOCUMENT_ALLOWED_CONTENT_TYPES: &[&str] = &["application/pdf", "image/jpeg", "image/png"];
 pub const DOCUMENT_MAX_SIZE_BYTES: i64 = 10 * 1024 * 1024;
 
+pub const DRIVE_MAX_SIZE_BYTES: i64 = 500 * 1024 * 1024; // 500 MB
+
 pub struct UploadService {
     s3_client: Option<aws_sdk_s3::Client>,
     bucket: Option<String>,
@@ -109,6 +111,30 @@ impl UploadService {
         Ok(request.uri().to_string())
     }
 
+    pub async fn create_drive_upload_url(
+        &self,
+        key: &str,
+        content_type: &str,
+        file_size_bytes: i64,
+    ) -> Result<String, AppError> {
+        if file_size_bytes <= 0 || file_size_bytes > DRIVE_MAX_SIZE_BYTES {
+            return Err(AppError::Validation("File size must be between 1 byte and 500 MB".to_string()));
+        }
+        let client = self.s3_client.as_ref().ok_or_else(|| AppError::Internal("S3 upload not configured".to_string()))?;
+        let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
+        let config = PresigningConfig::expires_in(Duration::from_secs(3600))
+            .map_err(|e| AppError::Internal(format!("Failed to create upload expiry: {}", e)))?;
+        let request = client.put_object()
+            .bucket(bucket)
+            .key(key)
+            .content_type(content_type)
+            .content_length(file_size_bytes)
+            .presigned(config)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to create drive upload URL: {}", e)))?;
+        Ok(request.uri().to_string())
+    }
+
     pub async fn verify_document_object(&self, key: &str, content_type: &str, file_size_bytes: i64) -> Result<(), AppError> {
         let client = self.s3_client.as_ref().ok_or_else(|| AppError::Internal("S3 upload not configured".to_string()))?;
         let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
@@ -120,14 +146,21 @@ impl UploadService {
         Ok(())
     }
 
-    pub async fn create_document_access_url(&self, key: &str, download: bool) -> Result<String, AppError> {
+    pub async fn create_document_access_url(&self, key: &str, download: bool, filename: Option<&str>) -> Result<String, AppError> {
         let client = self.s3_client.as_ref().ok_or_else(|| AppError::Internal("S3 upload not configured".to_string()))?;
         let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
         let config = PresigningConfig::expires_in(Duration::from_secs(300))
             .map_err(|e| AppError::Internal(format!("Failed to create file access expiry: {}", e)))?;
-        let disposition = if download { "attachment" } else { "inline" };
+        let disposition = if download {
+            match filename {
+                Some(name) => format!("attachment; filename=\"{}\"", name.replace('"', "\\\"")),
+                None => "attachment".to_string(),
+            }
+        } else {
+            "inline".to_string()
+        };
         let request = client.get_object().bucket(bucket).key(key)
-            .response_content_disposition(disposition)
+            .response_content_disposition(&disposition)
             .presigned(config).await
             .map_err(|e| AppError::Internal(format!("Failed to create document access URL: {}", e)))?;
         Ok(request.uri().to_string())
@@ -138,6 +171,20 @@ impl UploadService {
         let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
         client.delete_object().bucket(bucket).key(key).send().await
             .map_err(|e| AppError::Internal(format!("Failed to remove S3 object: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn copy_s3_object(&self, source_key: &str, dest_key: &str) -> Result<(), AppError> {
+        let client = self.s3_client.as_ref().ok_or_else(|| AppError::Internal("S3 upload not configured".to_string()))?;
+        let bucket = self.bucket.as_ref().ok_or_else(|| AppError::Internal("S3 upload bucket not configured".to_string()))?;
+        let copy_source = format!("{}/{}", bucket, source_key);
+        client.copy_object()
+            .copy_source(copy_source)
+            .bucket(bucket)
+            .key(dest_key)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to copy S3 object: {}", e)))?;
         Ok(())
     }
 

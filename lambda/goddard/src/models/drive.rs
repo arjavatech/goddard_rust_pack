@@ -10,6 +10,7 @@ pub struct DriveUploadUrlRequest {
     pub content_type: String,
     pub file_size: i64,
     pub folder_id: Option<Uuid>,
+    pub user_id: Option<Uuid>, // SuperAdmin: upload into this admin's drive
 }
 
 #[derive(Debug, Deserialize)]
@@ -19,12 +20,14 @@ pub struct DriveRegisterFileRequest {
     pub s3_key: String,
     pub mime_type: String,
     pub file_size: i64,
+    pub user_id: Option<Uuid>, // SuperAdmin: register under this admin's drive
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DriveCreateFolderRequest {
     pub folder_id: Option<Uuid>,
     pub name: String,
+    pub user_id: Option<Uuid>, // SuperAdmin: create folder in this admin's drive
 }
 
 #[derive(Debug, Deserialize)]

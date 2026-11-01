@@ -52,8 +52,9 @@ impl DriveService {
     ) -> ApiResult<DriveUploadUrlResponse> {
         self.check_access(auth).await?;
 
+        let target_user_id = self.resolve_target_user(auth, req.user_id);
         let ext = req.file_name.rsplit('.').next().unwrap_or("bin").to_lowercase();
-        let s3_key = format!("drive/{}/{}/{}.{}", auth.school_id, auth.user_id, Uuid::new_v4(), ext);
+        let s3_key = format!("drive/{}/{}/{}.{}", auth.school_id, target_user_id, Uuid::new_v4(), ext);
 
         let upload_url = self.upload.create_drive_upload_url(&s3_key, &req.content_type, req.file_size).await?;
         Ok(DriveUploadUrlResponse { upload_url, s3_key })
@@ -66,7 +67,8 @@ impl DriveService {
     ) -> ApiResult<DriveItem> {
         self.check_access(auth).await?;
 
-        let expected_prefix = format!("drive/{}/{}/", auth.school_id, auth.user_id);
+        let target_user_id = self.resolve_target_user(auth, req.user_id);
+        let expected_prefix = format!("drive/{}/{}/", auth.school_id, target_user_id);
         if !req.s3_key.starts_with(&expected_prefix) {
             return Err(AppError::Authorization("Invalid S3 key for this user".into()));
         }
@@ -74,13 +76,13 @@ impl DriveService {
         if let Some(folder_id) = req.folder_id {
             let folder = self.dao.get_item(folder_id, auth.school_id).await?
                 .ok_or_else(|| AppError::NotFound("Folder".into()))?;
-            if folder.user_id != auth.user_id {
+            if folder.user_id != target_user_id {
                 return Err(AppError::Authorization("Folder access denied".into()));
             }
         }
 
         self.dao.register_file(
-            auth.school_id, auth.user_id, req.folder_id,
+            auth.school_id, target_user_id, req.folder_id,
             &req.name, &req.s3_key, &req.mime_type, req.file_size,
         ).await
     }
@@ -96,15 +98,17 @@ impl DriveService {
             return Err(AppError::Validation("Folder name cannot be empty".into()));
         }
 
+        let target_user_id = self.resolve_target_user(auth, req.user_id);
+
         if let Some(folder_id) = req.folder_id {
             let folder = self.dao.get_item(folder_id, auth.school_id).await?
                 .ok_or_else(|| AppError::NotFound("Parent folder".into()))?;
-            if !matches!(auth.role, UserRole::SuperAdmin) && folder.user_id != auth.user_id {
+            if !matches!(auth.role, UserRole::SuperAdmin) && folder.user_id != target_user_id {
                 return Err(AppError::Authorization("Parent folder access denied".into()));
             }
         }
 
-        self.dao.create_folder(auth.school_id, auth.user_id, req.folder_id, req.name.trim()).await
+        self.dao.create_folder(auth.school_id, target_user_id, req.folder_id, req.name.trim()).await
     }
 
     pub async fn list_items(
@@ -175,13 +179,27 @@ impl DriveService {
             return Err(AppError::Authorization("Access denied".into()));
         }
 
-        if item.item_type == "file" {
-            if let Ok(Some(s3_key)) = self.dao.get_s3_key(id, auth.school_id).await {
-                let _ = self.upload.delete_document_object(&s3_key).await;
-            }
+        // Collect S3 keys while DB records still exist
+        let s3_keys: Vec<String> = if item.item_type == "file" {
+            self.dao.get_s3_key(id, auth.school_id).await.ok().flatten().into_iter().collect()
+        } else {
+            self.dao.get_all_s3_keys_under_folder(id).await.unwrap_or_default()
+        };
+
+        // Delete DB record immediately so the API returns fast
+        self.dao.delete_item(id).await?;
+
+        // S3 cleanup runs in background — doesn't block the response
+        if !s3_keys.is_empty() {
+            let upload = Arc::clone(&self.upload);
+            tokio::spawn(async move {
+                for key in s3_keys {
+                    let _ = upload.delete_document_object(&key).await;
+                }
+            });
         }
 
-        self.dao.delete_item(id).await
+        Ok(())
     }
 
     pub async fn move_item(
@@ -234,7 +252,7 @@ impl DriveService {
             .ok_or_else(|| AppError::NotFound("Source file".into()))?;
 
         let ext = source_key.rsplit('.').next().unwrap_or("bin");
-        let dest_key = format!("drive/{}/{}/{}.{}", auth.school_id, auth.user_id, Uuid::new_v4(), ext);
+        let dest_key = format!("drive/{}/{}/{}.{}", auth.school_id, item.user_id, Uuid::new_v4(), ext);
 
         self.upload.copy_s3_object(&source_key, &dest_key).await?;
 

@@ -181,4 +181,21 @@ impl DriveDao {
         ).await.map_err(|e| AppError::Database(e.to_string()))?;
         Ok(row.and_then(|r| r.get::<_, Option<String>>("s3_key")))
     }
+
+    /// Recursively collect S3 keys of all files nested under a folder (for cleanup before deletion).
+    pub async fn get_all_s3_keys_under_folder(&self, folder_id: Uuid) -> ApiResult<Vec<String>> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let rows = client.query(
+            "WITH RECURSIVE subtree AS ( \
+                SELECT id, item_type, s3_key FROM drive_items WHERE id = $1 \
+                UNION ALL \
+                SELECT di.id, di.item_type, di.s3_key FROM drive_items di \
+                JOIN subtree s ON di.folder_id = s.id \
+             ) \
+             SELECT s3_key FROM subtree WHERE item_type = 'file' AND s3_key IS NOT NULL",
+            &[&folder_id],
+        ).await.map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(rows.iter().filter_map(|r| r.get::<_, Option<String>>("s3_key")).collect())
+    }
 }

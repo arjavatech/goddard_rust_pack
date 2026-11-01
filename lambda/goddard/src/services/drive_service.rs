@@ -244,28 +244,65 @@ impl DriveService {
             return Err(AppError::Authorization("Access denied".into()));
         }
 
-        if item.item_type != "file" {
-            return Err(AppError::Validation("Can only copy files, not folders".into()));
-        }
-
-        let source_key = self.dao.get_s3_key(id, auth.school_id).await?
-            .ok_or_else(|| AppError::NotFound("Source file".into()))?;
-
-        let ext = source_key.rsplit('.').next().unwrap_or("bin");
-        let dest_key = format!("drive/{}/{}/{}.{}", auth.school_id, item.user_id, Uuid::new_v4(), ext);
-
-        self.upload.copy_s3_object(&source_key, &dest_key).await?;
-
         let copy_name = format!("Copy of {}", item.name);
-        self.dao.register_file(
-            auth.school_id,
-            item.user_id,
-            item.folder_id,
-            &copy_name,
-            &dest_key,
-            item.mime_type.as_deref().unwrap_or("application/octet-stream"),
-            item.file_size.unwrap_or(0),
-        ).await
+
+        if item.item_type == "file" {
+            let source_key = self.dao.get_s3_key(id, auth.school_id).await?
+                .ok_or_else(|| AppError::NotFound("Source file".into()))?;
+
+            let ext = source_key.rsplit('.').next().unwrap_or("bin");
+            let dest_key = format!("drive/{}/{}/{}.{}", auth.school_id, item.user_id, Uuid::new_v4(), ext);
+
+            self.upload.copy_s3_object(&source_key, &dest_key).await?;
+
+            self.dao.register_file(
+                auth.school_id,
+                item.user_id,
+                item.folder_id,
+                &copy_name,
+                &dest_key,
+                item.mime_type.as_deref().unwrap_or("application/octet-stream"),
+                item.file_size.unwrap_or(0),
+            ).await
+        } else {
+            self.copy_folder_recursive(id, item.user_id, &copy_name, item.folder_id, auth.school_id).await
+        }
+    }
+
+    fn copy_folder_recursive<'a>(
+        &'a self,
+        source_id: Uuid,
+        user_id: Uuid,
+        new_name: &'a str,
+        parent_folder_id: Option<Uuid>,
+        school_id: Uuid,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ApiResult<DriveItem>> + Send + 'a>> {
+        Box::pin(async move {
+            let new_folder = self.dao.create_folder(school_id, user_id, parent_folder_id, new_name).await?;
+            let children = self.dao.list_items(school_id, user_id, Some(source_id), "name", "asc").await.unwrap_or_default();
+
+            for child in children {
+                if child.item_type == "file" {
+                    if let Ok(Some(s3_key)) = self.dao.get_s3_key(child.id, school_id).await {
+                        let ext = s3_key.rsplit('.').next().unwrap_or("bin");
+                        let dest_key = format!("drive/{}/{}/{}.{}", school_id, user_id, Uuid::new_v4(), ext);
+                        if self.upload.copy_s3_object(&s3_key, &dest_key).await.is_ok() {
+                            let _ = self.dao.register_file(
+                                school_id, user_id, Some(new_folder.id), &child.name, &dest_key,
+                                child.mime_type.as_deref().unwrap_or("application/octet-stream"),
+                                child.file_size.unwrap_or(0),
+                            ).await;
+                        }
+                    }
+                } else {
+                    let _ = self.copy_folder_recursive(
+                        child.id, user_id, &child.name, Some(new_folder.id), school_id,
+                    ).await;
+                }
+            }
+
+            Ok(new_folder)
+        })
     }
 
     pub async fn list_admins(&self, auth: &AuthContext) -> ApiResult<Vec<DriveAdminSummary>> {

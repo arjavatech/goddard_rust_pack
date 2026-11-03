@@ -54,6 +54,7 @@ impl NavCountsDao {
                  AND audience IN ('all_staff', 'everyone')
                  AND is_anonymous = false
                  AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (SELECT created_at FROM users WHERE id = $2) <= published_at
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
                    WHERE survey_id = surveys.id AND respondent_id = $2
@@ -96,6 +97,7 @@ impl NavCountsDao {
                  AND audience IN ('parents', 'everyone')
                  AND is_anonymous = false
                  AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (SELECT created_at FROM users WHERE id = $1) <= published_at
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
                    WHERE survey_id = surveys.id AND respondent_id = $1
@@ -146,6 +148,7 @@ impl NavCountsDao {
                  AND audience IN ('employees', 'all_staff', 'everyone')
                  AND is_anonymous = false
                  AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (SELECT created_at FROM users WHERE id = $1) <= published_at
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
                    WHERE survey_id = surveys.id AND respondent_id = $1

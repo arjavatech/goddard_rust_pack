@@ -116,7 +116,7 @@ impl EmployeeFormAssignmentDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let row = client.query_one(
+        let opt = client.query_opt(
             "INSERT INTO employee_form_assignments
              (id, school_id, employee_id, user_id, employee_form_template_id,
               assignment_source, status, is_required, assigned_by, assigned_at, is_active, created_at, updated_at)
@@ -128,6 +128,23 @@ impl EmployeeFormAssignmentDao {
                        is_active, created_at, updated_at",
             &[&school_id, &admin_user_id, &template_id, &is_required, &assigned_by],
         ).await.map_err(|e| AppError::Database(format!("Failed to create admin form assignment: {}", e)))?;
+
+        if let Some(row) = opt {
+            return Ok(Self::row_to_assignment(&row));
+        }
+
+        // Conflict: admin already has this form assigned — fetch and return existing
+        let row = client.query_one(
+            "SELECT id, school_id, employee_id, user_id, employee_form_template_id,
+                    assignment_source, status, is_required, assigned_by, assigned_at,
+                    approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
+                    is_active, created_at, updated_at
+             FROM employee_form_assignments
+             WHERE user_id = $1 AND employee_id IS NULL AND employee_form_template_id = $2
+               AND school_id = $3 AND (is_active = true OR is_active IS NULL)
+             LIMIT 1",
+            &[&admin_user_id, &template_id, &school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to fetch existing admin form assignment: {}", e)))?;
 
         Ok(Self::row_to_assignment(&row))
     }

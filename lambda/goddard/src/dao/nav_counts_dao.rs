@@ -53,7 +53,7 @@ impl NavCountsDao {
                WHERE school_id = $1 AND status = 'published' AND is_template = false
                  AND audience IN ('all_staff', 'everyone')
                  AND is_anonymous = false
-                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (expires_at IS NULL OR expires_at > school_local_now($1))
                  AND (SELECT created_at FROM users WHERE id = $2) <= published_at
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
@@ -96,7 +96,7 @@ impl NavCountsDao {
                WHERE school_id = $2 AND status = 'published' AND is_template = false
                  AND audience IN ('parents', 'everyone')
                  AND is_anonymous = false
-                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (expires_at IS NULL OR expires_at > school_local_now($2))
                  AND (SELECT created_at FROM users WHERE id = $1) <= published_at
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
@@ -147,7 +147,7 @@ impl NavCountsDao {
                WHERE school_id = $2 AND status = 'published' AND is_template = false
                  AND audience IN ('employees', 'all_staff', 'everyone')
                  AND is_anonymous = false
-                 AND (expires_at IS NULL OR expires_at > NOW())
+                 AND (expires_at IS NULL OR expires_at > school_local_now($2))
                  AND (SELECT created_at FROM users WHERE id = $1) <= published_at
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses

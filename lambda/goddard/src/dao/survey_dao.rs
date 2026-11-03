@@ -63,7 +63,7 @@ impl SurveyDao {
             CASE
                 WHEN s.status = 'published'
                      AND s.expires_at IS NOT NULL
-                     AND s.expires_at < NOW()
+                     AND s.expires_at < school_local_now(s.school_id)
                 THEN 'expired'
                 ELSE s.status
             END AS status,

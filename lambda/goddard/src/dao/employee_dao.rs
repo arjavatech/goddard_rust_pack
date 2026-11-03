@@ -1,6 +1,6 @@
 use deadpool_postgres::Pool;
 use uuid::Uuid;
-use crate::models::employee::{Employee, EmployeeWithUser, UpdateEmployeeRequest};
+use crate::models::employee::{Employee, EmployeeWithUser, SchoolMember, UpdateEmployeeRequest};
 use crate::error::error_types::AppError;
 
 #[derive(Clone)]
@@ -179,6 +179,31 @@ impl EmployeeDao {
 
         if n == 0 { return Err(AppError::NotFound("Employee not found".to_string())); }
         Ok(())
+    }
+
+    pub async fn get_school_members(&self, school_id: Uuid) -> Result<Vec<SchoolMember>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let rows = client.query(
+            "SELECT e.id, u.first_name, u.last_name, u.email, 'employee'::text AS member_type
+             FROM employees e JOIN users u ON u.id = e.user_id
+             WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)
+             UNION ALL
+             SELECT u.id, u.first_name, u.last_name, u.email, 'admin'::text AS member_type
+             FROM users u
+             WHERE u.school_id = $1 AND u.role = 'Admin' AND (u.is_active = true OR u.is_active IS NULL)
+             ORDER BY first_name, last_name",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to get school members: {}", e)))?;
+
+        Ok(rows.iter().map(|row| SchoolMember {
+            id: row.get("id"),
+            first_name: row.get("first_name"),
+            last_name: row.get("last_name"),
+            email: row.get("email"),
+            member_type: row.get("member_type"),
+        }).collect())
     }
 
     fn row_to_employee(&self, row: &tokio_postgres::Row) -> Employee {

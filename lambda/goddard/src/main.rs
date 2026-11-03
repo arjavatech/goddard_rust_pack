@@ -43,19 +43,20 @@ use controllers::{
     email_controller::send_bulk_form_reminders,
     help_center_controller::submit_help_message,
     employee_controller::{
-        activate_employee, assign_employee_form, assign_employee_form_to_school,
+        activate_employee, assign_admin_form, assign_employee_form, assign_employee_form_to_school,
         bulk_create_employees, complete_employee_template_pdf_upload,
         create_employee_form_template, deactivate_employee, delete_employee_form_assignment,
         delete_employee_form_template, employee_form_submission_webhook,
         employee_template_pdf_upload_intent, employee_template_pdf_url, get_current_employee,
         get_employee_by_id, get_employee_form_assignments, get_employee_form_review_queue,
-        get_employee_form_templates, get_employee_forms, get_employees, invite_employee,
-        remove_employee_template_pdf, resend_employee_invite, review_employee_form_assignment,
-        revoke_employee_form_assignment, update_employee_form_metadata,
-        send_bulk_employee_form_reminders, update_employee, update_employee_form_template,
-        employee_manual_pdf_upload_intent, employee_manual_pdf_complete_upload,
-        get_employee_manual_pdf_url, delete_employee_manual_pdf, upload_employee_manual_pdf,
-        list_employee_form_assignments_by_template,
+        get_employee_form_templates, get_employee_forms, get_employees, get_my_form_assignments,
+        invite_employee, remove_employee_template_pdf, resend_employee_invite,
+        review_employee_form_assignment, revoke_employee_form_assignment,
+        update_employee_form_metadata, send_bulk_employee_form_reminders, update_employee,
+        update_employee_form_template, employee_manual_pdf_upload_intent,
+        employee_manual_pdf_complete_upload, get_employee_manual_pdf_url,
+        delete_employee_manual_pdf, upload_employee_manual_pdf,
+        list_employee_form_assignments_by_template, get_school_members,
     },
     enrollment_controller::{
         activate_invite, activate_parent, add_child, bulk_add_secondary_parents,
@@ -1058,6 +1059,21 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             "/employee-form-templates/:id/pdf",
             delete(remove_employee_template_pdf)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        // School members — unified employees + admins list for form assignment UI
+        .route(
+            "/school-members",
+            get(get_school_members).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        // Admin Form Assignments (SuperAdmin assigns forms to admin users)
+        .route(
+            "/admin-form-assignments",
+            post(assign_admin_form).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        // My Form Assignments (any authenticated user — admin or employee — sees their own)
+        .route(
+            "/my-form-assignments",
+            get(get_my_form_assignments).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
         // Employee Form Assignments (Admin manages; Employee reads)
         .route(

@@ -14,7 +14,7 @@ use crate::{
         CompleteUploadRequest, FileAccessResponse, UploadIntentRequest, UploadIntentResponse,
     },
     models::employee::{
-        AssignEmployeeFormRequest, AssignEmployeeFormToSchoolRequest,
+        AssignAdminFormRequest, AssignEmployeeFormRequest, AssignEmployeeFormToSchoolRequest,
         AssignEmployeeFormToSchoolResponse, BulkCreateEmployeesRequest,
         BulkCreateEmployeesResponse, BulkCreatedEmployee, BulkEmployeeFormReminderRequest,
         BulkEmployeeReminderResponse, CreateEmployeeFormTemplateRequest, Employee,
@@ -24,7 +24,7 @@ use crate::{
         EmployeeManualPdfCompleteUploadRequest, ResendEmployeeInviteResponse, ReviewEmployeeFormRequest,
         RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest,
         UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
-        ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem,
+        ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem, SchoolMember,
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
     models::school::SchoolFeature,
@@ -846,10 +846,11 @@ impl EmployeeService {
         // Send approval/rejection email (non-fatal)
         let notes = req.notes.unwrap_or_default();
         let status = req.status.clone();
-        let employee = self
-            .employee_dao
-            .get_employee_by_id(assignment.employee_id, req.school_id)
-            .await;
+        let employee = if let Some(emp_id) = assignment.employee_id {
+            self.employee_dao.get_employee_by_id(emp_id, req.school_id).await
+        } else {
+            Ok(None)
+        };
         let template = self
             .employee_form_template_dao
             .get_template_by_id(assignment.employee_form_template_id, req.school_id)
@@ -1150,5 +1151,56 @@ impl EmployeeService {
 
     pub async fn list_form_assignments_by_template(&self, q: &ListEmployeeFormsByTemplateQuery) -> ApiResult<Vec<EmployeeFormAssignmentDetailItem>> {
         self.employee_form_assignment_dao.list_by_template(q).await
+    }
+
+    pub async fn assign_admin_form(
+        &self,
+        req: AssignAdminFormRequest,
+        assigned_by: Uuid,
+    ) -> ApiResult<EmployeeFormAssignment> {
+        // Verify the template exists
+        let _template = self
+            .employee_form_template_dao
+            .get_template_by_id(req.employee_form_template_id, req.school_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Employee form template not found".to_string()))?;
+
+        let is_required = req.is_required.unwrap_or(false);
+
+        let assignment = self
+            .employee_form_assignment_dao
+            .create_admin_assignment(
+                req.admin_user_id,
+                req.school_id,
+                req.employee_form_template_id,
+                assigned_by,
+                is_required,
+            )
+            .await?;
+
+        Ok(assignment)
+    }
+
+    pub async fn get_my_form_assignments(
+        &self,
+        user_id: Uuid,
+    ) -> ApiResult<Vec<EmployeeFormAssignmentWithTemplate>> {
+        let mut assignments = self
+            .employee_form_assignment_dao
+            .get_assignments_by_user_id(user_id)
+            .await?;
+        let s3_base_url = std::env::var("S3_BASE_URL").unwrap_or_default();
+        for a in &mut assignments {
+            if a.submission_source.as_deref() == Some("manual_upload") {
+                if let Some(key) = &a.manual_pdf_storage_key {
+                    a.recent_pdf_link = Some(format!("{}/{}", s3_base_url.trim_end_matches('/'), key));
+                }
+            }
+        }
+        Ok(assignments)
+    }
+
+    pub async fn get_school_members(&self, school_id: Uuid) -> ApiResult<Vec<SchoolMember>> {
+        self.employee_dao.get_school_members(school_id).await
     }
 }

@@ -64,6 +64,7 @@ pub struct DocumentRecipient {
     pub classroom_name: Option<String>,
     #[serde(default)]
     pub is_assigned: bool,
+    pub recipient_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +81,7 @@ pub struct AssignRecipientsRequest {
     pub target: String,
     pub child_ids: Option<Vec<Uuid>>,
     pub employee_ids: Option<Vec<Uuid>>,
+    pub admin_user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +175,7 @@ pub struct DocumentAssignmentItem {
     pub approved_form_name: Option<String>,
     pub child_id: Option<Uuid>,
     pub employee_id: Option<Uuid>,
+    pub admin_user_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
 }
 

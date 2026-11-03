@@ -65,7 +65,7 @@ pub struct EmployeeFormTemplate {
 pub struct EmployeeFormAssignment {
     pub id: Uuid,
     pub school_id: Uuid,
-    pub employee_id: Uuid,
+    pub employee_id: Option<Uuid>, // None for admin assignments
     pub user_id: Uuid,
     pub employee_form_template_id: Uuid,
     pub assignment_source: Option<String>,
@@ -95,7 +95,7 @@ pub struct EmployeeFormAssignment {
 pub struct EmployeeFormAssignmentWithTemplate {
     pub id: Uuid,
     pub school_id: Uuid,
-    pub employee_id: Uuid,
+    pub employee_id: Option<Uuid>, // None for admin assignments
     pub user_id: Uuid,
     pub employee_form_template_id: Uuid,
     pub form_name: String,
@@ -250,6 +250,19 @@ pub struct AssignEmployeeFormRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AssignAdminFormRequest {
+    pub admin_user_id: Uuid,
+    pub employee_form_template_id: Uuid,
+    pub school_id: Uuid,
+    pub is_required: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MyFormAssignmentsQuery {
+    pub school_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AssignEmployeeFormToSchoolRequest {
     pub school_id: Uuid,
     pub employee_form_template_id: Uuid,
@@ -361,11 +374,26 @@ pub struct ListEmployeeFormsByTemplateQuery {
 #[derive(Debug, Serialize)]
 pub struct EmployeeFormAssignmentDetailItem {
     pub id: Uuid,
-    pub employee_id: Uuid,
+    pub employee_id: Option<Uuid>, // None for admin assignments
     pub employee_form_template_id: Uuid,
     pub form_name: String,
     pub status: Option<String>,
     pub employee_name: String,
     pub employee_email: Option<String>,
     pub assigned_at: Option<NaiveDateTime>,
+    pub assignee_type: String, // "employee" or "admin"
+}
+
+#[derive(Debug, Serialize)]
+pub struct SchoolMember {
+    pub id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: Option<String>,
+    pub member_type: String, // "employee" or "admin"
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SchoolMembersQuery {
+    pub school_id: Uuid,
 }

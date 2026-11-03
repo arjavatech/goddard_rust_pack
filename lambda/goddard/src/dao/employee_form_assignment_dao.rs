@@ -18,7 +18,7 @@ impl EmployeeFormAssignmentDao {
         EmployeeFormAssignment {
             id: row.get("id"),
             school_id: row.get("school_id"),
-            employee_id: row.get("employee_id"),
+            employee_id: row.try_get("employee_id").ok().flatten(),
             user_id: row.get("user_id"),
             employee_form_template_id: row.get("employee_form_template_id"),
             assignment_source: row.get("assignment_source"),
@@ -49,7 +49,7 @@ impl EmployeeFormAssignmentDao {
         EmployeeFormAssignmentWithTemplate {
             id: row.get("id"),
             school_id: row.get("school_id"),
-            employee_id: row.get("employee_id"),
+            employee_id: row.try_get("employee_id").ok().flatten(),
             user_id: row.get("user_id"),
             employee_form_template_id: row.get("employee_form_template_id"),
             form_name: row.get("form_name"),
@@ -103,6 +103,58 @@ impl EmployeeFormAssignmentDao {
         ).await.map_err(|e| AppError::Database(format!("Failed to create employee form assignment: {}", e)))?;
 
         Ok(Self::row_to_assignment(&row))
+    }
+
+    pub async fn create_admin_assignment(
+        &self,
+        admin_user_id: Uuid,
+        school_id: Uuid,
+        template_id: Uuid,
+        assigned_by: Uuid,
+        is_required: bool,
+    ) -> Result<EmployeeFormAssignment, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            "INSERT INTO employee_form_assignments
+             (id, school_id, employee_id, user_id, employee_form_template_id,
+              assignment_source, status, is_required, assigned_by, assigned_at, is_active, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, NULL, $2, $3, 'manual', 'incomplete', $4, $5, NOW(), true, NOW(), NOW())
+             ON CONFLICT DO NOTHING
+             RETURNING id, school_id, employee_id, user_id, employee_form_template_id,
+                       assignment_source, status, is_required, assigned_by, assigned_at,
+                       approved_by, approved_on, notes, recent_edit_link, recent_pdf_link,
+                       is_active, created_at, updated_at",
+            &[&school_id, &admin_user_id, &template_id, &is_required, &assigned_by],
+        ).await.map_err(|e| AppError::Database(format!("Failed to create admin form assignment: {}", e)))?;
+
+        Ok(Self::row_to_assignment(&row))
+    }
+
+    /// Fetch all active form assignments for a given user (works for both employees and admins).
+    pub async fn get_assignments_by_user_id(&self, user_id: Uuid) -> Result<Vec<EmployeeFormAssignmentWithTemplate>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let rows = client.query(
+            "SELECT a.id, a.school_id, a.employee_id, a.user_id, a.employee_form_template_id,
+                    t.form_name, t.fillout_form_id, t.due_date,
+                    a.assignment_source, a.status, a.is_required, a.assigned_by, a.assigned_at,
+                    a.approved_by, a.approved_on, a.notes, a.recent_edit_link, a.recent_pdf_link,
+                    u.first_name as employee_first_name, u.last_name as employee_last_name,
+                    a.submission_source, a.manual_pdf_storage_key, a.manual_pdf_file_name,
+                    a.manual_pdf_content_type, a.manual_pdf_file_size_bytes, a.manual_pdf_uploaded_at, a.manual_pdf_uploaded_by,
+                    a.approved_form_name
+             FROM employee_form_assignments a
+             JOIN employee_form_templates t ON a.employee_form_template_id = t.id
+             JOIN users u ON a.user_id = u.id
+             WHERE a.user_id = $1 AND (a.is_active = true OR a.is_active IS NULL)
+             ORDER BY a.assigned_at DESC",
+            &[&user_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to fetch assignments by user: {}", e)))?;
+
+        Ok(rows.iter().map(Self::row_to_assignment_with_template).collect())
     }
 
     pub async fn assign_template_to_school_employees(
@@ -491,10 +543,12 @@ impl EmployeeFormAssignmentDao {
                    eft.form_name, efa.status::text,
                    u.first_name || ' ' || u.last_name AS employee_name,
                    u.email AS employee_email,
-                   efa.assigned_at
+                   efa.assigned_at,
+                   u.role AS user_role
             FROM employee_form_assignments efa
-            JOIN employees e ON e.id = efa.employee_id
-            JOIN users u ON u.id = e.user_id
+            -- For employee assignments join via employees table; for admin assignments (employee_id IS NULL) join via user_id directly
+            LEFT JOIN employees e ON e.id = efa.employee_id
+            JOIN users u ON u.id = efa.user_id
             JOIN employee_form_templates eft ON eft.id = efa.employee_form_template_id
             WHERE efa.school_id = $1
               AND ($2::uuid IS NULL OR efa.employee_form_template_id = $2)
@@ -505,15 +559,19 @@ impl EmployeeFormAssignmentDao {
             "#,
             &[&q.school_id, &q.form_template_id, &q.status, &q.search],
         ).await.map_err(|e| AppError::Database(e.to_string()))?;
-        Ok(rows.iter().map(|row| EmployeeFormAssignmentDetailItem {
-            id: row.get("id"),
-            employee_id: row.get("employee_id"),
-            employee_form_template_id: row.get("employee_form_template_id"),
-            form_name: row.get("form_name"),
-            status: row.get("status"),
-            employee_name: row.get("employee_name"),
-            employee_email: row.get("employee_email"),
-            assigned_at: row.get("assigned_at"),
+        Ok(rows.iter().map(|row| {
+            let user_role: String = row.get("user_role");
+            EmployeeFormAssignmentDetailItem {
+                id: row.get("id"),
+                employee_id: row.try_get("employee_id").ok().flatten(),
+                employee_form_template_id: row.get("employee_form_template_id"),
+                form_name: row.get("form_name"),
+                status: row.get("status"),
+                employee_name: row.get("employee_name"),
+                employee_email: row.get("employee_email"),
+                assigned_at: row.get("assigned_at"),
+                assignee_type: if user_role == "Admin" || user_role == "SuperAdmin" { "admin".to_string() } else { "employee".to_string() },
+            }
         }).collect())
     }
 }

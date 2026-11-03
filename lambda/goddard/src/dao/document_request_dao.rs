@@ -19,6 +19,13 @@ impl DocumentRequestDao {
         let mut client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
         let transaction = client.transaction().await.map_err(|e| AppError::Database(e.to_string()))?;
         let local_now: chrono::NaiveDateTime = transaction.query_one("SELECT school_local_now($1)", &[&request.school_id]).await.map_err(|e| AppError::Database(e.to_string()))?.get(0);
+        let exists: bool = transaction.query_one(
+            "SELECT EXISTS(SELECT 1 FROM document_requests WHERE school_id=$1 AND audience=$2 AND document_name=$3)",
+            &[&request.school_id, &request.audience, &request.document_name]
+        ).await.map_err(|e| AppError::Database(e.to_string()))?.get(0);
+        if exists {
+            return Err(AppError::Conflict("A document request with this name already exists for this audience".to_string()));
+        }
         let row = transaction.query_one(
             "INSERT INTO document_requests (school_id, audience, target_scope, document_name, instructions, due_date, status, created_by, created_at, updated_at)
              VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$8) RETURNING id",
@@ -47,7 +54,8 @@ impl DocumentRequestDao {
         } else if target_scope == "all" {
             transaction.execute(
                 "INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at)
-                 SELECT $1, school_id, id, $2, $2, $2 FROM employees WHERE school_id=$3 AND is_active=true
+                 SELECT $1, e.school_id, e.id, $2, $2, $2 FROM employees e WHERE e.school_id=$3 AND e.is_active=true
+                 AND NOT EXISTS (SELECT 1 FROM document_request_assignments dra WHERE dra.document_request_id=$1 AND dra.admin_user_id=e.user_id)
                  ON CONFLICT (document_request_id, employee_id) DO NOTHING",
                 &[&request_id, &local_now, &school_id]
             ).await.map_err(|e| AppError::Database(e.to_string()))?;
@@ -68,8 +76,11 @@ impl DocumentRequestDao {
         for id in ids {
             if audience == "student" {
                 client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, enrollment_id, child_id, assigned_at, created_at, updated_at) SELECT $1,$2,e.id,c.id,$3,$3,$3 FROM children c JOIN enrollments e ON e.child_id=c.id WHERE c.id=$4 AND c.school_id=$2 ON CONFLICT (document_request_id, child_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+            } else if audience == "admin" {
+                client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, admin_user_id, assigned_at, created_at, updated_at) VALUES ($1,$2,$4,$3,$3,$3) ON CONFLICT DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
             } else {
-                client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1,$2,id,$3,$3,$3 FROM employees WHERE id=$4 AND school_id=$2 ON CONFLICT (document_request_id, employee_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+                client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1,$2,e.id,$3,$3,$3 FROM employees e WHERE e.id=$4 AND e.school_id=$2 AND NOT EXISTS (SELECT 1 FROM document_request_assignments dra WHERE dra.document_request_id=$1 AND dra.admin_user_id=e.user_id) ON CONFLICT (document_request_id, employee_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+                client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, admin_user_id, assigned_at, created_at, updated_at) SELECT $1,$2,u.id,$3,$3,$3 FROM users u WHERE u.id=$4 AND u.school_id=$2 AND u.role='Admin' AND NOT EXISTS (SELECT 1 FROM document_request_assignments dra JOIN employees e ON e.id=dra.employee_id WHERE dra.document_request_id=$1 AND e.user_id=u.id) ON CONFLICT DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
             }
         }
         Ok(())
@@ -96,7 +107,8 @@ impl DocumentRequestDao {
         let rows=if audience=="student" {
             client.query(
                 "SELECT c.id, c.first_name || ' ' || c.last_name, p.email, cl.name,
-                        EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND child_id=c.id) AS is_assigned
+                        EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND child_id=c.id) AS is_assigned,
+                        'student'::text AS recipient_type
                  FROM enrollments e
                  JOIN children c ON c.id=e.child_id
                  JOIN users p ON p.id=c.parent_id
@@ -108,17 +120,36 @@ impl DocumentRequestDao {
                  ORDER BY c.first_name,c.last_name",
                 &[&school_id, &rid],
             ).await
-        } else {
+        } else if audience == "admin" {
             client.query(
-                "SELECT e.id, u.first_name || ' ' || u.last_name, u.email, NULL::text,
-                        EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND employee_id=e.id) AS is_assigned
-                 FROM employees e JOIN users u ON u.id=e.user_id
-                 WHERE e.school_id=$1 AND COALESCE(e.is_active,true)=true
+                "SELECT u.id, u.first_name || ' ' || u.last_name, u.email, NULL::text,
+                        EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND admin_user_id=u.id) AS is_assigned,
+                        'admin'::text AS recipient_type
+                 FROM users u
+                 WHERE u.school_id=$1 AND u.role='Admin' AND COALESCE(u.is_active,true)=true
                  ORDER BY u.first_name,u.last_name",
                 &[&school_id, &rid],
             ).await
+        } else {
+            client.query(
+                "SELECT e.id, u.first_name || ' ' || u.last_name, u.email, NULL::text,
+                        (EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND employee_id=e.id)
+                         OR EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND admin_user_id=e.user_id)) AS is_assigned,
+                        'employee'::text AS recipient_type
+                 FROM employees e JOIN users u ON u.id=e.user_id
+                 WHERE e.school_id=$1 AND COALESCE(e.is_active,true)=true
+                 UNION ALL
+                 SELECT u.id, u.first_name || ' ' || u.last_name, u.email, NULL::text,
+                        (EXISTS(SELECT 1 FROM document_request_assignments WHERE document_request_id=$2 AND admin_user_id=u.id)
+                         OR EXISTS(SELECT 1 FROM document_request_assignments dra JOIN employees e2 ON e2.id=dra.employee_id WHERE dra.document_request_id=$2 AND e2.user_id=u.id)) AS is_assigned,
+                        'admin'::text AS recipient_type
+                 FROM users u
+                 WHERE u.school_id=$1 AND u.role='Admin' AND COALESCE(u.is_active,true)=true
+                 ORDER BY 2",
+                &[&school_id, &rid],
+            ).await
         }.map_err(|e|AppError::Database(e.to_string()))?;
-        Ok(rows.into_iter().map(|row|DocumentRecipient{id:row.get(0),name:row.get(1),email:row.get(2),classroom_name:row.get(3),is_assigned:row.get(4)}).collect())
+        Ok(rows.into_iter().map(|row|DocumentRecipient{id:row.get(0),name:row.get(1),email:row.get(2),classroom_name:row.get(3),is_assigned:row.get(4),recipient_type:row.get(5)}).collect())
     }
 
     pub async fn update_request(&self, id: Uuid, body: &UpdateDocumentRequestBody) -> ApiResult<DocumentRequestSummary> {
@@ -143,22 +174,36 @@ impl DocumentRequestDao {
                     "INSERT INTO document_request_assignments (document_request_id, school_id, enrollment_id, child_id, assigned_at, created_at, updated_at) SELECT $1, e.school_id, e.id, c.id, $2, $2, $2 FROM enrollments e JOIN children c ON c.id=e.child_id WHERE e.school_id=$3 AND COALESCE(e.is_active,true)=true ON CONFLICT (document_request_id, child_id) DO NOTHING",
                     &[&request_id, &now, &school_id]
                 ).await.map_err(|e| AppError::Database(e.to_string()))?
+            } else if audience == "admin" {
+                client.execute(
+                    "INSERT INTO document_request_assignments (document_request_id, school_id, admin_user_id, assigned_at, created_at, updated_at) SELECT $1,$3,id,$2,$2,$2 FROM users WHERE school_id=$3 AND role='Admin' AND COALESCE(is_active,true)=true ON CONFLICT DO NOTHING",
+                    &[&request_id, &now, &school_id]
+                ).await.map_err(|e| AppError::Database(e.to_string()))?
             } else {
                 client.execute(
-                    "INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1, school_id, id, $2, $2, $2 FROM employees WHERE school_id=$3 AND COALESCE(is_active,true)=true ON CONFLICT (document_request_id, employee_id) DO NOTHING",
+                    "INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1, e.school_id, e.id, $2, $2, $2 FROM employees e WHERE e.school_id=$3 AND COALESCE(e.is_active,true)=true AND NOT EXISTS (SELECT 1 FROM document_request_assignments dra WHERE dra.document_request_id=$1 AND dra.admin_user_id=e.user_id) ON CONFLICT (document_request_id, employee_id) DO NOTHING",
                     &[&request_id, &now, &school_id]
                 ).await.map_err(|e| AppError::Database(e.to_string()))?
             }
         } else {
-            let ids = if audience == "student" { body.child_ids.as_deref().unwrap_or(&[]) } else { body.employee_ids.as_deref().unwrap_or(&[]) };
+            let ids = if audience == "student" {
+                body.child_ids.as_deref().unwrap_or(&[])
+            } else if audience == "admin" {
+                body.admin_user_ids.as_deref().unwrap_or(&[])
+            } else {
+                body.employee_ids.as_deref().unwrap_or(&[])
+            };
             if ids.is_empty() { return Err(AppError::Validation("Select at least one recipient".into())); }
             let mut count = 0u64;
             for id in ids {
-                count += if audience == "student" {
-                    client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, enrollment_id, child_id, assigned_at, created_at, updated_at) SELECT $1,$2,e.id,c.id,$3,$3,$3 FROM children c JOIN enrollments e ON e.child_id=c.id WHERE c.id=$4 AND c.school_id=$2 ON CONFLICT (document_request_id, child_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?
+                if audience == "student" {
+                    count += client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, enrollment_id, child_id, assigned_at, created_at, updated_at) SELECT $1,$2,e.id,c.id,$3,$3,$3 FROM children c JOIN enrollments e ON e.child_id=c.id WHERE c.id=$4 AND c.school_id=$2 ON CONFLICT (document_request_id, child_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+                } else if audience == "admin" {
+                    count += client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, admin_user_id, assigned_at, created_at, updated_at) VALUES ($1,$2,$4,$3,$3,$3) ON CONFLICT DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
                 } else {
-                    client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1,$2,id,$3,$3,$3 FROM employees WHERE id=$4 AND school_id=$2 ON CONFLICT (document_request_id, employee_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?
-                };
+                    count += client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, employee_id, assigned_at, created_at, updated_at) SELECT $1,$2,e.id,$3,$3,$3 FROM employees e WHERE e.id=$4 AND e.school_id=$2 AND NOT EXISTS (SELECT 1 FROM document_request_assignments dra WHERE dra.document_request_id=$1 AND dra.admin_user_id=e.user_id) ON CONFLICT (document_request_id, employee_id) DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+                    count += client.execute("INSERT INTO document_request_assignments (document_request_id, school_id, admin_user_id, assigned_at, created_at, updated_at) SELECT $1,$2,u.id,$3,$3,$3 FROM users u WHERE u.id=$4 AND u.school_id=$2 AND u.role='Admin' AND NOT EXISTS (SELECT 1 FROM document_request_assignments dra JOIN employees e ON e.id=dra.employee_id WHERE dra.document_request_id=$1 AND e.user_id=u.id) ON CONFLICT DO NOTHING", &[&request_id,&school_id,&now,id]).await.map_err(|e| AppError::Database(e.to_string()))?;
+                }
             }
             count
         };
@@ -187,20 +232,21 @@ impl DocumentRequestDao {
         let recipient = recipient_user_id.map(|id| id.to_string());
         let sql = format!("SELECT a.id,a.document_request_id,a.school_id,r.audience,r.document_name,r.instructions,r.due_date,r.status,a.status,
               CASE WHEN a.status IN ('pending','rejected') AND r.due_date IS NOT NULL AND r.due_date < school_local_now(a.school_id)::date THEN 'overdue' ELSE a.status END,
-              COALESCE(c.first_name || ' ' || c.last_name, u.first_name || ' ' || u.last_name),
-              p.first_name || ' ' || p.last_name,p.email,cl.name,u.email,a.submitted_at,a.reviewed_at,a.rejection_reason,a.latest_submission_id,s.original_file_name,s.content_type,s.file_size_bytes,
+              COALESCE(c.first_name || ' ' || c.last_name, u.first_name || ' ' || u.last_name, au.first_name || ' ' || au.last_name),
+              p.first_name || ' ' || p.last_name,p.email,cl.name,COALESCE(u.email, au.email),a.submitted_at,a.reviewed_at,a.rejection_reason,a.latest_submission_id,s.original_file_name,s.content_type,s.file_size_bytes,
               (SELECT COUNT(*) FROM document_submissions ds WHERE ds.assignment_id=a.id),
-              a.form_academic_year,a.approved_form_name,a.child_id,a.employee_id,c.parent_id
+              a.form_academic_year,a.approved_form_name,a.child_id,a.employee_id,a.admin_user_id,c.parent_id
               FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id
               LEFT JOIN children c ON c.id=a.child_id LEFT JOIN enrollments e ON e.id=a.enrollment_id LEFT JOIN users p ON p.id=c.parent_id LEFT JOIN classrooms cl ON cl.id=e.classroom_id
-              LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id LEFT JOIN document_submissions s ON s.id=a.latest_submission_id
+              LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id
+              LEFT JOIN users au ON au.id=a.admin_user_id
+              LEFT JOIN document_submissions s ON s.id=a.latest_submission_id
               WHERE a.school_id=$1 AND ($2::text IS NULL OR r.audience=$2) AND ($3::uuid IS NULL OR a.document_request_id=$3) AND ($4::text IS NULL OR a.status=$4) AND ($5::uuid IS NULL OR a.id=$5)
-                AND ($6::text IS NULL OR COALESCE(c.first_name || ' ' || c.last_name,u.first_name || ' ' || u.last_name,'') ILIKE '%' || $6 || '%')
-                AND ($7::text IS NULL OR (p.id::text=$7 OR c.secondary_parent_id::text=$7 OR u.id::text=$7)){extra}
+                AND ($6::text IS NULL OR COALESCE(c.first_name || ' ' || c.last_name,u.first_name || ' ' || u.last_name,au.first_name || ' ' || au.last_name,'') ILIKE '%' || $6 || '%')
+                AND ($7::text IS NULL OR (p.id::text=$7 OR c.secondary_parent_id::text=$7 OR u.id::text=$7 OR au.id::text=$7)){extra}
               ORDER BY COALESCE(a.submitted_at,a.assigned_at) DESC LIMIT $8 OFFSET $9");
         let rows = client.query(&sql, &[&query.school_id,&query.audience,&query.request_id,&query.status,&query.assignment_id,&query.search,&recipient,&limit,&offset]).await.map_err(|e| AppError::Database(e.to_string()))?;
-        let count_sql = format!("SELECT COUNT(*) FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id LEFT JOIN children c ON c.id=a.child_id LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id LEFT JOIN users p ON p.id=c.parent_id WHERE a.school_id=$1 AND ($2::text IS NULL OR r.audience=$2) AND ($3::uuid IS NULL OR a.document_request_id=$3) AND ($4::text IS NULL OR a.status=$4) AND ($5::text IS NULL OR COALESCE(c.first_name || ' ' || c.last_name,u.first_name || ' ' || u.last_name,'') ILIKE '%' || $5 || '%') AND ($6::text IS NULL OR (p.id::text=$6 OR c.secondary_parent_id::text=$6 OR u.id::text=$6)){extra}");
-        let count_sql = format!("SELECT COUNT(*) FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id LEFT JOIN children c ON c.id=a.child_id LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id LEFT JOIN users p ON p.id=c.parent_id WHERE a.school_id=$1 AND ($2::text IS NULL OR r.audience=$2) AND ($3::uuid IS NULL OR a.document_request_id=$3) AND ($4::text IS NULL OR a.status=$4) AND ($5::uuid IS NULL OR a.id=$5) AND ($6::text IS NULL OR COALESCE(c.first_name || ' ' || c.last_name,u.first_name || ' ' || u.last_name,'') ILIKE '%' || $6 || '%') AND ($7::text IS NULL OR (p.id::text=$7 OR c.secondary_parent_id::text=$7 OR u.id::text=$7)){extra}");
+        let count_sql = format!("SELECT COUNT(*) FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id LEFT JOIN children c ON c.id=a.child_id LEFT JOIN employees emp ON emp.id=a.employee_id LEFT JOIN users u ON u.id=emp.user_id LEFT JOIN users p ON p.id=c.parent_id LEFT JOIN users au ON au.id=a.admin_user_id WHERE a.school_id=$1 AND ($2::text IS NULL OR r.audience=$2) AND ($3::uuid IS NULL OR a.document_request_id=$3) AND ($4::text IS NULL OR a.status=$4) AND ($5::uuid IS NULL OR a.id=$5) AND ($6::text IS NULL OR COALESCE(c.first_name || ' ' || c.last_name,u.first_name || ' ' || u.last_name,au.first_name || ' ' || au.last_name,'') ILIKE '%' || $6 || '%') AND ($7::text IS NULL OR (p.id::text=$7 OR c.secondary_parent_id::text=$7 OR u.id::text=$7 OR au.id::text=$7)){extra}");
         let total:i64=client.query_one(&count_sql,&[&query.school_id,&query.audience,&query.request_id,&query.status,&query.assignment_id,&query.search,&recipient]).await.map_err(|e| AppError::Database(e.to_string()))?.get(0);
         Ok(PagedDocumentAssignments { items: rows.iter().map(Self::assignment).collect(), total, page, limit })
     }
@@ -208,18 +254,18 @@ impl DocumentRequestDao {
     fn assignment(row: &Row) -> DocumentAssignmentItem { DocumentAssignmentItem {
         id:row.get(0),request_id:row.get(1),school_id:row.get(2),audience:row.get(3),document_name:row.get(4),instructions:row.get(5),due_date:row.get(6),request_status:row.get(7),status:row.get(8),derived_status:row.get(9),subject_name:row.get::<_,Option<String>>(10).unwrap_or_else(|| "Unknown recipient".into()),parent_name:row.get(11),parent_email:row.get(12),classroom_name:row.get(13),employee_email:row.get(14),submitted_at:row.get(15),reviewed_at:row.get(16),rejection_reason:row.get(17),latest_submission_id:row.get(18),latest_file_name:row.get(19),latest_content_type:row.get(20),latest_file_size_bytes:row.get(21),version_count:row.get(22),
         form_academic_year:row.try_get(23).ok().flatten(),approved_form_name:row.try_get(24).ok().flatten(),
-        child_id:row.try_get(25).ok().flatten(),employee_id:row.try_get(26).ok().flatten(),parent_id:row.try_get(27).ok().flatten(),
+        child_id:row.try_get(25).ok().flatten(),employee_id:row.try_get(26).ok().flatten(),admin_user_id:row.try_get(27).ok().flatten(),parent_id:row.try_get(28).ok().flatten(),
     }}
 
     pub async fn assignment_access(&self, assignment_id: Uuid, user_id: Uuid, admin: bool) -> ApiResult<(Uuid,String,String)> {
         let client=self.pool.get().await.map_err(|e|AppError::Database(e.to_string()))?;
-        let row=client.query_opt("SELECT a.school_id,r.audience,r.status FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id LEFT JOIN children c ON c.id=a.child_id LEFT JOIN employees e ON e.id=a.employee_id WHERE a.id=$1 AND ($2 OR c.parent_id=$3 OR c.secondary_parent_id=$3 OR e.user_id=$3)", &[&assignment_id,&admin,&user_id]).await.map_err(|e|AppError::Database(e.to_string()))?.ok_or_else(||AppError::Authorization("You do not have access to this document assignment".to_string()))?;
+        let row=client.query_opt("SELECT a.school_id,r.audience,r.status FROM document_request_assignments a JOIN document_requests r ON r.id=a.document_request_id LEFT JOIN children c ON c.id=a.child_id LEFT JOIN employees e ON e.id=a.employee_id WHERE a.id=$1 AND ($2 OR c.parent_id=$3 OR c.secondary_parent_id=$3 OR e.user_id=$3 OR a.admin_user_id=$3)", &[&assignment_id,&admin,&user_id]).await.map_err(|e|AppError::Database(e.to_string()))?.ok_or_else(||AppError::Authorization("You do not have access to this document assignment".to_string()))?;
         Ok((row.get(0),row.get(1),row.get(2)))
     }
 
     pub async fn recipient_users(&self, request_id: Uuid, assignment_id: Option<Uuid>) -> ApiResult<Vec<Uuid>> {
         let client=self.pool.get().await.map_err(|e|AppError::Database(e.to_string()))?;
-        let rows=client.query("SELECT DISTINCT recipient_id FROM (SELECT c.parent_id AS recipient_id FROM document_request_assignments a JOIN children c ON c.id=a.child_id WHERE a.document_request_id=$1 AND ($2::uuid IS NULL OR a.id=$2) UNION ALL SELECT c.secondary_parent_id FROM document_request_assignments a JOIN children c ON c.id=a.child_id WHERE a.document_request_id=$1 AND ($2::uuid IS NULL OR a.id=$2) UNION ALL SELECT e.user_id FROM document_request_assignments a JOIN employees e ON e.id=a.employee_id WHERE a.document_request_id=$1 AND ($2::uuid IS NULL OR a.id=$2)) recipients WHERE recipient_id IS NOT NULL", &[&request_id,&assignment_id]).await.map_err(|e|AppError::Database(e.to_string()))?;
+        let rows=client.query("SELECT DISTINCT recipient_id FROM (SELECT c.parent_id AS recipient_id FROM document_request_assignments a JOIN children c ON c.id=a.child_id WHERE a.document_request_id=$1 AND ($2::uuid IS NULL OR a.id=$2) UNION ALL SELECT c.secondary_parent_id FROM document_request_assignments a JOIN children c ON c.id=a.child_id WHERE a.document_request_id=$1 AND ($2::uuid IS NULL OR a.id=$2) UNION ALL SELECT e.user_id FROM document_request_assignments a JOIN employees e ON e.id=a.employee_id WHERE a.document_request_id=$1 AND ($2::uuid IS NULL OR a.id=$2) UNION ALL SELECT a.admin_user_id FROM document_request_assignments a WHERE a.document_request_id=$1 AND a.admin_user_id IS NOT NULL AND ($2::uuid IS NULL OR a.id=$2)) recipients WHERE recipient_id IS NOT NULL", &[&request_id,&assignment_id]).await.map_err(|e|AppError::Database(e.to_string()))?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 

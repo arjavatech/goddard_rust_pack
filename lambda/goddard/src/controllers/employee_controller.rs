@@ -18,15 +18,16 @@ use crate::models::document_request::{
     CompleteUploadRequest, FileAccessResponse, UploadIntentRequest, UploadIntentResponse,
 };
 use crate::models::employee::{
-    AssignEmployeeFormRequest, AssignEmployeeFormToSchoolRequest, BulkCreateEmployeesRequest,
-    BulkEmployeeFormReminderRequest, BulkEmployeeInput, CreateEmployeeFormTemplateRequest,
-    DeleteEmployeeFormAssignmentParams, DeleteEmployeeFormTemplateParams,
-    EmployeeFormAssignment, EmployeeFormAssignmentQueryParams, EmployeeFormTemplate, EmployeeInviteRequest,
-    EmployeeManualPdfUploadIntentRequest, EmployeeManualPdfUploadIntentResponse,
-    EmployeeManualPdfCompleteUploadRequest, EmployeeQueryParams, ResendEmployeeInviteRequest,
-    ReviewEmployeeFormRequest, RevokeEmployeeFormAssignmentRequest, UpdateEmployeeFormMetadataRequest,
-    UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
-    ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem,
+    AssignAdminFormRequest, AssignEmployeeFormRequest, AssignEmployeeFormToSchoolRequest,
+    BulkCreateEmployeesRequest, BulkEmployeeFormReminderRequest, BulkEmployeeInput,
+    CreateEmployeeFormTemplateRequest, DeleteEmployeeFormAssignmentParams,
+    DeleteEmployeeFormTemplateParams, EmployeeFormAssignment, EmployeeFormAssignmentQueryParams,
+    EmployeeFormTemplate, EmployeeInviteRequest, EmployeeManualPdfUploadIntentRequest,
+    EmployeeManualPdfUploadIntentResponse, EmployeeManualPdfCompleteUploadRequest,
+    EmployeeQueryParams, MyFormAssignmentsQuery, ResendEmployeeInviteRequest,
+    ReviewEmployeeFormRequest, RevokeEmployeeFormAssignmentRequest,
+    UpdateEmployeeFormMetadataRequest, UpdateEmployeeFormTemplateRequest, UpdateEmployeeRequest,
+    ListEmployeeFormsByTemplateQuery, EmployeeFormAssignmentDetailItem, SchoolMembersQuery,
 };
 use crate::models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery};
 use crate::services::employee_service::EmployeeService;
@@ -373,6 +374,25 @@ pub async fn assign_employee_form_to_school(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
+pub async fn assign_admin_form(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Json(payload): Json<AssignAdminFormRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    check_permission_admin_or_superadmin(&auth, &payload.school_id)?;
+    let assignment = svc.assign_admin_form(payload, auth.user_id).await?;
+    Ok((StatusCode::CREATED, Json(assignment)))
+}
+
+pub async fn get_my_form_assignments(
+    State(svc): State<Arc<EmployeeService>>,
+    axum::Extension(auth): axum::Extension<AuthContext>,
+    Query(_params): Query<MyFormAssignmentsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let assignments = svc.get_my_form_assignments(auth.user_id).await?;
+    Ok((StatusCode::OK, Json(assignments)))
+}
+
 pub async fn get_employee_form_assignments(
     State(svc): State<Arc<EmployeeService>>,
     Query(params): Query<EmployeeFormAssignmentQueryParams>,
@@ -609,4 +629,14 @@ pub async fn list_employee_form_assignments_by_template(
 ) -> Result<Json<Vec<EmployeeFormAssignmentDetailItem>>, AppError> {
     check_permission_admin_or_superadmin(&auth, &q.school_id)?;
     Ok(Json(svc.list_form_assignments_by_template(&q).await?))
+}
+
+pub async fn get_school_members(
+    State(svc): State<Arc<EmployeeService>>,
+    Extension(auth): Extension<AuthContext>,
+    Query(q): Query<SchoolMembersQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    check_permission_admin_or_superadmin(&auth, &q.school_id)?;
+    let members = svc.get_school_members(q.school_id).await?;
+    Ok(Json(serde_json::json!(members)))
 }

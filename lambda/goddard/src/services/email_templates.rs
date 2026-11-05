@@ -5,23 +5,21 @@ use crate::models::email::{
 use chrono::{DateTime, NaiveDate, Utc};
 
 /// Renders the parent invite email HTML.
-/// Maps to the Supabase "Confirm Sign Up" template used for parent enrollment invitations.
-pub fn parent_invite_html(first_name: &str, last_name: &str, confirmation_url: &str) -> String {
+pub fn parent_invite_html(first_name: &str, last_name: &str, login_url: &str) -> String {
     format!(
-        r#"<html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:0;background-color:#f9f9f9;"><div style="max-width:600px;margin:0 auto;padding:30px 20px;"><div style="background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;padding:32px;"><div style="height:4px;background:#3498db;border-radius:4px;margin-bottom:24px;"></div><h2 style="color:#2c3e50;margin:0 0 16px 0;font-size:20px;">Welcome to The Goddard School</h2><p style="margin:0 0 12px 0;">Dear {first_name} {last_name},</p><p style="margin:0 0 12px 0;">We hope this message finds you well. We are pleased to inform you that your enrollment request at <strong>The Goddard School</strong> has been received and approved for the next stage of the admission process.</p><p style="margin:0 0 12px 0;">Please confirm your email address to continue with the enrollment process.</p><p style="text-align:center;margin:28px 0;"><a href="{url}" style="display:inline-block;padding:15px 30px;background:#3498db;color:#ffffff;text-decoration:none;border-radius:5px;font-weight:bold;font-size:16px;">Confirm Your Email</a></p><hr style="border:none;border-top:1px solid #e0e0e0;margin:28px 0;"><p style="margin:0;">Thank you for choosing <strong>The Goddard School</strong>.<br><br>Warm regards,<br><strong>Admin Team, The Goddard School</strong></p></div><p style="text-align:center;color:#999;font-size:12px;margin-top:16px;">This is an automated message. Please do not reply to this email.</p></div></body></html>"#,
+        r#"<html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:0;background-color:#f9f9f9;"><div style="max-width:600px;margin:0 auto;padding:30px 20px;"><div style="background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;padding:32px;"><div style="height:4px;background:#3498db;border-radius:4px;margin-bottom:24px;"></div><h2 style="color:#2c3e50;margin:0 0 16px 0;font-size:20px;">Welcome to The Goddard School</h2><p style="margin:0 0 12px 0;">Dear {first_name} {last_name},</p><p style="margin:0 0 12px 0;">We hope this message finds you well. We are pleased to inform you that your enrollment request at <strong>The Goddard School</strong> has been received and approved.</p><p style="margin:0 0 12px 0;">Click the button below to set your password and access the parent portal. You can also sign in with Google using this email address.</p><p style="text-align:center;margin:28px 0;"><a href="{url}" style="display:inline-block;padding:15px 30px;background:#3498db;color:#ffffff;text-decoration:none;border-radius:5px;font-weight:bold;font-size:16px;">Set Your Password</a></p><hr style="border:none;border-top:1px solid #e0e0e0;margin:28px 0;"><p style="margin:0;">Thank you for choosing <strong>The Goddard School</strong>.<br><br>Warm regards,<br><strong>Admin Team, The Goddard School</strong></p></div><p style="text-align:center;color:#999;font-size:12px;margin-top:16px;">This is an automated message. Please do not reply to this email.</p></div></body></html>"#,
         first_name = first_name,
         last_name = last_name,
-        url = confirmation_url,
+        url = login_url,
     )
 }
 
 /// Renders the admin / SuperAdmin invite email HTML.
-/// Maps to the Supabase "Invite User" template used for Admin and SuperAdmin invitations.
 pub fn admin_invite_html(
     first_name: &str,
     last_name: &str,
     school_name: &str,
-    confirmation_url: &str,
+    login_url: &str,
 ) -> String {
     format!(
         r#"<html>
@@ -37,9 +35,9 @@ to manage your school's operations, staff, and enrollment processes.</p>
       <div style="background-color: #fff; padding: 20px; border-radius: 5px; margin: 20px 0;">
         <p style="margin: 0 0 15px 0;"><strong>To get started:</strong></p>
         <ol style="margin: 0; padding-left: 20px;">
-          <li>Click the button below to confirm your email and set your password</li>
-          <li>Complete your administrator profile</li>
-          <li>Begin managing your school's enrollment and staff</li>
+          <li>Click the button below to set your password</li>
+          <li>Log in with your email and password</li>
+          <li>Or, sign in with Google using this email address</li>
         </ol>
       </div>
 
@@ -47,7 +45,6 @@ to manage your school's operations, staff, and enrollment processes.</p>
         <a href="{url}" style="display: inline-block; padding: 15px 30px; background-color: #3498db; color: white; text-decoration:
 none; border-radius: 5px; font-weight: bold; font-size: 16px;">Set Your Password</a>
       </p>
-
 
       <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
 
@@ -66,8 +63,34 @@ please contact our support team immediately.</p>
         school_name = school_name,
         first_name = first_name,
         last_name = last_name,
-        url = confirmation_url,
+        url = login_url,
     )
+}
+
+// =====================================================
+// OTP login email
+// =====================================================
+
+/// Renders the email containing the 6-digit one-time login code.
+pub fn otp_email_html(first_name: &str, otp_code: &str, school_name: &str) -> String {
+    let accent = "#3498db";
+    let headline = format!("Your login code for {}", html_escape(school_name));
+    let preheader = format!("Use the code below to sign in to {}. Valid for 1 minute.", school_name);
+
+    let body = format!(
+        r#"<p>Hi {first_name},</p>
+          <p>Use the code below to log in to <strong>{school}</strong>. This code is valid for <strong>1 minute</strong> and can only be used once.</p>
+          <div style="text-align:center;margin:32px 0;">
+            <span style="display:inline-block;padding:20px 40px;background:#f4f8ff;border:2px solid #3498db;border-radius:8px;font-size:36px;font-weight:bold;letter-spacing:12px;color:#2c3e50;font-family:monospace;">{code}</span>
+          </div>
+          <p style="color:#666;font-size:14px;">If you did not request this code, you can safely ignore this email. Someone may have entered your email address by mistake.</p>
+          <p style="color:#666;font-size:14px;margin-top:8px;"><strong>Never share this code with anyone.</strong></p>"#,
+        first_name = html_escape(first_name),
+        school = html_escape(school_name),
+        code = html_escape(otp_code),
+    );
+
+    render_shell(accent, &headline, &preheader, &body, "")
 }
 
 // =====================================================
@@ -495,40 +518,35 @@ pub fn bulk_import_welcome_html(
     first_name: &str,
     last_name: &str,
     email: &str,
-    password: &str,
     school_name: &str,
     dashboard_url: &str,
 ) -> String {
-    let accent = "#2ecc71"; // welcoming green
+    let accent = "#2ecc71";
     let headline = format!(
         "Welcome to {} — Your Account Is Ready",
         html_escape(school_name)
     );
     let preheader = format!(
-        "Your Goddard School parent account at {} has been created. Find your login details inside.",
+        "Your Goddard School parent account at {} has been created. Log in with your email.",
         school_name
     );
 
-    let credentials = details_card(&[
-        ("Email", email.to_string()),
-        ("Password", password.to_string()),
-    ]);
+    let email_card = details_card(&[("Email", email.to_string())]);
 
     let body = format!(
         r#"<p>Dear {first_name} {last_name},</p>
-          <p>Welcome! Your parent account at <strong>{school}</strong> has been created. You can now log in to your parent dashboard using the credentials below.</p>
-          {credentials}
-          <p style="margin-top:18px;"><strong>Next steps</strong></p>
+          <p>Welcome! Your parent account at <strong>{school}</strong> has been created. You can log in using your email address below.</p>
+          {email_card}
+          <p style="margin-top:18px;"><strong>How to sign in</strong></p>
           <ol style="margin:0;padding-left:20px;color:#333;">
-            <li>Log in with the email and password above</li>
-            <li>We recommend changing your password after your first login</li>
-            <li>Complete any enrollment forms assigned to your child(ren)</li>
+            <li>Click the button below to go to the login page</li>
+            <li>Use "Forgot Password" to set your password, or sign in with Google</li>
           </ol>
           <p style="margin-top:18px;color:#666;font-size:14px;">If you have any questions, please reach out to your school's administrator.</p>"#,
         first_name = html_escape(first_name),
         last_name = html_escape(last_name),
         school = html_escape(school_name),
-        credentials = credentials,
+        email_card = email_card,
     );
 
     let cta = cta_button("Log In to Parent Dashboard", dashboard_url, accent);
@@ -584,26 +602,26 @@ pub fn child_archived_html(payload: &ChildArchivedNotification) -> String {
 pub fn employee_invite_html(
     first_name: &str,
     last_name: &str,
-    invite_link: &str,
+    login_url: &str,
     school_name: &str,
 ) -> String {
     let accent = "#2980b9";
     let headline = format!("Welcome to {} — Employee Access", html_escape(school_name));
     let preheader = format!(
-        "You've been added as an employee at {}. Set up your account to get started.",
+        "You've been added as an employee at {}. Log in to access your dashboard.",
         school_name
     );
 
     let body = format!(
         r#"<p>Dear {first_name} {last_name},</p>
-          <p>You have been added as an employee at <strong>{school}</strong>. To complete your account setup and access your employee dashboard, please click the button below.</p>
-          <p style="color:#555;font-size:14px;">This invitation link is valid for 7 days.</p>"#,
+          <p>You have been added as an employee at <strong>{school}</strong>. You can now access your employee dashboard by logging in with your email address.</p>
+          <p style="color:#555;font-size:14px;">Click the button below to set your password, or sign in with Google using this email address.</p>"#,
         first_name = html_escape(first_name),
         last_name = html_escape(last_name),
         school = html_escape(school_name),
     );
 
-    let cta = cta_button("Set Up Your Account", invite_link, accent);
+    let cta = cta_button("Set Your Password", login_url, accent);
     render_shell(accent, &headline, &preheader, &body, &cta)
 }
 

@@ -470,8 +470,32 @@ impl EnrollmentService {
             )),
 
             Some((email, true, false)) => {
-                // Valid, not yet used → generate a fresh Supabase set-password link
+                // Check if the user already activated via Google or password
+                let already_activated = self.supabase_client
+                    .get_user_by_email(&email).await
+                    .map(|user| {
+                        let account_activated = user.get("app_metadata")
+                            .and_then(|m| m.get("account_activated"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let password_set = user.get("user_metadata")
+                            .and_then(|m| m.get("password_set"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        account_activated || password_set
+                    })
+                    .unwrap_or(false);
+
+                if already_activated {
+                    return Ok(format!("{}/login", frontend_url));
+                }
+
+                // Valid, not yet activated → generate a fresh Supabase set-password link
                 let action_link = self.supabase_client.generate_signup_link(&email).await?;
+                // best-effort: mark account as activated so Google sign-in is unblocked
+                if let Err(e) = self.supabase_client.set_account_activated_by_email(&email).await {
+                    tracing::warn!("Failed to set account_activated for {}: {}", email, e);
+                }
                 Ok(action_link)
             }
         }
@@ -1639,13 +1663,11 @@ impl EnrollmentService {
             let first_row = &rows[row_indices[0]];
             let first_row_num = row_indices[0] + 1;
 
-            // Derive password: first 4 chars of email (first letter uppercased) + "@" + child DOB year
+            // Parse child DOB (used for classroom/enrollment logic below)
             let first_child_dob = first_row.child_dob.as_deref()
                 .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
                     .or_else(|| chrono::NaiveDate::parse_from_str(s, "%d/%m/%Y").ok())
                     .or_else(|| chrono::NaiveDate::parse_from_str(s, "%m/%d/%Y").ok()));
-
-            let password = generate_parent_password(&first_row.primary_parent_email, first_child_dob);
 
             // Build metadata
             let metadata = crate::services::supabase_client::UserMetadata::new(
@@ -1664,11 +1686,10 @@ impl EnrollmentService {
             {
                 Ok(Some(existing)) => existing,
                 _ => {
-                    // Not in DB — create Supabase account + DB record + send welcome email
+                    // Not in DB — create user (no password; login via OTP) + DB record + send welcome email
                     let primary_auth_id = match self.supabase_client
-                        .create_user_with_password_in_supabase(
+                        .create_user_only_in_supabase(
                             first_row.primary_parent_email.trim(),
-                            &password,
                             metadata,
                         ).await
                     {
@@ -1711,7 +1732,6 @@ impl EnrollmentService {
                                 first_row.primary_parent_email.trim(),
                                 first_row.primary_parent_first_name.trim(),
                                 first_row.primary_parent_last_name.trim(),
-                                &password,
                                 &school_name,
                             ).await;
                             p
@@ -1752,10 +1772,8 @@ impl EnrollmentService {
                             None,
                         ).with_school_name(school_name.clone());
 
-                        let sec_password = generate_parent_password(sec_email.trim(), first_child_dob);
-
                         if let Ok(sec_id_str) = self.supabase_client
-                            .create_user_with_password_in_supabase(sec_email.trim(), &sec_password, sec_metadata)
+                            .create_user_only_in_supabase(sec_email.trim(), sec_metadata)
                             .await
                         {
                             if let Ok(sec_uuid) = Uuid::parse_str(&sec_id_str) {
@@ -1771,7 +1789,6 @@ impl EnrollmentService {
                                             sec_email.trim(),
                                             sec_first.trim(),
                                             sec_last.trim(),
-                                            &sec_password,
                                             &school_name,
                                         ).await;
                                         Some(p.id)
@@ -1970,9 +1987,8 @@ impl EnrollmentService {
                     email_to_id.insert(sec_email, user.id);
                 }
                 _ => {
-                    // Create new secondary parent
+                    // Create new secondary parent (no password; login via OTP)
                     let (sec_first, sec_last) = split_name(row.secondary_parent_name.trim());
-                    let password = generate_secondary_parent_password(&sec_email);
 
                     let metadata = crate::services::supabase_client::UserMetadata::new(
                         Some(school_id),
@@ -1984,7 +2000,7 @@ impl EnrollmentService {
                     ).with_school_name(school_name.clone());
 
                     let auth_id_str = match self.supabase_client
-                        .create_user_with_password_in_supabase(&sec_email, &password, metadata)
+                        .create_user_only_in_supabase(&sec_email, metadata)
                         .await
                     {
                         Ok(id) => id,
@@ -2071,23 +2087,6 @@ impl EnrollmentService {
 
         Ok(BulkSecondaryParentResponse { processed, row_errors: runtime_errors })
     }
-}
-
-fn generate_parent_password(email: &str, child_dob: Option<chrono::NaiveDate>) -> String {
-    let prefix: String = email.chars().take(4).enumerate().map(|(i, c)| {
-        if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }
-    }).collect();
-    let year = child_dob
-        .map(|d| d.format("%Y").to_string())
-        .unwrap_or_else(|| "2024".to_string());
-    format!("{}@{}", prefix, year)
-}
-
-fn generate_secondary_parent_password(email: &str) -> String {
-    let prefix: String = email.chars().take(4).enumerate().map(|(i, c)| {
-        if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }
-    }).collect();
-    format!("{}@2026", prefix)
 }
 
 fn split_name(full_name: &str) -> (String, String) {

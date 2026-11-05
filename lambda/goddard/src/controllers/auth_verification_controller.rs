@@ -10,7 +10,11 @@ use serde_json::json;
 use axum::http::StatusCode;
 
 use crate::{
-    services::{AuthService, auth_service::{ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced, CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest, ForgotPasswordRequest, ResendAdminInviteRequest, ChangeRoleRequest, ChangePasswordRequest}},
+    services::{AuthService, auth_service::{
+        ResendInvitationRequest, CreateInvitationRequest, CreateInvitationRequestEnhanced,
+        CreateSuperAdminRequest, UpdateAdminRequest, DeleteAdminRequest, ForgotPasswordRequest,
+        ResendAdminInviteRequest, ChangeRoleRequest, ChangePasswordRequest,
+    }},
     utils::ResponseUtils,
     error::AppError,
     middleware::auth::AuthContext,
@@ -235,6 +239,26 @@ pub async fn delete_admin_user(
         ).into_response(),
         Err(e) => e.into_response(),
     }
+}
+
+/// POST /auth/google/exchange (public) — exchange Supabase Google OAuth JWT for custom JWT
+pub async fn google_exchange(
+    headers: HeaderMap,
+    State(auth_service): State<Arc<AuthService>>,
+) -> Result<impl IntoResponse, AppError> {
+    let auth_header = headers
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| AppError::Authorization("Missing Authorization header".to_string()))?;
+
+    let bearer_token = if auth_header.starts_with("Bearer ") {
+        &auth_header[7..]
+    } else {
+        return Err(AppError::Authorization("Authorization header must use Bearer scheme".to_string()));
+    };
+
+    let response = auth_service.google_exchange(bearer_token).await?;
+    Ok(ResponseUtils::success(response))
 }
 
 /// POST /auth/forgot-password (public)

@@ -94,8 +94,13 @@ impl SchoolDao {
         let subdomain = request.subdomain.clone();
         let timezone = request.timezone.clone().unwrap_or_else(|| "EST".to_string());
         let settings = request.settings.clone();
+        let parent_management_enabled = request.parent_management_enabled.unwrap_or(false);
+        let employee_management_enabled = request.employee_management_enabled.unwrap_or(false);
+        let expense_management_enabled = request.expense_management_enabled.unwrap_or(false);
+        let taptime_enabled = request.taptime_enabled.unwrap_or(false);
         let conference_enabled = request.conference_enabled.unwrap_or(false);
         let survey_enabled = request.survey_enabled.unwrap_or(false);
+        let drive_enabled = request.drive_enabled.unwrap_or(false);
 
         self.execute_with_connection(|client| async move {
 
@@ -106,16 +111,23 @@ impl SchoolDao {
 
             let query = format!(
                 r#"
-                INSERT INTO schools (id, name, subdomain, timezone, settings, is_active, created_at, conference_enabled, survey_enabled)
-                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW(), {}, {})
+                INSERT INTO schools (id, name, subdomain, timezone, settings, is_active, created_at,
+                    parent_management_enabled, employee_management_enabled, expense_management_enabled,
+                    taptime_enabled, conference_enabled, survey_enabled, drive_enabled)
+                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW(), {}, {}, {}, {}, {}, {}, {})
                 RETURNING id, name, subdomain, timezone, settings, NULL::jsonb AS request_categories, NULL::jsonb AS location, is_active, created_at, updated_at
                 "#,
                 name.replace('\'', "''"),
                 subdomain.replace('\'', "''"),
                 timezone.replace('\'', "''"),
                 settings_json,
+                parent_management_enabled,
+                employee_management_enabled,
+                expense_management_enabled,
+                taptime_enabled,
                 conference_enabled,
-                survey_enabled
+                survey_enabled,
+                drive_enabled
             );
 
             let result = client.simple_query(&query).await

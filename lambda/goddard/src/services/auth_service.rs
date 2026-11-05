@@ -160,6 +160,7 @@ pub struct ForgotPasswordResponse {
     pub email: String,
 }
 
+
 #[derive(Debug, Deserialize)]
 pub struct ChangeRoleRequest {
     pub email: String,
@@ -873,19 +874,19 @@ impl AuthService {
     }
 
     pub async fn get_user_profile_from_jwt(&self, jwt_token: &str) -> ApiResult<FilteredUserResponse> {
-        // Verify JWT to get user ID only (don't need full user data from auth table)
-        let user_data = self.supabase_client.verify_jwt_and_get_user(jwt_token).await?;
-
-        // Extract user ID from JWT
-        let user_id_str = user_data.get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::ExternalService("Missing user ID in JWT response".to_string()))?;
-
-        let user_id = uuid::Uuid::parse_str(user_id_str)
-            .map_err(|_| AppError::Validation("Invalid user ID format".to_string()))?;
-
-        // Query our users table directly for user information
-        let user = self.dao.get_user_by_id(user_id).await?;
+        // Try our custom JWT first (OTP / Google-exchange path) — no network call needed
+        let user = if let Ok(claims) = crate::middleware::auth::try_decode_custom_jwt(jwt_token) {
+            self.dao.get_user_by_id(claims.user_id).await?
+        } else {
+            // Fall back to Supabase JWT validation (legacy Supabase login)
+            let user_data = self.supabase_client.verify_jwt_and_get_user(jwt_token).await?;
+            let user_id_str = user_data.get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| AppError::ExternalService("Missing user ID in JWT response".to_string()))?;
+            let user_id = uuid::Uuid::parse_str(user_id_str)
+                .map_err(|_| AppError::Validation("Invalid user ID format".to_string()))?;
+            self.dao.get_user_by_id(user_id).await?
+        };
 
         // Check if user is verified
         if !user.is_verified {
@@ -940,6 +941,50 @@ impl AuthService {
             school_data,
             admin_permissions,
         })
+    }
+
+    /// POST /auth/google/exchange — validate a Supabase Google OAuth JWT and
+    /// return our own custom JWT in exchange.
+    pub async fn google_exchange(&self, bearer_token: &str) -> ApiResult<serde_json::Value> {
+        let user_data = self.supabase_client.verify_jwt_and_get_user(bearer_token).await?;
+
+        // Block Google sign-in until the user has clicked their invite link or set a password
+        let account_activated = user_data.get("app_metadata")
+            .and_then(|m| m.get("account_activated"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let password_set = user_data.get("user_metadata")
+            .and_then(|m| m.get("password_set"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !account_activated && !password_set {
+            return Err(AppError::Authorization(
+                "Please complete your account setup using the invitation link sent to your email.".to_string()
+            ));
+        }
+
+        let email = user_data.get("email")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::Authorization("Missing email in Google token.".to_string()))?;
+
+        let user = self.dao.get_user_by_email(email).await
+            .map_err(|_| AppError::Authorization("No account found. Please contact your school administrator.".to_string()))?;
+
+        let role = match user.role.as_str() {
+            "SuperAdmin" => crate::models::schema::UserRole::SuperAdmin,
+            "Admin"      => crate::models::schema::UserRole::Admin,
+            "Teacher" | "Employee" => crate::models::schema::UserRole::Teacher,
+            _            => crate::models::schema::UserRole::Parent,
+        };
+        let token = crate::middleware::auth::create_jwt(user.id, user.school_id, role, user.email.clone())?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "token": token,
+            "role": user.role,
+            "school_id": user.school_id,
+            "user_id": user.id,
+        }))
     }
 
     pub async fn forgot_password(&self, request: ForgotPasswordRequest) -> ApiResult<ForgotPasswordResponse> {

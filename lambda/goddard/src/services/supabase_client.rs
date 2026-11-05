@@ -311,6 +311,35 @@ impl SupabaseClient {
         Ok(())
     }
 
+    /// Set account_activated = true in app_metadata so the user can sign in with Google.
+    /// Called by activate_invite after the signup link is generated (best-effort).
+    pub async fn set_account_activated_by_email(&self, email: &str) -> Result<(), AppError> {
+        let user = self.get_user_by_email(email).await?;
+        let user_id = user.get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::ExternalService("Missing user id in Supabase response".to_string()))?;
+        let mut metadata = user
+            .get("app_metadata")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+        metadata.insert("account_activated".into(), json!(true));
+        let response = self.client
+            .put(format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&json!({"app_metadata": metadata}))
+            .send().await
+            .map_err(|e| AppError::ExternalService(format!("Failed to activate account: {e}")))?;
+        if !response.status().is_success() {
+            return Err(AppError::ExternalService(format!(
+                "Failed to set account_activated: {}", response.status()
+            )));
+        }
+        Ok(())
+    }
+
     /// Get user by email address
     pub async fn get_user_by_email(&self, email: &str) -> Result<serde_json::Value, AppError> {
         // List all users and filter by email (Supabase doesn't support direct email lookup)
@@ -1248,7 +1277,6 @@ impl SupabaseClient {
         email: &str,
         first_name: &str,
         last_name: &str,
-        password: &str,
         school_name: &str,
     ) -> Result<bool, AppError> {
         let dashboard_url = self.frontend_url.clone();
@@ -1256,11 +1284,10 @@ impl SupabaseClient {
             first_name,
             last_name,
             email,
-            password,
             school_name,
             &dashboard_url,
         );
-        let subject = format!("Welcome to {} — Your Login Details", school_name);
+        let subject = format!("Welcome to {} — Your Account Is Ready", school_name);
         match self
             .email_service
             .dispatch(email, &subject, &html_body)

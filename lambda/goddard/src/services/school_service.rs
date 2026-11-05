@@ -95,8 +95,13 @@ impl SchoolService {
                 println!("[SchoolService] School created successfully: id={}", school.id);
                 let features = self.dao.get_features(school.id).await.unwrap_or_default();
                 let mut response = SchoolResponse::from(school);
+                response.parent_management_enabled = features.parent_management_enabled;
+                response.employee_management_enabled = features.employee_management_enabled;
+                response.expense_management_enabled = features.expense_management_enabled;
+                response.taptime_enabled = features.taptime_enabled;
                 response.conference_enabled = features.conference_enabled;
                 response.survey_enabled = features.survey_enabled;
+                response.drive_enabled = features.drive_enabled;
                 Ok(response)
             },
             Ok(Err(e)) => {
@@ -160,8 +165,13 @@ impl SchoolService {
         let school = self.dao.update_school(&request).await?;
         let features = self.dao.get_features(school.id).await.unwrap_or_default();
         let mut response = SchoolResponse::from(school);
+        response.parent_management_enabled = features.parent_management_enabled;
+        response.employee_management_enabled = features.employee_management_enabled;
+        response.expense_management_enabled = features.expense_management_enabled;
+        response.taptime_enabled = features.taptime_enabled;
         response.conference_enabled = features.conference_enabled;
         response.survey_enabled = features.survey_enabled;
+        response.drive_enabled = features.drive_enabled;
         Ok(response)
     }
 
@@ -262,8 +272,13 @@ impl SchoolService {
             subdomain: request.school.subdomain.clone(),
             timezone: request.school.timezone.clone(),
             settings: request.school.settings.clone(),
+            parent_management_enabled: request.school.parent_management_enabled,
+            employee_management_enabled: request.school.employee_management_enabled,
+            expense_management_enabled: request.school.expense_management_enabled,
+            taptime_enabled: request.school.taptime_enabled,
             conference_enabled: request.school.conference_enabled,
             survey_enabled: request.school.survey_enabled,
+            drive_enabled: request.school.drive_enabled,
         };
 
         println!("[SchoolService] Creating school with 10s timeout");
@@ -283,7 +298,7 @@ impl SchoolService {
             }
         };
 
-        // STEP 5: Create SuperAdmin user with school_id in metadata
+        // STEP 5: Create SuperAdmin user with school_id in metadata (no Supabase invite email)
         println!("[SchoolService] Creating SuperAdmin user for school_id={}", school.id);
         let metadata = UserMetadata::new(
             Some(school.id),
@@ -291,51 +306,73 @@ impl SchoolService {
             Some(request.owner.last_name.clone()),
             Some("SuperAdmin".to_string()),
             request.owner.phone_number.clone(),
-            Some(true),  // is_verified = true
+            Some(true),
         )
-        .with_school_name(school.name.clone());  // ADD school name for email personalization
+        .with_school_name(school.name.clone());
 
-        let user_result = self.supabase_client
-            .create_user_invitation_enhanced(&request.owner.email, metadata)
-            .await;
-
-        // STEP 6: Handle result - ROLLBACK if user creation fails
-        match user_result {
-            Ok(user_id) => {
-                println!("[SchoolService] SuperAdmin user created successfully: user_id={}", user_id);
-                println!("[SchoolService] School and owner creation completed successfully");
-
-                let features = self.dao.get_features(school.id).await.unwrap_or_default();
-                let mut school_response = SchoolResponse::from(school);
-                school_response.conference_enabled = features.conference_enabled;
-                school_response.survey_enabled = features.survey_enabled;
-                Ok(CreateSchoolWithOwnerResponse {
-                    school: school_response,
-                    owner: OwnerCreatedResponse {
-                        user_id,
-                        email: request.owner.email,
-                        first_name: request.owner.first_name,
-                        last_name: request.owner.last_name,
-                        role: "SuperAdmin".to_string(),
-                        email_sent: true,
-                        message: "School and SuperAdmin created successfully. Confirmation email sent.".to_string(),
-                    }
-                })
-            },
+        let user_id = match self.supabase_client
+            .create_user_only_in_supabase(&request.owner.email, metadata)
+            .await
+        {
+            Ok(id) => id,
             Err(e) => {
-                // ROLLBACK: Delete the school we just created
                 println!("[SchoolService] User creation failed, rolling back school: {}", school.id);
-                let rollback_result = self.dao.delete_school(&school.id).await;
-                match rollback_result {
-                    Ok(_) => println!("[SchoolService] School rollback successful"),
-                    Err(rollback_err) => println!("[SchoolService] School rollback failed (non-critical): {:?}", rollback_err),
-                }
-
-                Err(AppError::ExternalService(
+                let _ = self.dao.delete_school(&school.id).await;
+                return Err(AppError::ExternalService(
                     format!("Failed to create SuperAdmin user: {}. School creation rolled back.", e)
-                ))
+                ));
             }
-        }
+        };
+
+        println!("[SchoolService] SuperAdmin user created: user_id={}", user_id);
+
+        // STEP 6: Send our custom branded invite email (not Supabase's "set-password" email)
+        let invite_token = self.auth_dao
+            .create_invite_token(&request.owner.email, "SuperAdmin", school.id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to store invite token for {}: {}", request.owner.email, e);
+                uuid::Uuid::nil()
+            });
+
+        let email_sent = if invite_token != uuid::Uuid::nil() {
+            self.supabase_client
+                .send_admin_invite_email(
+                    &request.owner.email,
+                    invite_token,
+                    &request.owner.first_name,
+                    &request.owner.last_name,
+                    &school.name,
+                )
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        println!("[SchoolService] School and owner creation completed. email_sent={}", email_sent);
+
+        let features = self.dao.get_features(school.id).await.unwrap_or_default();
+        let mut school_response = SchoolResponse::from(school);
+        school_response.parent_management_enabled = features.parent_management_enabled;
+        school_response.employee_management_enabled = features.employee_management_enabled;
+        school_response.expense_management_enabled = features.expense_management_enabled;
+        school_response.taptime_enabled = features.taptime_enabled;
+        school_response.conference_enabled = features.conference_enabled;
+        school_response.survey_enabled = features.survey_enabled;
+        school_response.drive_enabled = features.drive_enabled;
+        Ok(CreateSchoolWithOwnerResponse {
+            school: school_response,
+            owner: OwnerCreatedResponse {
+                user_id,
+                email: request.owner.email,
+                first_name: request.owner.first_name,
+                last_name: request.owner.last_name,
+                role: "SuperAdmin".to_string(),
+                email_sent,
+                message: "School and SuperAdmin created successfully. Login email sent.".to_string(),
+            }
+        })
     }
 
     pub async fn get_school_with_owner(

@@ -72,8 +72,13 @@ pub struct CreateSchoolRequest {
     pub subdomain: String,
     pub timezone: Option<String>,
     pub settings: Option<Value>,
+    pub parent_management_enabled: Option<bool>,
+    pub employee_management_enabled: Option<bool>,
+    pub expense_management_enabled: Option<bool>,
+    pub taptime_enabled: Option<bool>,
     pub conference_enabled: Option<bool>,
     pub survey_enabled: Option<bool>,
+    pub drive_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,8 +199,13 @@ pub struct SchoolInfo {
     pub subdomain: String,
     pub timezone: Option<String>,
     pub settings: Option<Value>,
+    pub parent_management_enabled: Option<bool>,
+    pub employee_management_enabled: Option<bool>,
+    pub expense_management_enabled: Option<bool>,
+    pub taptime_enabled: Option<bool>,
     pub conference_enabled: Option<bool>,
     pub survey_enabled: Option<bool>,
+    pub drive_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

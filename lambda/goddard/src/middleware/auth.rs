@@ -5,7 +5,7 @@ use axum::{
     response::{Response, IntoResponse},
     Json,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use std::env;
 use uuid::Uuid;
@@ -28,6 +28,62 @@ pub struct JwtClaims {
     pub email: String,
     pub exp: usize,
     pub iat: usize,
+}
+
+/// Claims struct used when encoding our custom JWTs.
+/// Includes `aud` and `iss` so they are embedded in the token payload.
+#[derive(Serialize)]
+struct JwtEncodingClaims {
+    user_id: Uuid,
+    school_id: Uuid,
+    role: UserRole,
+    email: String,
+    exp: usize,
+    iat: usize,
+    aud: Vec<String>,
+    iss: String,
+}
+
+/// Issues a 24-hour HS256 JWT with our custom claims.
+pub fn create_jwt(user_id: Uuid, school_id: Uuid, role: UserRole, email: String) -> Result<String, AppError> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let jwt_secret = env::var("JWT_SECRET")
+        .map_err(|_| AppError::Internal("JWT_SECRET not configured".to_string()))?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| AppError::Internal("System time error".to_string()))?
+        .as_secs() as usize;
+
+    let claims = JwtEncodingClaims {
+        user_id,
+        school_id,
+        role,
+        email,
+        exp: now + 86400,
+        iat: now,
+        aud: vec!["goddard-school".to_string()],
+        iss: "goddard-auth".to_string(),
+    };
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(jwt_secret.as_ref()),
+    ).map_err(|e| AppError::Internal(format!("JWT creation failed: {}", e)))
+}
+
+/// Tries to decode a token as our custom HS256 JWT. Returns `Err(())` if it fails —
+/// the caller should then fall through to Supabase JWT validation.
+pub fn try_decode_custom_jwt(token: &str) -> Result<JwtClaims, ()> {
+    let jwt_secret = env::var("JWT_SECRET").map_err(|_| ())?;
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.set_audience(&["goddard-school"]);
+    validation.set_issuer(&["goddard-auth"]);
+    decode::<JwtClaims>(token, &DecodingKey::from_secret(jwt_secret.as_ref()), &validation)
+        .map(|d| d.claims)
+        .map_err(|_| ())
 }
 
 // Supabase JWT user metadata structure
@@ -470,22 +526,32 @@ pub async fn jwt_or_api_key_middleware(
 
     if let Some(auth_header) = auth_header {
         if auth_header.starts_with("Bearer ") {
-            // Try JWT authentication using Supabase API
             let token = &auth_header[7..];
 
+            // Try our custom HS256 JWT first (no network call)
+            if let Ok(claims) = try_decode_custom_jwt(token) {
+                let auth_context = AuthContext {
+                    user_id: claims.user_id,
+                    school_id: claims.school_id,
+                    role: claims.role,
+                    email: claims.email,
+                };
+                request.extensions_mut().insert(auth_context);
+                return Ok(next.run(request).await);
+            }
+
+            // Fall back to Supabase JWT (Google OAuth path)
             match verify_jwt_with_supabase(token).await {
                 Ok(auth_context) => {
                     request.extensions_mut().insert(auth_context);
                     return Ok(next.run(request).await);
                 }
-                Err(e) => {
-                    // JWT validation failed, will try API key fallback
-                }
+                Err(_) => {}
             }
         }
     }
 
-    // JWT not present or invalid, try API key authentication
+    // No valid JWT — try API key authentication
     api_key_fallback(headers, request, next).await
 }
 
@@ -503,39 +569,43 @@ pub async fn jwt_or_api_key_admin_only(
 
     if let Some(auth_header) = auth_header {
         if auth_header.starts_with("Bearer ") {
-            // Try JWT authentication using Supabase API
             let token = &auth_header[7..];
 
-            match verify_jwt_with_supabase(token).await {
-                Ok(auth_context) => {
-                    // Check if user has admin privileges
-                    match auth_context.role {
-                        UserRole::Admin | UserRole::SuperAdmin => {
-                            request.extensions_mut().insert(auth_context);
-                            return Ok(next.run(request).await);
-                        }
-                        _ => {
-                            // User is authenticated but not authorized (not admin) - return 403 Forbidden
-                            let error_response = ErrorResponse {
-                                success: false,
-                                message: "Access forbidden. Admin role required.".to_string(),
-                                timestamp: chrono::Utc::now().to_rfc3339(),
-                            };
-                            return Err((
-                                axum::http::StatusCode::FORBIDDEN,
-                                Json(error_response),
-                            ).into_response());
-                        }
+            // Resolve auth context: try custom HS256 JWT first, then Supabase JWT
+            let auth_context_opt = if let Ok(claims) = try_decode_custom_jwt(token) {
+                Some(AuthContext {
+                    user_id: claims.user_id,
+                    school_id: claims.school_id,
+                    role: claims.role,
+                    email: claims.email,
+                })
+            } else {
+                verify_jwt_with_supabase(token).await.ok()
+            };
+
+            if let Some(auth_context) = auth_context_opt {
+                match auth_context.role {
+                    UserRole::Admin | UserRole::SuperAdmin => {
+                        request.extensions_mut().insert(auth_context);
+                        return Ok(next.run(request).await);
                     }
-                }
-                Err(e) => {
-                    // JWT validation failed, will try API key fallback
+                    _ => {
+                        let error_response = ErrorResponse {
+                            success: false,
+                            message: "Access forbidden. Admin role required.".to_string(),
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        };
+                        return Err((
+                            axum::http::StatusCode::FORBIDDEN,
+                            Json(error_response),
+                        ).into_response());
+                    }
                 }
             }
         }
     }
 
-    // JWT not present, invalid, or not admin - try API key authentication
+    // No valid JWT — try API key authentication
     api_key_fallback(headers, request, next).await
 }
 
@@ -553,39 +623,43 @@ pub async fn jwt_or_api_key_superadmin_only(
 
     if let Some(auth_header) = auth_header {
         if auth_header.starts_with("Bearer ") {
-            // Try JWT authentication using Supabase API
             let token = &auth_header[7..];
 
-            match verify_jwt_with_supabase(token).await {
-                Ok(auth_context) => {
-                    // Check if user has SuperAdmin role ONLY
-                    match auth_context.role {
-                        UserRole::SuperAdmin => {
-                            request.extensions_mut().insert(auth_context);
-                            return Ok(next.run(request).await);
-                        }
-                        _ => {
-                            // User is authenticated but not authorized (not SuperAdmin) - return 403 Forbidden
-                            let error_response = ErrorResponse {
-                                success: false,
-                                message: "Access forbidden. SuperAdmin role required.".to_string(),
-                                timestamp: chrono::Utc::now().to_rfc3339(),
-                            };
-                            return Err((
-                                StatusCode::FORBIDDEN,
-                                Json(error_response),
-                            ).into_response());
-                        }
+            // Resolve auth context: try custom HS256 JWT first, then Supabase JWT
+            let auth_context_opt = if let Ok(claims) = try_decode_custom_jwt(token) {
+                Some(AuthContext {
+                    user_id: claims.user_id,
+                    school_id: claims.school_id,
+                    role: claims.role,
+                    email: claims.email,
+                })
+            } else {
+                verify_jwt_with_supabase(token).await.ok()
+            };
+
+            if let Some(auth_context) = auth_context_opt {
+                match auth_context.role {
+                    UserRole::SuperAdmin => {
+                        request.extensions_mut().insert(auth_context);
+                        return Ok(next.run(request).await);
                     }
-                }
-                Err(e) => {
-                    // JWT validation failed, will try API key fallback
+                    _ => {
+                        let error_response = ErrorResponse {
+                            success: false,
+                            message: "Access forbidden. SuperAdmin role required.".to_string(),
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        };
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            Json(error_response),
+                        ).into_response());
+                    }
                 }
             }
         }
     }
 
-    // JWT not present, invalid, or not SuperAdmin - try API key authentication
+    // No valid JWT — try API key authentication
     api_key_fallback(headers, request, next).await
 }
 

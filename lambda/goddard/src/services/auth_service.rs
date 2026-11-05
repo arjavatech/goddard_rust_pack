@@ -978,6 +978,11 @@ impl AuthService {
         };
         let token = crate::middleware::auth::create_jwt(user.id, user.school_id, role, user.email.clone())?;
 
+        // Best-effort: mark password_set so invite links are blocked on future visits (cross-device)
+        if let Err(e) = self.supabase_client.set_password_set_by_email(email).await {
+            tracing::warn!("Failed to set password_set for {}: {}", email, e);
+        }
+
         Ok(serde_json::json!({
             "success": true,
             "token": token,

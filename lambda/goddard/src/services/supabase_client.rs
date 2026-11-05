@@ -340,6 +340,34 @@ impl SupabaseClient {
         Ok(())
     }
 
+    /// Set password_set = true in user_metadata so invite links are blocked after Google sign-in.
+    pub async fn set_password_set_by_email(&self, email: &str) -> Result<(), AppError> {
+        let user = self.get_user_by_email(email).await?;
+        let user_id = user.get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::ExternalService("Missing user id in Supabase response".to_string()))?;
+        let mut metadata = user
+            .get("user_metadata")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+        metadata.insert("password_set".into(), json!(true));
+        let response = self.client
+            .put(format!("{}/auth/v1/admin/users/{}", self.project_url, user_id))
+            .header("Authorization", format!("Bearer {}", self.service_role_key))
+            .header("apikey", &self.service_role_key)
+            .header("Content-Type", "application/json")
+            .json(&json!({"user_metadata": metadata}))
+            .send().await
+            .map_err(|e| AppError::ExternalService(format!("Failed to set password_set: {e}")))?;
+        if !response.status().is_success() {
+            return Err(AppError::ExternalService(format!(
+                "Failed to set password_set: {}", response.status()
+            )));
+        }
+        Ok(())
+    }
+
     /// Get user by email address
     pub async fn get_user_by_email(&self, email: &str) -> Result<serde_json::Value, AppError> {
         // List all users and filter by email (Supabase doesn't support direct email lookup)

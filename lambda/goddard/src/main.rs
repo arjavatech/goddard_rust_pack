@@ -25,6 +25,7 @@ use controllers::{
         get_users_by_school_and_role, resend_admin_invite, update_admin_user,
         change_user_role, change_user_password,
         google_exchange,
+        activate_account,
     },
     class_form_override_controller::{create_class_form_override, delete_class_form_override},
     classroom_controller::{
@@ -468,6 +469,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/auth/debug-users", get(debug_auth_users))
         .route("/auth/users/filter", get(get_users_by_school_and_role))
         .route("/auth/google/exchange", post(google_exchange))
+        .route("/auth/activate", post(activate_account))
         .route(
             "/auth/admin-resend-invite",
             post(resend_admin_invite)

@@ -943,6 +943,17 @@ impl AuthService {
         })
     }
 
+    /// POST /auth/activate — called from set-password page when user chooses Google sign-in.
+    /// Sets account_activated = true so google_exchange will pass on the subsequent OAuth redirect.
+    pub async fn activate_account(&self, bearer_token: &str) -> ApiResult<serde_json::Value> {
+        let user_data = self.supabase_client.verify_jwt_and_get_user(bearer_token).await?;
+        let email = user_data.get("email")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::Authorization("Missing email in token.".to_string()))?;
+        self.supabase_client.set_account_activated_by_email(email).await?;
+        Ok(serde_json::json!({ "success": true }))
+    }
+
     /// POST /auth/google/exchange — validate a Supabase Google OAuth JWT and
     /// return our own custom JWT in exchange.
     pub async fn google_exchange(&self, bearer_token: &str) -> ApiResult<serde_json::Value> {

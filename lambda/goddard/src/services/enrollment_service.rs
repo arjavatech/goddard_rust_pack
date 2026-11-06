@@ -491,11 +491,9 @@ impl EnrollmentService {
                 }
 
                 // Valid, not yet activated → generate a fresh Supabase set-password link
+                // account_activated is NOT set here; it is set only when the user explicitly
+                // chooses Google sign-in on the set-password page (POST /auth/activate).
                 let action_link = self.supabase_client.generate_signup_link(&email).await?;
-                // best-effort: mark account as activated so Google sign-in is unblocked
-                if let Err(e) = self.supabase_client.set_account_activated_by_email(&email).await {
-                    tracing::warn!("Failed to set account_activated for {}: {}", email, e);
-                }
                 Ok(action_link)
             }
         }

@@ -973,30 +973,49 @@ impl SupabaseClient {
         jwt_token: &str,
     ) -> Result<serde_json::Value, AppError> {
         let url = format!("{}/auth/v1/user", self.project_url);
+        let max_attempts = 3u32;
 
-        let response = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", jwt_token))
-            .header("apikey", &self.anon_key)
-            .send()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to verify JWT: {}", e)))?;
+        for attempt in 0..max_attempts {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
 
-        if !response.status().is_success() {
+            let response = self
+                .client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", jwt_token))
+                .header("apikey", &self.anon_key)
+                .send()
+                .await
+                .map_err(|e| AppError::ExternalService(format!("Failed to verify JWT: {}", e)))?;
+
+            if response.status().is_success() {
+                let user_data: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| AppError::ExternalService(format!("Failed to parse user data: {}", e)))?;
+                return Ok(user_data);
+            }
+
             let error_text = response.text().await.unwrap_or_default();
+
+            // Supabase eventual-consistency race: session not yet committed after PKCE.
+            // Retry with a short delay before giving up.
+            if error_text.contains("session_not_found") && attempt < max_attempts - 1 {
+                tracing::warn!(
+                    attempt = attempt + 1,
+                    "session_not_found on JWT verify — retrying after 300ms"
+                );
+                continue;
+            }
+
             return Err(AppError::Authorization(format!(
                 "Invalid JWT token: {}",
                 error_text
             )));
         }
 
-        let user_data: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| AppError::ExternalService(format!("Failed to parse user data: {}", e)))?;
-
-        Ok(user_data)
+        unreachable!()
     }
 
     pub async fn send_password_reset_email(&self, email: &str) -> Result<(), AppError> {

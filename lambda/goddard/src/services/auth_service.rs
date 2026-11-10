@@ -896,12 +896,14 @@ impl AuthService {
                 ));
             }
 
-            let user_id_str = user_data.get("id")
+            // Look up by email rather than Supabase UUID — Goddard DB user IDs may differ
+            // from Supabase auth UUIDs, so an ID-based lookup can return NOT_FOUND even for
+            // valid invited users.
+            let email = user_data.get("email")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| AppError::ExternalService("Missing user ID in JWT response".to_string()))?;
-            let user_id = uuid::Uuid::parse_str(user_id_str)
-                .map_err(|_| AppError::Validation("Invalid user ID format".to_string()))?;
-            self.dao.get_user_by_id(user_id).await?
+                .ok_or_else(|| AppError::ExternalService("Missing email in JWT response".to_string()))?;
+            self.dao.get_user_by_email(email).await
+                .map_err(|_| AppError::Authorization("No account found. Please contact your school administrator.".to_string()))?
         };
 
         // Check if user is verified

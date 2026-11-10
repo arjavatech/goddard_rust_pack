@@ -462,7 +462,7 @@ impl EnrollmentService {
             // used_at is set by a DB trigger when the user calls updateUser({ password })
             // This is the only reliable signal — encrypted_password is non-empty for all users
             Some((_, _, true)) => {
-                Ok(format!("{}/", frontend_url))
+                Ok(format!("{}/set-password?error=invitation_already_used", frontend_url))
             }
 
             Some((_, false, false)) => Err(AppError::Validation(
@@ -487,7 +487,7 @@ impl EnrollmentService {
                     .unwrap_or(false);
 
                 if already_activated {
-                    return Ok(format!("{}/login", frontend_url));
+                    return Ok(format!("{}/set-password?error=invitation_already_used", frontend_url));
                 }
 
                 // Valid, not yet activated → generate a fresh Supabase set-password link

@@ -1120,16 +1120,18 @@ impl SupabaseClient {
         first_name: &str,
         last_name: &str,
         school_name: &str,
+        role: &str,
     ) -> Result<bool, AppError> {
         let confirmation_url = format!(
             "{}/enrollments/activate/{}",
             self.api_base_url, invite_token
         );
-        let subject = format!("Welcome to {} - SuperAdmin Access", school_name);
+        let subject = format!("Welcome to {} - {} Access", school_name, role);
         let html_body = super::email_templates::admin_invite_html(
             first_name,
             last_name,
             school_name,
+            role,
             &confirmation_url,
         );
         match self

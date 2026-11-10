@@ -343,6 +343,7 @@ impl SchoolService {
                     &request.owner.first_name,
                     &request.owner.last_name,
                     &school.name,
+                    "SuperAdmin",
                 )
                 .await
                 .unwrap_or(false)

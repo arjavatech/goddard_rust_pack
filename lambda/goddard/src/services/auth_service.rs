@@ -471,7 +471,7 @@ impl AuthService {
 
         let email_sent = if invite_token != uuid::Uuid::nil() {
             self.supabase_client
-                .send_admin_invite_email(&request.email, invite_token, first_name_str, last_name_str, &school_name)
+                .send_admin_invite_email(&request.email, invite_token, first_name_str, last_name_str, &school_name, role_str)
                 .await
                 .unwrap_or(false)
         } else {
@@ -585,7 +585,7 @@ impl AuthService {
 
         let email_sent = if invite_token != uuid::Uuid::nil() {
             self.supabase_client
-                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name)
+                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name, "Admin")
                 .await
                 .unwrap_or(false)
         } else {
@@ -671,7 +671,7 @@ impl AuthService {
 
         let email_sent = if invite_token != uuid::Uuid::nil() {
             self.supabase_client
-                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name)
+                .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name, "SuperAdmin")
                 .await
                 .unwrap_or(false)
         } else {
@@ -1060,7 +1060,7 @@ impl AuthService {
         // Step 5: Send branded admin invite email via Resend
         let email_sent = if invite_token != uuid::Uuid::nil() {
             self.supabase_client
-                .send_admin_invite_email(&user.email, invite_token, &user.first_name, &user.last_name, &school_name)
+                .send_admin_invite_email(&user.email, invite_token, &user.first_name, &user.last_name, &school_name, &user.role)
                 .await
                 .unwrap_or(false)
         } else {

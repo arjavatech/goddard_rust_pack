@@ -6,12 +6,20 @@ use chrono::{DateTime, NaiveDate, Utc};
 
 /// Renders the parent invite email HTML.
 pub fn parent_invite_html(first_name: &str, last_name: &str, login_url: &str) -> String {
-    format!(
-        r#"<html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:0;background-color:#f9f9f9;"><div style="max-width:600px;margin:0 auto;padding:30px 20px;"><div style="background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;padding:32px;"><div style="height:4px;background:#3498db;border-radius:4px;margin-bottom:24px;"></div><h2 style="color:#2c3e50;margin:0 0 16px 0;font-size:20px;">Welcome to The Goddard School</h2><p style="margin:0 0 12px 0;">Dear {first_name} {last_name},</p><p style="margin:0 0 12px 0;">We hope this message finds you well. We are pleased to inform you that your enrollment request at <strong>The Goddard School</strong> has been received and approved.</p><p style="margin:0 0 12px 0;">Click the button below to set your password and access the parent portal. You can also sign in with Google using this email address.</p><p style="text-align:center;margin:28px 0;"><a href="{url}" style="display:inline-block;padding:15px 30px;background:#3498db;color:#ffffff;text-decoration:none;border-radius:5px;font-weight:bold;font-size:16px;">Set Your Password</a></p><hr style="border:none;border-top:1px solid #e0e0e0;margin:28px 0;"><p style="margin:0;">Thank you for choosing <strong>The Goddard School</strong>.<br><br>Warm regards,<br><strong>Admin Team, The Goddard School</strong></p></div><p style="text-align:center;color:#999;font-size:12px;margin-top:16px;">This is an automated message. Please do not reply to this email.</p></div></body></html>"#,
-        first_name = first_name,
-        last_name = last_name,
-        url = login_url,
-    )
+    let accent = "#3498db";
+    let headline = "Welcome to The Goddard School".to_string();
+    let preheader = "Your enrollment at The Goddard School has been approved. Set up your account to access the parent portal.".to_string();
+    let body = format!(
+        r#"<p>Dear {first_name} {last_name},</p>
+          <p>We are pleased to inform you that your enrollment request at <strong>The Goddard School</strong>
+          has been received and approved.</p>
+          <p>Click the button below to set your password and access the parent portal.
+          You can also sign in with Google using this email address.</p>"#,
+        first_name = html_escape(first_name),
+        last_name = html_escape(last_name),
+    );
+    let cta = cta_button("Set Your Password", login_url, accent);
+    render_shell(accent, &headline, &preheader, &body, &cta)
 }
 
 /// Renders the admin / SuperAdmin invite email HTML.
@@ -19,52 +27,36 @@ pub fn admin_invite_html(
     first_name: &str,
     last_name: &str,
     school_name: &str,
+    role: &str,
     login_url: &str,
 ) -> String {
-    format!(
-        r#"<html>
-  <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <div style="max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f9f9f9;">
-      <h2 style="color: #2c3e50; margin-top: 0;">Welcome to {school_name}</h2>
-
-      <p>Dear {first_name} {last_name},</p>
-
-      <p>You have been designated as the <strong>SuperAdmin</strong> for <strong>{school_name}</strong>. This grants you full access
-to manage your school's operations, staff, and enrollment processes.</p>
-
-      <div style="background-color: #fff; padding: 20px; border-radius: 5px; margin: 20px 0;">
-        <p style="margin: 0 0 15px 0;"><strong>To get started:</strong></p>
-        <ol style="margin: 0; padding-left: 20px;">
-          <li>Click the button below to set your password</li>
-          <li>Log in with your email and password</li>
-          <li>Or, sign in with Google using this email address</li>
-        </ol>
-      </div>
-
-      <p style="text-align: center; margin: 30px 0;">
-        <a href="{url}" style="display: inline-block; padding: 15px 30px; background-color: #3498db; color: white; text-decoration:
-none; border-radius: 5px; font-weight: bold; font-size: 16px;">Set Your Password</a>
-      </p>
-
-      <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-
-      <p style="font-size: 14px; color: #666; margin-bottom: 5px;">If you did not request this access or believe you received this email in error,
-please contact our support team immediately.</p>
-
-      <p style="margin-top: 30px;">Best regards,<br>
-      <strong>The Goddard School Team</strong></p>
-    </div>
-
-    <p style="text-align: center; font-size: 12px; color: #999; margin-top: 20px;">
-      This is an automated message. Please do not reply to this email.
-    </p>
-  </body>
-</html>"#,
-        school_name = school_name,
-        first_name = first_name,
-        last_name = last_name,
-        url = login_url,
-    )
+    let accent = "#3498db";
+    let headline = format!("Welcome to {} — {} Access", html_escape(school_name), role);
+    let preheader = format!(
+        "You've been designated as {} at {}. Set up your account to get started.",
+        role, school_name
+    );
+    let body = format!(
+        r#"<p>Dear {first_name} {last_name},</p>
+          <p>You have been designated as the <strong>{role}</strong> for <strong>{school}</strong>.
+          This grants you full access to manage your school's operations, staff, and enrollment processes.</p>
+          <div style="background:#f8f9fa;padding:16px 20px;border-radius:6px;margin:20px 0;">
+            <p style="margin:0 0 10px 0;"><strong>To get started:</strong></p>
+            <ol style="margin:0;padding-left:20px;">
+              <li>Click the button below to set your password</li>
+              <li>Log in with your email and password</li>
+              <li>Or, sign in with Google using this email address</li>
+            </ol>
+          </div>
+          <p style="font-size:14px;color:#666;">If you did not request this access or believe you received this email in error,
+          please contact our support team immediately.</p>"#,
+        first_name = html_escape(first_name),
+        last_name = html_escape(last_name),
+        role = role,
+        school = html_escape(school_name),
+    );
+    let cta = cta_button("Set Your Password", login_url, accent);
+    render_shell(accent, &headline, &preheader, &body, &cta)
 }
 
 // =====================================================

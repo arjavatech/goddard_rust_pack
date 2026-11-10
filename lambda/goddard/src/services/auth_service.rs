@@ -878,8 +878,24 @@ impl AuthService {
         let user = if let Ok(claims) = crate::middleware::auth::try_decode_custom_jwt(jwt_token) {
             self.dao.get_user_by_id(claims.user_id).await?
         } else {
-            // Fall back to Supabase JWT validation (legacy Supabase login)
+            // Fall back to Supabase JWT validation (password login path)
             let user_data = self.supabase_client.verify_jwt_and_get_user(jwt_token).await?;
+
+            // Block users who haven't completed the invite flow
+            let account_activated = user_data.get("app_metadata")
+                .and_then(|m| m.get("account_activated"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let password_set = user_data.get("user_metadata")
+                .and_then(|m| m.get("password_set"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !account_activated && !password_set {
+                return Err(AppError::Authorization(
+                    "Please sign up using your invitation link before logging in.".to_string()
+                ));
+            }
+
             let user_id_str = user_data.get("id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| AppError::ExternalService("Missing user ID in JWT response".to_string()))?;

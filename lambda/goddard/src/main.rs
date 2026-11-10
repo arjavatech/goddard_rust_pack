@@ -470,6 +470,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/auth/users/filter", get(get_users_by_school_and_role))
         .route("/auth/google/exchange", post(google_exchange))
         .route("/auth/activate", post(activate_account))
+        .route("/auth/forgot-password", post(forgot_password))
         .route(
             "/auth/admin-resend-invite",
             post(resend_admin_invite)

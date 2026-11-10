@@ -1001,7 +1001,12 @@ impl SupabaseClient {
 
     pub async fn send_password_reset_email(&self, email: &str) -> Result<(), AppError> {
         let endpoint = format!("{}/auth/v1/recover", self.project_url);
-        let body = json!({ "email": email });
+        let body = json!({
+            "email": email,
+            "options": {
+                "redirectTo": format!("{}/reset-password", self.frontend_url)
+            }
+        });
 
         let response = self
             .client

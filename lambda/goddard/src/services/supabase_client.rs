@@ -1003,9 +1003,7 @@ impl SupabaseClient {
         let endpoint = format!("{}/auth/v1/recover", self.project_url);
         let body = json!({
             "email": email,
-            "options": {
-                "redirectTo": format!("{}/reset-password", self.frontend_url)
-            }
+            "redirect_to": format!("{}/reset-password", self.frontend_url)
         });
 
         let response = self

@@ -1125,7 +1125,7 @@ impl SupabaseClient {
             "{}/enrollments/activate/{}",
             self.api_base_url, invite_token
         );
-        let subject = format!("Welcome to {} - Administrator Access", school_name);
+        let subject = format!("Welcome to {} - SuperAdmin Access", school_name);
         let html_body = super::email_templates::admin_invite_html(
             first_name,
             last_name,

@@ -29,7 +29,7 @@ pub fn admin_invite_html(
 
       <p>Dear {first_name} {last_name},</p>
 
-      <p>You have been designated as the <strong>School Administrator</strong> for <strong>{school_name}</strong>. This grants you full access
+      <p>You have been designated as the <strong>SuperAdmin</strong> for <strong>{school_name}</strong>. This grants you full access
 to manage your school's operations, staff, and enrollment processes.</p>
 
       <div style="background-color: #fff; padding: 20px; border-radius: 5px; margin: 20px 0;">
@@ -52,7 +52,7 @@ none; border-radius: 5px; font-weight: bold; font-size: 16px;">Set Your Password
 please contact our support team immediately.</p>
 
       <p style="margin-top: 30px;">Best regards,<br>
-      <strong>{school_name} Support Team</strong></p>
+      <strong>The Goddard School Team</strong></p>
     </div>
 
     <p style="text-align: center; font-size: 12px; color: #999; margin-top: 20px;">

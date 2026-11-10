@@ -132,7 +132,18 @@ impl SchoolDao {
 
             let result = client.simple_query(&query).await
                 .map_err(|e| {
-                    AppError::Database(format!("Failed to create school: {}", e))
+                    let msg = e.to_string();
+                    if msg.contains("duplicate key") {
+                        if msg.contains("schools_name_key") {
+                            AppError::Conflict("A school with this name already exists.".to_string())
+                        } else if msg.contains("schools_subdomain_key") {
+                            AppError::Conflict("A school with this subdomain already exists.".to_string())
+                        } else {
+                            AppError::Conflict("A school with this name or subdomain already exists.".to_string())
+                        }
+                    } else {
+                        AppError::Database(format!("Failed to create school: {}", e))
+                    }
                 })?;
 
 
@@ -278,7 +289,20 @@ impl SchoolDao {
 
         // Use simple_query to avoid prepared statements entirely
         let result = client.simple_query(&query).await
-            .map_err(|e| AppError::Database(format!("Failed to update school: {}", e)))?;
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("duplicate key") {
+                    if msg.contains("schools_name_key") {
+                        AppError::Conflict("A school with this name already exists.".to_string())
+                    } else if msg.contains("schools_subdomain_key") {
+                        AppError::Conflict("A school with this subdomain already exists.".to_string())
+                    } else {
+                        AppError::Conflict("A school with this name or subdomain already exists.".to_string())
+                    }
+                } else {
+                    AppError::Database(format!("Failed to update school: {}", e))
+                }
+            })?;
 
         // Parse the result from simple_query
         for message in result {

@@ -41,6 +41,7 @@ pub enum UserRole {
     Teacher,
     Admin,
     SuperAdmin,
+    Owner,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

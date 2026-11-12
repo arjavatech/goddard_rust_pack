@@ -424,7 +424,14 @@ impl AuthService {
             }
         };
 
-        // STEP 2: Block if email already belongs to a parent in this school
+        // STEP 2: Block privileged role creation through the general admin invite endpoint
+        if matches!(request.role.as_deref(), Some("Owner") | Some("SuperAdmin")) {
+            return Err(AppError::Authorization(
+                "Use the dedicated owner management endpoint to create Owner accounts.".to_string()
+            ));
+        }
+
+        // Block if email already belongs to a parent in this school
         if self.dao.email_exists_as_parent(&request.email, school_uuid).await? {
             return Err(AppError::Conflict(
                 "This email is already registered as a parent. Cannot invite as an admin.".to_string()
@@ -1002,6 +1009,7 @@ impl AuthService {
         let role = match user.role.as_str() {
             "SuperAdmin" => crate::models::schema::UserRole::SuperAdmin,
             "Admin"      => crate::models::schema::UserRole::Admin,
+            "Owner"      => crate::models::schema::UserRole::Owner,
             "Teacher" | "Employee" => crate::models::schema::UserRole::Teacher,
             _            => crate::models::schema::UserRole::Parent,
         };
@@ -1085,6 +1093,13 @@ impl AuthService {
 
     pub async fn change_user_role(&self, request: ChangeRoleRequest) -> ApiResult<ChangeRoleResponse> {
         ValidationUtils::validate_email(&request.email)?;
+
+        // Owner role changes must go through the owner management endpoints
+        if request.new_role == "Owner" {
+            return Err(AppError::Authorization(
+                "Cannot assign Owner role via this endpoint. Use the owner management endpoint.".to_string()
+            ));
+        }
 
         let allowed_roles = vec!["SuperAdmin", "Admin", "Teacher", "Employee", "Parent", "primary-parent", "secondary-parent"];
         if !allowed_roles.contains(&request.new_role.as_str()) {

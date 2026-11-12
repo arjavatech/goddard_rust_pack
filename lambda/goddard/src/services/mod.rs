@@ -1,4 +1,5 @@
 pub mod admin_service;
+pub mod owner_service;
 pub mod auth_service;
 pub mod conference_service;
 pub mod drive_service;
@@ -27,6 +28,7 @@ pub mod taptime_service;
 pub mod upload_service;
 
 pub use admin_service::AdminService;
+pub use owner_service::OwnerService;
 pub use auth_service::AuthService;
 pub use conference_service::ConferenceService;
 pub use drive_service::DriveService;

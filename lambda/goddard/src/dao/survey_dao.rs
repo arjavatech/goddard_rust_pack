@@ -345,7 +345,7 @@ impl SurveyDao {
                     )))"#
             }
             UserRole::Teacher => "s.audience IN ('employees', 'all_staff', 'everyone')",
-            UserRole::Admin | UserRole::SuperAdmin => "s.audience IN ('all_staff', 'everyone')",
+            UserRole::Admin | UserRole::SuperAdmin | UserRole::Owner => "s.audience IN ('all_staff', 'everyone')",
         };
 
         let sql = format!(

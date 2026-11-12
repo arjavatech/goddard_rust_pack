@@ -18,6 +18,9 @@ mod utils;
 use config::database::{get_db_pool, initialize_database};
 use controllers::{
     admin_controller::get_admin_dashboard_metrics,
+    owner_controller::{
+        delete_owner, invite_owner, list_owners, resend_owner_invite, update_owner,
+    },
     auth_verification_controller::{
         clear_auth_table, create_invitation, create_invitation_enhanced, create_superadmin,
         debug_auth_users, delete_admin_user, forgot_password, get_admins_by_school,
@@ -136,19 +139,19 @@ use dao::{
     AdminDao, AdminPermissionDao, AuthDao, ClassFormOverrideDao, ClassroomDao, ConferenceDao,
     DeviceTokenDao, DocumentRequestDao, DriveDao, EmployeeDao, EmployeeFormAssignmentDao,
     EmployeeFormSubmissionDao, EmployeeFormTemplateDao, EnrollmentDao, FormSubmissionDao,
-    FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, PortalDao, RequestDao,
-    SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
+    FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, OwnerDao, PortalDao,
+    RequestDao, SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
-    jwt_or_api_key_superadmin_only,
+    jwt_or_api_key_superadmin_only, jwt_or_api_key_superadmin_or_owner,
 };
 use middleware::{cors::add_cors_headers, request_id::request_id_middleware};
 use services::{
     AdminService, AuthService, ClassFormOverrideService, ClassroomService, ConferenceService,
     DocumentRequestService, DriveService, EmailService, EmployeeService, EnrollmentService,
     FilloutService, FormSubmissionService, FormTemplateService, NotificationPushTrigger,
-    NotificationService, PortalService, RequestService, SchoolService,
+    NotificationService, OwnerService, PortalService, RequestService, SchoolService,
     StudentFormAssignmentService, SupabaseClient, SurveyService, TapTimeMappingService,
     TapTimeService, UploadService,
 };
@@ -338,6 +341,13 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         school_dao.clone(),
     ));
 
+    let owner_service = Arc::new(OwnerService::new(
+        OwnerDao::new(pool.clone()),
+        auth_dao.clone(),
+        school_dao.clone(),
+        supabase_client.clone(),
+    ));
+
     let employee_service = Arc::new(EmployeeService::new(
         employee_dao,
         employee_form_template_dao,
@@ -378,27 +388,27 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/taptime/settings",
             get(taptime_settings).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only))
-                .patch(update_taptime_settings).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .patch(update_taptime_settings).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/setup-status",
-            get(setup_status).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            get(setup_status).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/integration-status",
-            get(integration_status).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            get(integration_status).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/setup/redeem-linking-code",
-            post(redeem_pairing_code).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(redeem_pairing_code).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/reconcile",
-            post(reconcile_users).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(reconcile_users).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/sync-access",
-            post(sync_access).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(sync_access).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/mapping-users",
@@ -423,17 +433,17 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/taptime/available-users",
             get(available_taptime_users)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         // TEMPORARY development diagnostic; protected exactly like mapping operations.
         .route(
             "/taptime/diagnostics/database",
             get(database_diagnostics)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/taptime/user-mappings",
-            post(create_mapping).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(create_mapping).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .with_state(taptime_mapping_service);
 
@@ -453,12 +463,12 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route("/auth/invitation-summary", get(get_invitation_summary))
         .route(
             "/auth/invite-create",
-            post(create_invitation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            post(create_invitation).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/auth/invite-create-enhanced",
             post(create_invitation_enhanced)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/auth/create-superadmin",
@@ -473,7 +483,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/auth/admin-resend-invite",
             post(resend_admin_invite)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route("/users/me", get(get_current_user_profile))
         .route(
@@ -486,18 +496,18 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
                 )
                 .merge(
                     delete(delete_admin_user)
-                        .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                        .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
                 ),
         )
         .route(
             "/users/role",
             patch(change_user_role)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .route(
             "/users/change-password",
             post(change_user_password)
-                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+                .layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .with_state(auth_service)
         // School Management APIs (Admin JWT or API Key)
@@ -1357,9 +1367,31 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         )
         .route(
             "/drive/admins",
-            get(list_drive_admins).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+            get(list_drive_admins).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .with_state(drive_service)
+        // Owner Management APIs — read (SuperAdmin + Owner), writes (SuperAdmin-only)
+        .route(
+            "/owners",
+            get(list_owners).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
+        )
+        .route(
+            "/owners/invite",
+            post(invite_owner).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/owners/resend-invite",
+            post(resend_owner_invite).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/owners/:id",
+            put(update_owner).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .route(
+            "/owners/:id",
+            delete(delete_owner).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
+        )
+        .with_state(owner_service)
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)); // 10 MB

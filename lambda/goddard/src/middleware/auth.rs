@@ -585,7 +585,7 @@ pub async fn jwt_or_api_key_admin_only(
 
             if let Some(auth_context) = auth_context_opt {
                 match auth_context.role {
-                    UserRole::Admin | UserRole::SuperAdmin => {
+                    UserRole::Admin | UserRole::SuperAdmin | UserRole::Owner => {
                         request.extensions_mut().insert(auth_context);
                         return Ok(next.run(request).await);
                     }
@@ -660,6 +660,58 @@ pub async fn jwt_or_api_key_superadmin_only(
     }
 
     // No valid JWT — try API key authentication
+    api_key_fallback(headers, request, next).await
+}
+
+/// SuperAdmin-or-Owner middleware — allows SuperAdmin and Owner roles.
+/// Used for endpoints that Owner should access with the same privileges as SuperAdmin,
+/// but Owner-management endpoints themselves stay on jwt_or_api_key_superadmin_only.
+pub async fn jwt_or_api_key_superadmin_or_owner(
+    headers: HeaderMap,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let auth_header = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+
+    if let Some(auth_header) = auth_header {
+        if auth_header.starts_with("Bearer ") {
+            let token = &auth_header[7..];
+
+            let auth_context_opt = if let Ok(claims) = try_decode_custom_jwt(token) {
+                Some(AuthContext {
+                    user_id: claims.user_id,
+                    school_id: claims.school_id,
+                    role: claims.role,
+                    email: claims.email,
+                })
+            } else {
+                verify_jwt_with_supabase(token).await.ok()
+            };
+
+            if let Some(auth_context) = auth_context_opt {
+                match auth_context.role {
+                    UserRole::SuperAdmin | UserRole::Owner => {
+                        request.extensions_mut().insert(auth_context);
+                        return Ok(next.run(request).await);
+                    }
+                    _ => {
+                        let error_response = ErrorResponse {
+                            success: false,
+                            message: "Access forbidden. SuperAdmin or Owner role required.".to_string(),
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        };
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            Json(error_response),
+                        ).into_response());
+                    }
+                }
+            }
+        }
+    }
+
     api_key_fallback(headers, request, next).await
 }
 

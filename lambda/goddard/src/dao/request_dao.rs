@@ -43,7 +43,10 @@ impl RequestDao {
             payment_method: row.get("payment_method"),
             purchase_date: row.get("purchase_date"),
             payment_notes: row.get("payment_notes"),
-            bill_image: row.get("bill_image"),
+            bill_images: row.try_get::<_, serde_json::Value>("bill_images")
+                .ok()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
             expected_completion_date: row.get("expected_completion_date"),
             created_at: row.get("created_at"),
             paid_by_user_id: row.try_get("paid_by_user_id").unwrap_or(None),
@@ -87,7 +90,7 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                     paid_by_user_id, paid_by_name,
                     COUNT(*) OVER() AS total_count,
                     COUNT(*) FILTER (WHERE status = 'Pending') OVER() AS pending_count,
@@ -131,7 +134,7 @@ impl RequestDao {
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                          paid_by_user_id, paid_by_name",
             &[
                 &body.school_id, &body.requester_id, &body.requester_name, &body.requester_role,
@@ -194,7 +197,7 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                     paid_by_user_id, paid_by_name
              FROM requests WHERE id = $1",
             &[&id],
@@ -213,7 +216,7 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                        paid_by_user_id, paid_by_name",
             &[&id, &status, &expected_completion_date],
         ).await.map_err(|e| AppError::Database(format!("Failed to update request status: {}", e)))?;
@@ -228,25 +231,28 @@ impl RequestDao {
         payment_method: &str,
         purchase_date: NaiveDate,
         payment_notes: Option<&str>,
-        bill_image: Option<&str>,
+        bill_urls: Vec<String>,
         paid_by_user_id: Uuid,
         paid_by_name: &str,
     ) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
+        let bill_images_json = serde_json::to_value(&bill_urls).unwrap_or(serde_json::json!([]));
+
         let row = client.query_one(
             "UPDATE requests
              SET status = 'Completed', amount_spent = $2, payment_method = $3,
-                 purchase_date = $4, payment_notes = $5, bill_image = $6, expected_completion_date = NULL,
+                 purchase_date = $4, payment_notes = $5,
+                 bill_images = $6::jsonb, expected_completion_date = NULL,
                  paid_by_user_id = $7, paid_by_name = $8
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                        paid_by_user_id, paid_by_name",
-            &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes, &bill_image, &paid_by_user_id, &paid_by_name],
+            &[&id, &amount_spent, &payment_method, &purchase_date, &payment_notes, &bill_images_json, &paid_by_user_id, &paid_by_name],
         ).await.map_err(|e| AppError::Database(format!("Failed to pay request: {}", e)))?;
 
         Ok(self.row_to_request(&row))
@@ -275,7 +281,7 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                        paid_by_user_id, paid_by_name",
             &[&id, &expected_completion_date],
         ).await.map_err(|e| AppError::Database(format!("Failed to update expected completion date: {}", e)))?;
@@ -297,7 +303,7 @@ impl RequestDao {
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
                        teacher_id, teacher_name, product_link, product_image, notes,
-                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                        paid_by_user_id, paid_by_name",
             &[&id, &body.item, &body.quantity, &body.category, &body.location, &body.scope,
               &body.classroom_id, &body.classroom_name, &body.teacher_id, &body.teacher_name,
@@ -325,7 +331,7 @@ impl RequestDao {
             "SELECT id, school_id, requester_id, requester_name, requester_role,
                     item, quantity, category, location, scope, classroom_id, classroom_name,
                     teacher_id, teacher_name, product_link, product_image, notes,
-                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                    status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                     paid_by_user_id, paid_by_name,
                     COUNT(*) OVER() AS total_count
              FROM requests
@@ -401,33 +407,35 @@ impl RequestDao {
         })
     }
 
-    pub async fn create_manual_expense(&self, body: &CreateExpenseBody, bill_image_url: Option<String>) -> Result<Request, AppError> {
+    pub async fn create_manual_expense(&self, body: &CreateExpenseBody, bill_urls: Vec<String>) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let bill_images_json = serde_json::to_value(&bill_urls).unwrap_or(serde_json::json!([]));
 
         let row = client.query_one(
             "INSERT INTO requests (
                 id, school_id, requester_id, requester_name, requester_role,
                 item, quantity, category, location, scope,
                 classroom_id, classroom_name, teacher_id, teacher_name,
-                product_link, notes, bill_image,
+                product_link, notes, bill_images,
                 status, source, amount_spent, payment_method, purchase_date, payment_notes, paid_by_user_id, paid_by_name, created_at
              ) VALUES (
                 gen_random_uuid(), $1, $2, $3, $4,
                 $5, $6, $7, $8, $9,
                 $10, $11, $12, $13,
-                $14, $15, $16,
+                $14, $15, $16::jsonb,
                 'Completed', 'manual', $17, $18, $19, $20, $21, $22, NOW()
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
-                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_image, expected_completion_date, created_at,
+                         status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
                          paid_by_user_id, paid_by_name",
             &[
                 &body.school_id, &body.requester_id, &body.requester_name, &body.requester_role,
                 &body.item, &body.quantity, &body.category, &body.location, &body.scope,
                 &body.classroom_id, &body.classroom_name, &body.teacher_id, &body.teacher_name,
-                &body.product_link, &body.notes, &bill_image_url,
+                &body.product_link, &body.notes, &bill_images_json,
                 &body.amount_spent, &body.payment_method, &body.purchase_date, &body.payment_notes,
                 &body.paid_by_user_id, &body.paid_by_name,
             ],

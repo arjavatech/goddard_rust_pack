@@ -18,6 +18,31 @@ pub const DOCUMENT_MAX_SIZE_BYTES: i64 = 10 * 1024 * 1024;
 
 pub const DRIVE_MAX_SIZE_BYTES: i64 = 500 * 1024 * 1024; // 500 MB
 
+fn resize_bill_image(bytes: Vec<u8>, content_type: &str) -> (Vec<u8>, String) {
+    if content_type == "application/pdf" {
+        return (bytes, content_type.to_string());
+    }
+    const MAX_DIM: u32 = 1920;
+    const THRESHOLD: usize = 2 * 1024 * 1024;
+    if bytes.len() <= THRESHOLD {
+        return (bytes, content_type.to_string());
+    }
+    let img = match image::load_from_memory(&bytes) {
+        Ok(i) => i,
+        Err(_) => return (bytes, content_type.to_string()),
+    };
+    let img = if img.width() > MAX_DIM || img.height() > MAX_DIM {
+        img.resize(MAX_DIM, MAX_DIM, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+    let mut output = std::io::Cursor::new(Vec::new());
+    if img.write_to(&mut output, image::ImageFormat::Jpeg).is_err() {
+        return (bytes, content_type.to_string());
+    }
+    (output.into_inner(), "image/jpeg".to_string())
+}
+
 pub struct UploadService {
     s3_client: Option<aws_sdk_s3::Client>,
     bucket: Option<String>,
@@ -186,6 +211,11 @@ impl UploadService {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to copy S3 object: {}", e)))?;
         Ok(())
+    }
+
+    pub async fn upload_bill_image(&self, file_name: &str, content_type: &str, bytes: Vec<u8>) -> Result<UploadImageResponse, AppError> {
+        let (bytes, effective_ct) = resize_bill_image(bytes, content_type);
+        self.upload_image(file_name, &effective_ct, bytes).await
     }
 
     pub async fn upload_document(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<(), AppError> {

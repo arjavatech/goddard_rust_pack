@@ -29,11 +29,21 @@ pub struct Request {
     pub payment_method: Option<String>,
     pub purchase_date: Option<NaiveDate>,
     pub payment_notes: Option<String>,
-    pub bill_image: Option<String>,
+    #[serde(default)]
+    pub bill_images: Vec<String>,
     pub expected_completion_date: Option<NaiveDate>,
     pub created_at: Option<NaiveDateTime>,
     pub paid_by_user_id: Option<Uuid>,
     pub paid_by_name: Option<String>,
+}
+
+// ─── Multi-file bill upload ───────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct BillImageUpload {
+    pub base64: String,
+    pub name: String,
+    pub content_type: String,
 }
 
 // ─── API request bodies ───────────────────────────────────────────────────────
@@ -103,9 +113,8 @@ pub struct PayRequestBody {
     pub payment_method: String,
     pub purchase_date: NaiveDate,
     pub payment_notes: Option<String>,
-    pub bill_image_base64: Option<String>,
-    pub bill_image_name: Option<String>,
-    pub bill_image_content_type: Option<String>,
+    #[serde(default)]
+    pub bill_images: Vec<BillImageUpload>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,9 +139,8 @@ pub struct CreateExpenseBody {
     pub payment_method: String,
     pub purchase_date: NaiveDate,
     pub payment_notes: Option<String>,
-    pub bill_image_base64: Option<String>,
-    pub bill_image_name: Option<String>,
-    pub bill_image_content_type: Option<String>,
+    #[serde(default)]
+    pub bill_images: Vec<BillImageUpload>,
     #[serde(alias = "paid_by_name")]
     pub paid_by_name: Option<String>,
     pub paid_by_user_id: Option<Uuid>,

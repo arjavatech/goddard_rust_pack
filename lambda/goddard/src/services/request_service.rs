@@ -6,7 +6,7 @@ use crate::middleware::auth::AuthContext;
 use crate::models::schema::UserRole;
 use crate::models::requests::{
     CreateRequestBody, UpdateRequestStatusBody, UpdateExpectedCompletionDateBody, UpdateRequestBody, PayRequestBody, CreateExpenseBody,
-    ListRequestsParams, ListExpensesParams,
+    BillImageUpload, ListRequestsParams, ListExpensesParams,
     RequestsListResponse, RequestStatusCounts, ExpensesListResponse, Request,
 };
 use crate::services::upload_service::UploadService;
@@ -226,6 +226,18 @@ impl RequestService {
         self.dao.update_request(id, &body).await
     }
 
+    async fn upload_bill_images(&self, uploads: Vec<BillImageUpload>) -> Result<Vec<String>, AppError> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let mut urls = Vec::new();
+        for item in uploads {
+            let bytes = STANDARD.decode(&item.base64)
+                .map_err(|e| AppError::Validation(format!("Invalid base64: {}", e)))?;
+            let resp = self.upload_service.upload_bill_image(&item.name, &item.content_type, bytes).await?;
+            urls.push(resp.s3_url);
+        }
+        Ok(urls)
+    }
+
     pub async fn pay_request(&self, auth: &AuthContext, id: Uuid, mut body: PayRequestBody) -> Result<Request, AppError> {
         let request = self.dao.get_request_by_id(id).await?
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
@@ -242,18 +254,7 @@ impl RequestService {
             return Err(AppError::Validation("Amount must be greater than 0".to_string()));
         }
 
-        let mut bill_image_url: Option<String> = None;
-        if let (Some(b64), Some(name), Some(ct)) = (
-            body.bill_image_base64.take(),
-            body.bill_image_name.take(),
-            body.bill_image_content_type.take(),
-        ) {
-            use base64::{engine::general_purpose::STANDARD, Engine};
-            let bytes = STANDARD.decode(&b64)
-                .map_err(|e| AppError::Validation(format!("Invalid base64 bill image: {}", e)))?;
-            let resp = self.upload_service.upload_image(&name, &ct, bytes).await?;
-            bill_image_url = Some(resp.s3_url);
-        }
+        let bill_urls = self.upload_bill_images(std::mem::take(&mut body.bill_images)).await?;
 
         let paid_by_name = self.dao.get_user_display_name(auth.user_id).await
             .unwrap_or_else(|| auth.email.clone());
@@ -264,7 +265,7 @@ impl RequestService {
             &body.payment_method,
             body.purchase_date,
             body.payment_notes.as_deref(),
-            bill_image_url.as_deref(),
+            bill_urls,
             auth.user_id,
             &paid_by_name,
         ).await
@@ -351,21 +352,8 @@ impl RequestService {
             body.paid_by_name = Some(body.requester_name.clone());
         }
 
-        // Upload bill image if provided
-        let bill_image_url = if let (Some(b64), Some(name), Some(ct)) = (
-            body.bill_image_base64.take(),
-            body.bill_image_name.take(),
-            body.bill_image_content_type.take(),
-        ) {
-            use base64::{engine::general_purpose::STANDARD, Engine};
-            let bytes = STANDARD.decode(&b64)
-                .map_err(|e| AppError::Validation(format!("Invalid base64 bill image: {}", e)))?;
-            let resp = self.upload_service.upload_image(&name, &ct, bytes).await?;
-            Some(resp.s3_url)
-        } else {
-            None
-        };
+        let bill_urls = self.upload_bill_images(std::mem::take(&mut body.bill_images)).await?;
 
-        self.dao.create_manual_expense(&body, bill_image_url).await
+        self.dao.create_manual_expense(&body, bill_urls).await
     }
 }

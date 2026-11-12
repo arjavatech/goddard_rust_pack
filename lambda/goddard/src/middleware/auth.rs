@@ -489,6 +489,7 @@ async fn verify_jwt_with_supabase(jwt_token: &str) -> Result<AuthContext, AppErr
     let role = match role_str {
         "Admin" => UserRole::Admin,
         "SuperAdmin" => UserRole::SuperAdmin,
+        "Owner" => UserRole::Owner,
         "Parent" => UserRole::Parent,
         "Teacher" | "Employee" => UserRole::Teacher,
         _ => {

@@ -80,7 +80,7 @@ use controllers::{
     },
     drive_controller::{
         copy_item as copy_drive_item, create_folder, delete_item as delete_drive_item,
-        get_download_url, get_upload_url, list_admins as list_drive_admins,
+        get_download_url, get_upload_url,
         list_items as list_drive_items, move_item as move_drive_item,
         register_file, rename_item,
     },
@@ -1364,10 +1364,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/drive/items/:id/copy",
             post(copy_drive_item).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
-        )
-        .route(
-            "/drive/admins",
-            get(list_drive_admins).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_or_owner)),
         )
         .with_state(drive_service)
         // Owner Management APIs — read (SuperAdmin + Owner), writes (SuperAdmin-only)

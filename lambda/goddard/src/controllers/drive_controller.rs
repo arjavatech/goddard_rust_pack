@@ -91,10 +91,3 @@ pub async fn copy_item(
     let item = svc.copy_item(id, &auth).await?;
     Ok((StatusCode::CREATED, Json(item)))
 }
-
-pub async fn list_admins(
-    State(svc): State<Arc<DriveService>>,
-    Extension(auth): Extension<AuthContext>,
-) -> Result<impl IntoResponse, AppError> {
-    Ok(Json(svc.list_admins(&auth).await?))
-}

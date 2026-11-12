@@ -441,7 +441,7 @@ impl StudentFormAssignmentDao {
 
         let target_status = request.target_status.as_deref().unwrap_or("in_progress");
 
-        let row = client.query_one(
+        let rows = client.query(
             r#"
             UPDATE student_form_assignments
             SET
@@ -450,7 +450,7 @@ impl StudentFormAssignmentDao {
                 approved_by = NULL,
                 approved_on = NULL,
                 updated_at = $3
-            WHERE id = $4 AND status = 'approved'
+            WHERE id = $4
             RETURNING
                 id, school_id, enrollment_id, child_id, form_template_id,
                 assignment_source, status, is_required, assigned_at,
@@ -466,13 +466,14 @@ impl StudentFormAssignmentDao {
         .await
         .map_err(|e| {
             println!("[ERROR] StudentFormAssignmentDAO: Revoke update failed: {}", e);
-            // Check if it's a "no rows affected" error
-            if e.to_string().contains("No rows updated") || e.to_string().contains("0 rows") {
-                AppError::Validation("Form is not in approved status and cannot be revoked".to_string())
-            } else {
-                AppError::Database(e.to_string())
-            }
+            AppError::Database(e.to_string())
         })?;
+
+        if rows.is_empty() {
+            return Err(AppError::NotFound("Student form assignment not found".to_string()));
+        }
+
+        let row = &rows[0];
 
         // Convert status
         let status = StudentFormAssignmentStatus::InProgress;

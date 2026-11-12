@@ -1,12 +1,10 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::dao::admin_permission_dao::AdminPermissionDao;
 use crate::dao::drive_dao::DriveDao;
 use crate::dao::school_dao::SchoolDao;
 use crate::error::{ApiResult, AppError};
 use crate::middleware::auth::AuthContext;
-use crate::models::admin_permission::MANAGE_DRIVE;
 use crate::models::drive::*;
 use crate::models::schema::UserRole;
 use crate::models::school::SchoolFeature;
@@ -17,7 +15,6 @@ pub struct DriveService {
     dao: DriveDao,
     upload: Arc<UploadService>,
     schools: SchoolDao,
-    admin_permissions: AdminPermissionDao,
 }
 
 impl DriveService {
@@ -25,15 +22,13 @@ impl DriveService {
         dao: DriveDao,
         upload: Arc<UploadService>,
         schools: SchoolDao,
-        admin_permissions: AdminPermissionDao,
     ) -> Self {
-        Self { dao, upload, schools, admin_permissions }
+        Self { dao, upload, schools }
     }
 
     async fn check_access(&self, auth: &AuthContext) -> ApiResult<()> {
         if !matches!(auth.role, UserRole::SuperAdmin) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Drive).await?;
-            self.admin_permissions.ensure_permission(auth, MANAGE_DRIVE).await?;
         }
         Ok(())
     }

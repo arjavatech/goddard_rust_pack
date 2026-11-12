@@ -336,7 +336,6 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         DriveDao::new(pool.clone()),
         upload_service.clone(),
         school_dao.clone(),
-        admin_permission_dao.clone(),
     ));
 
     let employee_service = Arc::new(EmployeeService::new(

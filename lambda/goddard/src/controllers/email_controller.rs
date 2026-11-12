@@ -25,16 +25,16 @@ pub async fn send_bulk_form_reminders(
         payload.reminders.len()
     );
 
-    // Validation: Check role is Admin or SuperAdmin
-    if !matches!(auth.role, UserRole::Admin | UserRole::SuperAdmin) {
+    // Validation: Check role is Admin, SuperAdmin, or Owner
+    if !matches!(auth.role, UserRole::Admin | UserRole::SuperAdmin | UserRole::Owner) {
         return Err(AppError::Authorization(
             "Only Admin and SuperAdmin can send bulk emails".to_string(),
         ));
     }
 
     // Validation: Check school authorization
-    // SuperAdmin can email any school, Admin must match their school_id
-    if matches!(auth.role, UserRole::Admin) {
+    // SuperAdmin can email any school; Admin and Owner must match their school_id
+    if matches!(auth.role, UserRole::Admin | UserRole::Owner) {
         if auth.school_id != payload.school_id {
             return Err(AppError::Authorization(
                 "Admin can only send emails for their own school".to_string(),

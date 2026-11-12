@@ -27,7 +27,7 @@ impl SurveyService {
         mut req: CreateSurveyRequest,
         auth: &AuthContext,
     ) -> ApiResult<SurveyDetail> {
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Survey).await?;
             self.admin_permissions.ensure_permission(auth, MANAGE_SURVEYS).await?;
         }
@@ -65,7 +65,7 @@ impl SurveyService {
     ) -> ApiResult<Vec<SurveyListItem>> {
         // Force school_id to auth context
         let q = SurveyListQuery { school_id: auth.school_id, ..query };
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Survey).await?;
             self.admin_permissions.ensure_permission(auth, MANAGE_SURVEYS).await?;
         }

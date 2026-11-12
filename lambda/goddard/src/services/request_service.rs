@@ -42,7 +42,7 @@ impl RequestService {
             UserRole::SuperAdmin => {
                 // Optional school filter from params; sees everything otherwise
             }
-            UserRole::Admin => {
+            UserRole::Admin | UserRole::Owner => {
                 params.school_id = Some(auth.school_id);
             }
             _ => {
@@ -99,7 +99,7 @@ impl RequestService {
         if body.quantity < 1 {
             return Err(AppError::Validation("Quantity must be at least 1".to_string()));
         }
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.dao.validate_request_settings(
                 body.school_id,
                 body.category.as_deref(),
@@ -144,7 +144,7 @@ impl RequestService {
 
         match auth.role {
             UserRole::SuperAdmin => {}
-            UserRole::Admin => {
+            UserRole::Admin | UserRole::Owner => {
                 if req.school_id != auth.school_id {
                     return Err(AppError::Authorization(
                         "Cannot update a request from a different school".to_string(),
@@ -204,7 +204,7 @@ impl RequestService {
         let effective_scope = body.scope.as_deref()
             .or(existing.scope.as_deref())
             .unwrap_or("school");
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.dao.validate_request_settings(
                 existing.school_id,
                 body.category.as_deref().or(existing.category.as_deref()),
@@ -281,8 +281,8 @@ impl RequestService {
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
         match auth.role {
             UserRole::SuperAdmin => Ok(req),
-            UserRole::Admin if req.school_id == auth.school_id => Ok(req),
-            UserRole::Admin => Err(AppError::Authorization("Cannot modify a request from a different school".to_string())),
+            UserRole::Admin | UserRole::Owner if req.school_id == auth.school_id => Ok(req),
+            UserRole::Admin | UserRole::Owner => Err(AppError::Authorization("Cannot modify a request from a different school".to_string())),
             UserRole::Teacher if req.school_id == auth.school_id && req.requester_id == Some(auth.user_id) => {
                 if req.status != "Pending" {
                     return Err(AppError::Validation("Employees can only edit or delete Pending requests".to_string()));
@@ -299,8 +299,8 @@ impl RequestService {
             .ok_or_else(|| AppError::NotFound("Request not found".to_string()))?;
         match auth.role {
             UserRole::SuperAdmin => Ok(req),
-            UserRole::Admin if req.school_id == auth.school_id => Ok(req),
-            UserRole::Admin => Err(AppError::Authorization("Cannot update a request from a different school".to_string())),
+            UserRole::Admin | UserRole::Owner if req.school_id == auth.school_id => Ok(req),
+            UserRole::Admin | UserRole::Owner => Err(AppError::Authorization("Cannot update a request from a different school".to_string())),
             _ => Err(AppError::Authorization("Only admin or superadmin can update requests".to_string())),
         }
     }

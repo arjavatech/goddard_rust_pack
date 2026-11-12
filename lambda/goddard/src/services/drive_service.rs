@@ -27,7 +27,7 @@ impl DriveService {
     }
 
     async fn check_access(&self, auth: &AuthContext) -> ApiResult<()> {
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Drive).await?;
         }
         Ok(())
@@ -35,7 +35,7 @@ impl DriveService {
 
     fn resolve_target_user(&self, auth: &AuthContext, requested_user_id: Option<Uuid>) -> Uuid {
         match requested_user_id {
-            Some(uid) if matches!(auth.role, UserRole::SuperAdmin) => uid,
+            Some(uid) if matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) => uid,
             _ => auth.user_id,
         }
     }
@@ -301,7 +301,7 @@ impl DriveService {
     }
 
     pub async fn list_admins(&self, auth: &AuthContext) -> ApiResult<Vec<DriveAdminSummary>> {
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             return Err(AppError::Authorization("SuperAdmin only".into()));
         }
         self.dao.list_admins_with_drive(auth.school_id).await

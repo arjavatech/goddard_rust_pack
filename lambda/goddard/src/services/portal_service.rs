@@ -29,7 +29,7 @@ impl PortalService {
 
     pub fn verify_parent_access(&self, auth: &AuthContext, parent_id: &Uuid) -> Result<(), AppError> {
         match auth.role {
-            UserRole::SuperAdmin | UserRole::Admin => Ok(()),
+            UserRole::SuperAdmin | UserRole::Admin | UserRole::Owner => Ok(()),
             UserRole::Parent => {
                 // Parents can only access their own data
                 // We need to check if the auth.user_id corresponds to this parent_id
@@ -44,7 +44,7 @@ impl PortalService {
 
     pub fn verify_admin_access(&self, auth: &AuthContext) -> Result<(), AppError> {
         match auth.role {
-            UserRole::SuperAdmin | UserRole::Admin => Ok(()),
+            UserRole::SuperAdmin | UserRole::Admin | UserRole::Owner => Ok(()),
             _ => Err(AppError::Authorization("Admin access required".to_string())),
         }
     }

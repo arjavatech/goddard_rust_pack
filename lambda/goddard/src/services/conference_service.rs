@@ -41,7 +41,7 @@ impl ConferenceService {
         mut req: CreateConferenceRequest,
         auth: &AuthContext,
     ) -> ApiResult<ConferenceListItem> {
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.schools.ensure_feature_enabled(auth.school_id, SchoolFeature::Conference).await?;
             self.admin_permissions.ensure_permission(auth, MANAGE_CONFERENCES).await?;
         }
@@ -125,8 +125,8 @@ impl ConferenceService {
         school_id: Uuid,
         auth: &AuthContext,
     ) -> ApiResult<Vec<ConferenceListItem>> {
-        let sid = if matches!(auth.role, UserRole::SuperAdmin) { school_id } else { auth.school_id };
-        if !matches!(auth.role, UserRole::SuperAdmin) {
+        let sid = if matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) { school_id } else { auth.school_id };
+        if !matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             self.schools.ensure_feature_enabled(sid, SchoolFeature::Conference).await?;
             self.admin_permissions.ensure_permission(auth, MANAGE_CONFERENCES).await?;
         }
@@ -140,7 +140,7 @@ impl ConferenceService {
         school_id: Uuid,
         auth: &AuthContext,
     ) -> ApiResult<ConferenceStats> {
-        let sid = if matches!(auth.role, UserRole::SuperAdmin) { school_id } else { auth.school_id };
+        let sid = if matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) { school_id } else { auth.school_id };
         self.dao.get_conference_stats(sid).await
     }
 

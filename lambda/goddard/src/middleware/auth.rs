@@ -342,7 +342,7 @@ pub fn validate_parent_access(auth: &AuthContext, requested_parent_id: &Uuid) ->
             }
             Ok(())
         }
-        UserRole::Admin | UserRole::SuperAdmin => {
+        UserRole::Admin | UserRole::SuperAdmin | UserRole::Owner => {
             // Admins can access any parent's data
             Ok(())
         }
@@ -357,7 +357,7 @@ pub fn validate_parent_access(auth: &AuthContext, requested_parent_id: &Uuid) ->
 
 pub fn check_permission_admin_or_superadmin(auth: &AuthContext, school_id: &Uuid) -> Result<(), AppError> {
     match auth.role {
-        UserRole::SuperAdmin => Ok(()),
+        UserRole::SuperAdmin | UserRole::Owner => Ok(()),
         UserRole::Admin if &auth.school_id == school_id => Ok(()),
         _ => Err(AppError::Authorization("Insufficient permissions".to_string())),
     }
@@ -373,7 +373,7 @@ pub fn check_permission_school_access(auth: &AuthContext, school_id: &Uuid) -> R
 
 pub fn check_permission_superadmin_only(auth: &AuthContext) -> Result<(), AppError> {
     match auth.role {
-        UserRole::SuperAdmin => Ok(()),
+        UserRole::SuperAdmin | UserRole::Owner => Ok(()),
         _ => Err(AppError::Authorization("SuperAdmin access required".to_string())),
     }
 }

@@ -768,7 +768,7 @@ impl AuthService {
         request: UpdateAdminRequest,
     ) -> ApiResult<AdminUserResponse> {
         // Determine which user to update based on role
-        let target_user_id = if matches!(auth_role, crate::models::schema::UserRole::SuperAdmin) {
+        let target_user_id = if matches!(auth_role, crate::models::schema::UserRole::SuperAdmin | crate::models::schema::UserRole::Owner) {
             // SuperAdmin can update any admin if user_id provided in payload
             if let Some(ref uid) = request.user_id {
                 ValidationUtils::validate_uuid(uid)?;
@@ -783,7 +783,7 @@ impl AuthService {
         };
 
         // Only SuperAdmin can change permissions
-        let permissions_to_update = if matches!(auth_role, crate::models::schema::UserRole::SuperAdmin) {
+        let permissions_to_update = if matches!(auth_role, crate::models::schema::UserRole::SuperAdmin | crate::models::schema::UserRole::Owner) {
             request.permissions
         } else {
             None

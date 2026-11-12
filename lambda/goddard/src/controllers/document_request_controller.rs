@@ -3,7 +3,7 @@ use axum::{extract::{Extension, Path, Query, State}, response::Json};
 use uuid::Uuid;
 use crate::{error::AppError, middleware::auth::{AuthContext, check_permission_admin_or_superadmin, check_permission_school_access}, models::{document_request::*, email::BulkEmailResponse, schema::UserRole}, services::DocumentRequestService};
 
-fn admin(auth:&AuthContext)->bool { matches!(auth.role,UserRole::Admin|UserRole::SuperAdmin) }
+fn admin(auth:&AuthContext)->bool { matches!(auth.role,UserRole::Admin|UserRole::SuperAdmin|UserRole::Owner) }
 
 pub async fn create_document_request(State(service):State<Arc<DocumentRequestService>>,Extension(auth):Extension<AuthContext>,Json(request):Json<CreateDocumentRequest>)->Result<Json<DocumentRequestSummary>,AppError>{check_permission_admin_or_superadmin(&auth,&request.school_id)?;Ok(Json(service.create(request,auth.user_id).await?))}
 pub async fn publish_document_request(State(service):State<Arc<DocumentRequestService>>,Extension(auth):Extension<AuthContext>,Path(id):Path<Uuid>)->Result<Json<DocumentRequestSummary>,AppError>{let item=service.request_summary(id).await?;check_permission_admin_or_superadmin(&auth,&item.school_id)?;Ok(Json(service.publish(id,auth.user_id).await?))}

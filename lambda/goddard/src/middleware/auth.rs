@@ -421,7 +421,7 @@ pub fn extract_school_context(request: &Request) -> Result<&SchoolContext, AppEr
 // Simplified permission checks that use school context
 pub fn check_admin_or_superadmin_permission(auth: &AuthContext, school_context: &SchoolContext) -> Result<(), AppError> {
     match auth.role {
-        UserRole::SuperAdmin => Ok(()),
+        UserRole::SuperAdmin | UserRole::Owner => Ok(()),
         UserRole::Admin if auth.school_id == school_context.school_id => Ok(()),
         _ => Err(AppError::Authorization("Insufficient permissions".to_string())),
     }

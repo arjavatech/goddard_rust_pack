@@ -17,7 +17,7 @@ impl AdminPermissionDao {
 
     /// SuperAdmin always passes; Admin must have the permission in users.permissions.
     pub async fn ensure_permission(&self, auth: &AuthContext, permission: &str) -> ApiResult<()> {
-        if matches!(auth.role, UserRole::SuperAdmin) {
+        if matches!(auth.role, UserRole::SuperAdmin | UserRole::Owner) {
             return Ok(());
         }
         let client = self.pool.get().await

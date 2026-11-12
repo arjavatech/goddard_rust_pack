@@ -380,7 +380,7 @@ impl DocumentRequestDao {
     pub async fn change_status(&self, id: Uuid, school_id: Uuid, req: &ChangeDocumentStatusRequest) -> ApiResult<DocumentAssignmentItem> {
         let client = self.pool.get().await.map_err(|e| AppError::Database(e.to_string()))?;
         client.execute(
-            "UPDATE document_request_assignments SET status=$3, rejection_reason=CASE WHEN $3='rejected' THEN $4 ELSE rejection_reason END, updated_at=NOW() WHERE id=$1 AND school_id=$2",
+            "UPDATE document_request_assignments SET status=$3, rejection_reason=CASE WHEN $3::varchar='rejected' THEN $4 ELSE rejection_reason END, updated_at=NOW() WHERE id=$1 AND school_id=$2",
             &[&id, &school_id, &req.status, &req.reason]
         ).await.map_err(|e| AppError::Database(e.to_string()))?;
         self.assignment_by_id(id).await

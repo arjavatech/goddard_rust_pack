@@ -23,6 +23,9 @@ pub mod notification_type {
     pub const DOCUMENT_SUBMITTED: &str = "document_submitted";
     pub const DOCUMENT_APPROVED: &str = "document_approved";
     pub const DOCUMENT_REJECTED: &str = "document_rejected";
+    pub const OFFER_LETTER_SENT: &str = "offer_letter_sent";
+    pub const OFFER_LETTER_ACCEPTED: &str = "offer_letter_accepted";
+    pub const OFFER_LETTER_REJECTED: &str = "offer_letter_rejected";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

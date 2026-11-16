@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -12,11 +12,6 @@ pub struct OfferLetter {
     pub last_name: String,
     pub email: String,
     pub phone: Option<String>,
-    pub role: String,
-    pub salary: Option<f64>,
-    pub salary_currency: Option<String>,
-    pub joining_date: Option<NaiveDate>,
-    pub additional_notes: Option<String>,
     pub custom_fields: Option<Value>,
     pub fillout_form_id: Option<String>,
     pub fillout_submission_id: Option<String>,
@@ -33,6 +28,8 @@ pub struct OfferLetter {
     pub sent_at: Option<NaiveDateTime>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
+    pub is_current: bool,
+    pub employee_submitted_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,11 +39,6 @@ pub struct CreateOfferLetterRequest {
     pub last_name: String,
     pub email: String,
     pub phone: Option<String>,
-    pub role: String,
-    pub salary: Option<f64>,
-    pub salary_currency: Option<String>,
-    pub joining_date: Option<NaiveDate>,
-    pub additional_notes: Option<String>,
     pub custom_fields: Option<Value>,
 }
 
@@ -55,11 +47,6 @@ pub struct UpdateOfferLetterRequest {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub phone: Option<String>,
-    pub role: Option<String>,
-    pub salary: Option<f64>,
-    pub salary_currency: Option<String>,
-    pub joining_date: Option<NaiveDate>,
-    pub additional_notes: Option<String>,
     pub custom_fields: Option<Value>,
 }
 
@@ -78,4 +65,5 @@ pub struct OfferLetterWebhookPayload {
     pub edit_link: Option<String>,
     pub pdf_link: Option<String>,
     pub rejection_reason: Option<String>,
+    pub submitted_at: Option<chrono::DateTime<chrono::Utc>>,
 }

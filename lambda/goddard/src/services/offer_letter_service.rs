@@ -5,12 +5,13 @@ use uuid::Uuid;
 use crate::{
     dao::{AuthDao, EmployeeDao, OfferLetterDao, SchoolDao},
     error::{ApiResult, AppError},
+    models::notification::{notification_type, CreateNotification},
     models::offer_letter::{
         AdminReviewRequest, CreateOfferLetterRequest, OfferLetter, OfferLetterWebhookPayload,
         UpdateOfferLetterRequest,
     },
     models::school::SchoolFeature,
-    services::EmailService,
+    services::{EmailService, NotificationService},
 };
 
 pub struct OfferLetterService {
@@ -19,6 +20,7 @@ pub struct OfferLetterService {
     auth_dao: AuthDao,
     school_dao: SchoolDao,
     email_service: Arc<EmailService>,
+    notification_service: Arc<NotificationService>,
 }
 
 impl OfferLetterService {
@@ -28,6 +30,7 @@ impl OfferLetterService {
         auth_dao: AuthDao,
         school_dao: SchoolDao,
         email_service: Arc<EmailService>,
+        notification_service: Arc<NotificationService>,
     ) -> Self {
         Self {
             offer_letter_dao,
@@ -35,6 +38,7 @@ impl OfferLetterService {
             auth_dao,
             school_dao,
             email_service,
+            notification_service,
         }
     }
 
@@ -78,11 +82,6 @@ impl OfferLetterService {
             &req.last_name,
             &req.email,
             req.phone.as_deref(),
-            &req.role,
-            req.salary,
-            req.salary_currency.as_deref(),
-            req.joining_date,
-            req.additional_notes.as_deref(),
             fillout_form_id.as_deref(),
             req.custom_fields.as_ref(),
         ).await?;
@@ -108,11 +107,6 @@ impl OfferLetterService {
             req.first_name.as_deref(),
             req.last_name.as_deref(),
             req.phone.as_deref(),
-            req.role.as_deref(),
-            req.salary,
-            req.salary_currency.as_deref(),
-            req.joining_date,
-            req.additional_notes.as_deref(),
             None,
             req.custom_fields.as_ref(),
         ).await
@@ -149,7 +143,7 @@ impl OfferLetterService {
             invite_token
         );
 
-        let prefill_url = Self::build_prefill_url(&offer, invite_token);
+        let prefill_url = build_prefill_url(&offer, invite_token);
 
         let updated_offer = self.offer_letter_dao.set_sent(employee_id, school_id, &prefill_url).await?;
 
@@ -162,10 +156,22 @@ impl OfferLetterService {
                 &offer.last_name,
                 &school_name,
                 &invite_link,
-                &offer.role,
             ).await.map_err(|e| {
                 tracing::warn!("Failed to send offer letter email to {}: {}", offer.email, e);
             });
+        }
+
+        if let Ok(Some(emp)) = self.employee_dao.get_employee_by_id(employee_id, school_id).await {
+            let body = format!("Your offer letter from {} is ready to review and sign.", school_name);
+            self.notification_service.notify_user(emp.user_id, CreateNotification {
+                school_id,
+                notification_type: notification_type::OFFER_LETTER_SENT.to_string(),
+                title: "Your Offer Letter is Ready".to_string(),
+                body,
+                related_entity_id: Some(updated_offer.id),
+                related_entity_type: Some("offer_letter".to_string()),
+                action_url: Some("/employee/offer-letter".to_string()),
+            }).await;
         }
 
         Ok(updated_offer)
@@ -193,7 +199,7 @@ impl OfferLetterService {
             invite_token
         );
 
-        let prefill_url = Self::build_prefill_url(&offer, invite_token);
+        let prefill_url = build_prefill_url(&offer, invite_token);
         let updated_offer = self.offer_letter_dao.set_sent(employee_id, school_id, &prefill_url).await?;
 
         if invite_token != Uuid::nil() {
@@ -203,8 +209,20 @@ impl OfferLetterService {
                 &offer.last_name,
                 &school_name,
                 &invite_link,
-                &offer.role,
             ).await;
+        }
+
+        if let Ok(Some(emp)) = self.employee_dao.get_employee_by_id(offer.employee_id, offer.school_id).await {
+            let body = format!("Your offer letter from {} has been resent.", school_name);
+            self.notification_service.notify_user(emp.user_id, CreateNotification {
+                school_id: offer.school_id,
+                notification_type: notification_type::OFFER_LETTER_SENT.to_string(),
+                title: "Offer Letter Resent".to_string(),
+                body,
+                related_entity_id: Some(updated_offer.id),
+                related_entity_type: Some("offer_letter".to_string()),
+                action_url: Some("/employee/offer-letter".to_string()),
+            }).await;
         }
 
         Ok(updated_offer)
@@ -216,18 +234,42 @@ impl OfferLetterService {
         let offer = self.offer_letter_dao.get_by_id_no_school(payload.offer_letter_id).await?
             .ok_or_else(|| AppError::NotFound("Offer letter not found".to_string()))?;
 
+        // Idempotency: skip re-processing if this submission was already stored
+        if offer.fillout_submission_id.as_deref() == Some(payload.fillout_submission_id.as_str()) {
+            return Ok(offer);
+        }
+
         let updated = self.offer_letter_dao.set_fillout_submission(
             payload.offer_letter_id,
+            offer.school_id,
             &payload.fillout_submission_id,
             payload.pdf_link.as_deref(),
             payload.edit_link.as_deref(),
             payload.form_data.as_ref(),
             payload.accepted,
             payload.rejection_reason.as_deref(),
+            payload.submitted_at,
         ).await?;
 
         let new_status = if payload.accepted { "offer_accepted" } else { "offer_rejected" };
         self.employee_dao.set_offer_status(offer.employee_id, offer.school_id, new_status).await?;
+
+        let (notif_type, notif_title) = if payload.accepted {
+            (notification_type::OFFER_LETTER_ACCEPTED, "Offer Letter Accepted")
+        } else {
+            (notification_type::OFFER_LETTER_REJECTED, "Offer Letter Rejected")
+        };
+        let verb = if payload.accepted { "accepted" } else { "rejected" };
+        let notif_body = format!("{} {} has {} their offer letter.", offer.first_name, offer.last_name, verb);
+        self.notification_service.notify_school_admins(CreateNotification {
+            school_id: offer.school_id,
+            notification_type: notif_type.to_string(),
+            title: notif_title.to_string(),
+            body: notif_body,
+            related_entity_id: Some(updated.id),
+            related_entity_type: Some("offer_letter".to_string()),
+            action_url: Some("/admin/offer-letters".to_string()),
+        }, None).await;
 
         Ok(updated)
     }
@@ -274,50 +316,45 @@ impl OfferLetterService {
         self.offer_letter_dao.list_by_school(school_id).await
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    // ─── History ──────────────────────────────────────────────────────────────
 
-    fn build_prefill_url(offer: &OfferLetter, _invite_token: Uuid) -> String {
-        let form_id = match &offer.fillout_form_id {
-            Some(id) => id.clone(),
-            None => return String::new(),
-        };
-
-        let mut params = vec![
-            ("offer_letter_id".to_string(), offer.id.to_string()),
-            ("firstName".to_string(), offer.first_name.clone()),
-            ("lastName".to_string(), offer.last_name.clone()),
-            ("email".to_string(), offer.email.clone()),
-            ("role".to_string(), offer.role.clone()),
-        ];
-
-        if let Some(ref phone) = offer.phone {
-            params.push(("phone".to_string(), phone.clone()));
-        }
-        if let Some(salary) = offer.salary {
-            params.push(("salary".to_string(), salary.to_string()));
-        }
-        if let Some(ref currency) = offer.salary_currency {
-            params.push(("salaryCurrency".to_string(), currency.clone()));
-        }
-        if let Some(ref date) = offer.joining_date {
-            params.push(("joiningDate".to_string(), date.to_string()));
-        }
-
-        if let Some(serde_json::Value::Object(fields)) = &offer.custom_fields {
-            for (k, v) in fields {
-                let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
-                params.push((k.clone(), s));
-            }
-        }
-
-        let query = params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding(v)))
-            .collect::<Vec<_>>()
-            .join("&");
-
-        format!("https://fillout.com/{}?{}", form_id, query)
+    pub async fn get_offer_letter_history(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<Vec<OfferLetter>> {
+        self.offer_letter_dao.list_history_by_employee(employee_id, school_id).await
     }
+
+}
+
+pub fn build_prefill_url(offer: &OfferLetter, _invite_token: Uuid) -> String {
+    let form_id = match &offer.fillout_form_id {
+        Some(id) => id.clone(),
+        None => return String::new(),
+    };
+
+    let mut params = vec![
+        ("offer_letter_id".to_string(), offer.id.to_string()),
+        ("firstName".to_string(), offer.first_name.clone()),
+        ("lastName".to_string(), offer.last_name.clone()),
+        ("email".to_string(), offer.email.clone()),
+    ];
+
+    if let Some(ref phone) = offer.phone {
+        params.push(("phone".to_string(), phone.clone()));
+    }
+
+    if let Some(serde_json::Value::Object(fields)) = &offer.custom_fields {
+        for (k, v) in fields {
+            let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+            params.push((k.clone(), s));
+        }
+    }
+
+    let query = params
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, urlencoding(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    format!("https://fillout.com/{}?{}", form_id, query)
 }
 
 fn urlencoding(s: &str) -> String {

@@ -155,6 +155,7 @@ pub struct EmployeeInviteRequest {
     pub address: Option<String>,
     pub employee_type: Option<String>,
     pub joined_on: Option<NaiveDate>,
+    pub custom_fields: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -166,6 +167,8 @@ pub struct EmployeeInviteResponse {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offer_letter_required: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offer_letter_sent: Option<bool>,
 }
 #[derive(Debug, Deserialize)]
 pub struct ResendEmployeeInviteRequest {

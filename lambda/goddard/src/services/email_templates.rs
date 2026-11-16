@@ -596,19 +596,17 @@ pub fn offer_letter_invite_html(
     last_name: &str,
     school_name: &str,
     login_url: &str,
-    role: &str,
 ) -> String {
     let accent = "#1a5276";
     let headline = format!("Your Offer Letter from {}", html_escape(school_name));
     let preheader = format!(
-        "You have received an offer letter for the {} position at {}. Set up your account to review it.",
-        role, school_name
+        "You have received an offer letter from {}. Set up your account to review it.",
+        school_name
     );
 
     let body = format!(
         r#"<p>Dear {first_name} {last_name},</p>
-          <p>Congratulations! You have received an offer letter from <strong>{school}</strong>
-          for the position of <strong>{role}</strong>.</p>
+          <p>Congratulations! You have received an offer letter from <strong>{school}</strong>.</p>
           <p>Click the button below to set your account password and review your offer letter.
           Once you log in, you will be able to open the offer form and complete your acceptance.</p>
           <div style="background:#eaf4fb;padding:16px 20px;border-radius:6px;margin:20px 0;border-left:4px solid #1a5276;">
@@ -620,7 +618,6 @@ pub fn offer_letter_invite_html(
         first_name = html_escape(first_name),
         last_name = html_escape(last_name),
         school = html_escape(school_name),
-        role = html_escape(role),
     );
 
     let cta = cta_button("Review My Offer Letter", login_url, accent);

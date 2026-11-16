@@ -64,7 +64,7 @@ use controllers::{
         list_employee_form_assignments_by_template, get_school_members,
     },
     offer_letter_controller::{
-        create_offer_letter, get_offer_letter, list_offer_letters,
+        create_offer_letter, get_offer_letter, get_offer_letter_history, list_offer_letters,
         offer_letter_webhook, resend_offer_letter, review_offer_letter, send_offer_letter,
         update_offer_letter,
     },
@@ -364,6 +364,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         email_service.clone(),
         upload_service.clone(),
         taptime_mapping_service.clone(),
+        OfferLetterDao::new(pool.clone()),
+        notification_service.clone(),
     ));
 
     let offer_letter_service = Arc::new(OfferLetterService::new(
@@ -372,6 +374,7 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         auth_dao.clone(),
         school_dao.clone(),
         email_service.clone(),
+        notification_service.clone(),
     ));
 
     // Initialize tracing
@@ -1430,6 +1433,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/employees/:employee_id/offer-letter/review",
             post(review_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter/history",
+            get(get_offer_letter_history).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
         .route(
             "/offer-letters",

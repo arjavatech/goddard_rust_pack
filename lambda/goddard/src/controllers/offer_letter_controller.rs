@@ -90,6 +90,17 @@ pub async fn review_offer_letter(
     Ok((StatusCode::OK, Json(offer)))
 }
 
+// ─── Get offer letter history for employee ────────────────────────────────────
+
+pub async fn get_offer_letter_history(
+    State(svc): State<Arc<OfferLetterService>>,
+    Path(employee_id): Path<Uuid>,
+    Query(params): Query<SchoolIdQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let history = svc.get_offer_letter_history(employee_id, params.school_id).await?;
+    Ok((StatusCode::OK, Json(history)))
+}
+
 // ─── Admin: List offer letters for school ─────────────────────────────────────
 
 pub async fn list_offer_letters(

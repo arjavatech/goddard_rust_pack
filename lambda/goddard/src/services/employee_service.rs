@@ -7,8 +7,9 @@ use crate::{
     dao::school_dao::SchoolDao,
     dao::{
         AuthDao, EmployeeDao, EmployeeFormAssignmentDao, EmployeeFormSubmissionDao,
-        EmployeeFormTemplateDao,
+        EmployeeFormTemplateDao, OfferLetterDao,
     },
+    services::offer_letter_service::build_prefill_url,
     error::{ApiResult, AppError},
     models::document_request::{
         CompleteUploadRequest, FileAccessResponse, UploadIntentRequest, UploadIntentResponse,
@@ -28,7 +29,8 @@ use crate::{
     },
     models::form_review_queue::{EmployeeFormReviewQueueItem, FormReviewQueueQuery},
     models::school::SchoolFeature,
-    services::{supabase_client::UserMetadata, EmailService, SupabaseClient, TapTimeMappingService, UploadService},
+    models::notification::{notification_type, CreateNotification},
+    services::{supabase_client::UserMetadata, EmailService, NotificationService, SupabaseClient, TapTimeMappingService, UploadService},
 };
 
 pub struct EmployeeService {
@@ -42,6 +44,8 @@ pub struct EmployeeService {
     email_service: Arc<EmailService>,
     upload_service: Arc<UploadService>,
     taptime_mapping_service: Arc<TapTimeMappingService>,
+    offer_letter_dao: OfferLetterDao,
+    notification_service: Arc<NotificationService>,
 }
 
 impl EmployeeService {
@@ -59,6 +63,8 @@ impl EmployeeService {
         email_service: Arc<EmailService>,
         upload_service: Arc<UploadService>,
         taptime_mapping_service: Arc<TapTimeMappingService>,
+        offer_letter_dao: OfferLetterDao,
+        notification_service: Arc<NotificationService>,
     ) -> Self {
         Self {
             employee_dao,
@@ -71,17 +77,19 @@ impl EmployeeService {
             email_service,
             upload_service,
             taptime_mapping_service,
+            offer_letter_dao,
+            notification_service,
         }
+    }
+
+    fn api_base_url() -> String {
+        env::var("API_BASE_URL").unwrap_or_else(|_| "https://api.goddard-app.com".to_string())
     }
 
     fn employee_dashboard_url() -> String {
         let base = env::var("FRONTEND_URL")
             .unwrap_or_else(|_| "https://goddardschool.org".to_string());
         format!("{}/employee/dashboard", base)
-    }
-
-    fn api_base_url() -> String {
-        env::var("API_BASE_URL").unwrap_or_else(|_| "https://api.goddard-app.com".to_string())
     }
 
     // ─── Employee CRUD ─────────────────────────────────────────────────────────
@@ -157,13 +165,67 @@ impl EmployeeService {
 
             self.reconcile_taptime_user(req.school_id, user_id).await;
 
+            // Always create invite token so user_invitations entry exists (required for activation)
+            let invite_token = self.auth_dao
+                .create_invite_token(&req.email, "Employee", req.school_id)
+                .await
+                .unwrap_or(Uuid::nil());
+            let invite_link = format!("{}/enrollments/activate/{}", Self::api_base_url(), invite_token);
+
+            // Create offer letter
+            let school = self.school_dao.get_school_by_id(&req.school_id).await?
+                .ok_or_else(|| AppError::NotFound("School not found".to_string()))?;
+            let fillout_form_id = school.offer_letter_fillout_form_id;
+
+            let offer = self.offer_letter_dao.create(
+                req.school_id,
+                employee.id,
+                &req.first_name,
+                &req.last_name,
+                &req.email,
+                req.phone.as_deref(),
+                fillout_form_id.as_deref(),
+                req.custom_fields.as_ref(),
+            ).await?;
+            self.employee_dao.set_offer_status(employee.id, req.school_id, "draft").await?;
+
+            // Send if form URL configured
+            let offer_letter_sent = if fillout_form_id.is_some() {
+                let prefill_url = build_prefill_url(&offer, invite_token);
+                self.offer_letter_dao.set_sent(employee.id, req.school_id, &prefill_url).await?;
+                self.employee_dao.set_offer_status(employee.id, req.school_id, "offer_sent").await?;
+                if invite_token != Uuid::nil() {
+                    let _ = self.email_service.send_offer_letter_email(
+                        &req.email, &req.first_name, &req.last_name, &school_name, &invite_link,
+                    ).await;
+                }
+                let body = format!("Your offer letter from {} is ready to review and sign.", school_name);
+                self.notification_service.notify_user(user_id, CreateNotification {
+                    school_id: req.school_id,
+                    notification_type: notification_type::OFFER_LETTER_SENT.to_string(),
+                    title: "Your Offer Letter is Ready".to_string(),
+                    body,
+                    related_entity_id: Some(offer.id),
+                    related_entity_type: Some("offer_letter".to_string()),
+                    action_url: Some("/employee/offer-letter".to_string()),
+                }).await;
+                true
+            } else {
+                false
+            };
+
             return Ok(EmployeeInviteResponse {
                 employee_id: employee.id,
                 user_id,
                 invite_id: Uuid::nil(),
-                email_sent: false,
+                email_sent: offer_letter_sent,
                 offer_letter_required: Some(true),
-                message: "Employee added. Please create and send an offer letter to complete onboarding.".to_string(),
+                offer_letter_sent: Some(offer_letter_sent),
+                message: if offer_letter_sent {
+                    "Employee added and offer letter sent.".to_string()
+                } else {
+                    "Employee added. Set a Form URL to send the offer letter.".to_string()
+                },
             });
         }
 
@@ -264,6 +326,7 @@ impl EmployeeService {
             invite_id,
             email_sent,
             offer_letter_required: None,
+            offer_letter_sent: None,
             message: if email_sent {
                 "Employee invited successfully. Invitation email sent.".to_string()
             } else {

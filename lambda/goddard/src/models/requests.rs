@@ -104,6 +104,8 @@ pub struct UpdateRequestBody {
     pub image_base64: Option<String>,
     pub image_name: Option<String>,
     pub image_content_type: Option<String>,
+    pub delete_product_image: Option<bool>,
+    pub bill_image_urls: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

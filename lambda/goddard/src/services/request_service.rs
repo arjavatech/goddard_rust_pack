@@ -222,8 +222,32 @@ impl RequestService {
                 .map_err(|error| AppError::Validation(format!("Invalid product image: {}", error)))?;
             let uploaded = self.upload_service.upload_image(&name, &content_type, bytes).await?;
             body.product_image = Some(uploaded.s3_url);
+            body.delete_product_image = None;
         }
-        self.dao.update_request(id, &body).await
+        let updated = self.dao.update_request(id, &body).await?;
+
+        // Hard-delete removed product image from S3 (best-effort)
+        if body.delete_product_image == Some(true) || body.product_image.is_some() {
+            if let Some(old_url) = &existing.product_image {
+                // Only delete if the URL actually changed or image was cleared
+                let replaced = body.product_image.as_deref().is_some_and(|new| new != old_url);
+                let cleared = body.delete_product_image == Some(true);
+                if replaced || cleared {
+                    self.upload_service.delete_object_by_url(old_url).await;
+                }
+            }
+        }
+
+        // Hard-delete removed bill images from S3 (best-effort)
+        if let Some(ref remaining) = body.bill_image_urls {
+            for old_url in &existing.bill_images {
+                if !remaining.contains(old_url) {
+                    self.upload_service.delete_object_by_url(old_url).await;
+                }
+            }
+        }
+
+        Ok(updated)
     }
 
     async fn upload_bill_images(&self, uploads: Vec<BillImageUpload>) -> Result<Vec<String>, AppError> {
@@ -274,7 +298,17 @@ impl RequestService {
     pub async fn delete_request(&self, auth: &AuthContext, id: Uuid) -> Result<(), AppError> {
         let request = self.authorize_request_editor(auth, id).await?;
         self.ensure_enabled(request.school_id).await?;
-        self.dao.delete_request(id).await
+        self.dao.delete_request(id).await?;
+
+        // Hard-delete product image and bill images from S3 (best-effort)
+        if let Some(url) = &request.product_image {
+            self.upload_service.delete_object_by_url(url).await;
+        }
+        for url in &request.bill_images {
+            self.upload_service.delete_object_by_url(url).await;
+        }
+
+        Ok(())
     }
 
     async fn authorize_request_editor(&self, auth: &AuthContext, id: Uuid) -> Result<Request, AppError> {

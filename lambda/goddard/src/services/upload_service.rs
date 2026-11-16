@@ -70,6 +70,8 @@ impl UploadService {
         content_type: &str,
         bytes: Vec<u8>,
     ) -> Result<UploadImageResponse, AppError> {
+        let (bytes, content_type_owned) = resize_bill_image(bytes, content_type);
+        let content_type = content_type_owned.as_str();
         // Normalize "image/jpg" (non-standard) to "image/jpeg"
         let content_type = if content_type == "image/jpg" { "image/jpeg" } else { content_type };
         if !ALLOWED_CONTENT_TYPES.contains(&content_type) {
@@ -197,6 +199,22 @@ impl UploadService {
         client.delete_object().bucket(bucket).key(key).send().await
             .map_err(|e| AppError::Internal(format!("Failed to remove S3 object: {}", e)))?;
         Ok(())
+    }
+
+    /// Delete an S3 object identified by its full URL. Best-effort: logs on failure but does not error.
+    pub async fn delete_object_by_url(&self, url: &str) {
+        let Some(base) = self.base_url.as_ref() else { return };
+        let base = base.trim_end_matches('/');
+        let key = match url.strip_prefix(base).and_then(|s| s.strip_prefix('/')) {
+            Some(k) => k,
+            None => {
+                tracing::warn!("delete_object_by_url: URL '{}' does not match base '{}'", url, base);
+                return;
+            }
+        };
+        if let Err(e) = self.delete_document_object(key).await {
+            tracing::warn!("S3 delete failed for key '{}': {}", key, e);
+        }
     }
 
     pub async fn copy_s3_object(&self, source_key: &str, dest_key: &str) -> Result<(), AppError> {

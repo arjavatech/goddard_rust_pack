@@ -291,6 +291,9 @@ impl RequestDao {
     pub async fn update_request(&self, id: Uuid, body: &UpdateRequestBody) -> Result<Request, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let bill_images_json: Option<serde_json::Value> = body.bill_image_urls
+            .as_ref()
+            .map(|urls| serde_json::to_value(urls).unwrap_or(serde_json::json!([])));
         let row = client.query_one(
             "UPDATE requests SET
                 item = COALESCE($2, item), quantity = COALESCE($3, quantity),
@@ -298,7 +301,9 @@ impl RequestDao {
                 scope = COALESCE($6, scope), classroom_id = COALESCE($7, classroom_id),
                 classroom_name = COALESCE($8, classroom_name), teacher_id = COALESCE($9, teacher_id),
                 teacher_name = COALESCE($10, teacher_name), product_link = COALESCE($11, product_link),
-                product_image = COALESCE($12, product_image), notes = COALESCE($13, notes)
+                product_image = CASE WHEN $14 THEN NULL ELSE COALESCE($12, product_image) END,
+                notes = COALESCE($13, notes),
+                bill_images = COALESCE($15, bill_images)
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,
                        item, quantity, category, location, scope, classroom_id, classroom_name,
@@ -307,7 +312,8 @@ impl RequestDao {
                        paid_by_user_id, paid_by_name",
             &[&id, &body.item, &body.quantity, &body.category, &body.location, &body.scope,
               &body.classroom_id, &body.classroom_name, &body.teacher_id, &body.teacher_name,
-              &body.product_link, &body.product_image, &body.notes],
+              &body.product_link, &body.product_image, &body.notes,
+              &body.delete_product_image, &bill_images_json],
         ).await.map_err(|e| AppError::Database(format!("Failed to update request: {}", e)))?;
         Ok(self.row_to_request(&row))
     }

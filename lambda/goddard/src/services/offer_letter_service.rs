@@ -354,7 +354,8 @@ pub fn build_prefill_url(offer: &OfferLetter, _invite_token: Uuid) -> String {
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("https://fillout.com/{}?{}", form_id, query)
+    let sep = if form_id.contains('?') { '&' } else { '?' };
+    format!("{}{}{}", form_id, sep, query)
 }
 
 fn urlencoding(s: &str) -> String {

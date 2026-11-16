@@ -119,6 +119,9 @@ pub struct AdminUserResponse {
     pub taptime_employee_id: Option<String>,
     pub taptime_pin: Option<String>,
     pub permissions: Vec<String>,
+    pub employee_id: Option<String>,
+    pub offer_status: Option<String>,
+    pub offer_letter_custom_fields: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -865,6 +868,9 @@ impl AuthService {
             taptime_employee_id: updated.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: updated.taptime_pin,
             permissions: updated.permissions,
+            employee_id: updated.employee_id.map(|id| id.to_string()),
+            offer_status: updated.offer_status,
+            offer_letter_custom_fields: updated.offer_letter_custom_fields,
         })
     }
 
@@ -932,6 +938,9 @@ impl AuthService {
             taptime_employee_id: u.taptime_employee_id.map(|id| id.to_string()),
             taptime_pin: u.taptime_pin,
             permissions: u.permissions,
+            employee_id: u.employee_id.map(|id| id.to_string()),
+            offer_status: u.offer_status,
+            offer_letter_custom_fields: u.offer_letter_custom_fields,
         }).collect())
     }
 

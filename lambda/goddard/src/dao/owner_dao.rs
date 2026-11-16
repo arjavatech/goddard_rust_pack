@@ -53,6 +53,9 @@ impl OwnerDao {
                     let v: serde_json::Value = row.get("permissions");
                     serde_json::from_value(v).unwrap_or_default()
                 },
+                employee_id: None,
+                offer_status: None,
+                offer_letter_custom_fields: None,
             });
         }
 
@@ -95,6 +98,9 @@ impl OwnerDao {
                     let v: serde_json::Value = row.get("permissions");
                     serde_json::from_value(v).unwrap_or_default()
                 },
+                employee_id: None,
+                offer_status: None,
+                offer_letter_custom_fields: None,
             }
         }))
     }
@@ -146,6 +152,9 @@ impl OwnerDao {
                         let v: serde_json::Value = row.get("permissions");
                         serde_json::from_value(v).unwrap_or_default()
                     },
+                    employee_id: None,
+                    offer_status: None,
+                    offer_letter_custom_fields: None,
                 })
             }
             Ok(None) => Err(AppError::NotFound("Owner not found".to_string())),

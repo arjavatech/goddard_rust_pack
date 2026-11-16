@@ -207,6 +207,8 @@ pub struct FilteredUserResponse {
     pub taptime_pin: Option<String>,
     pub school_data: Option<SchoolResponse>,
     pub admin_permissions: Option<Vec<String>>,
+    pub offer_status: Option<String>,
+    pub employee_id: Option<String>,
 }
 
 fn email_status_message(status: &str, default_ok: &str) -> String {
@@ -811,6 +813,8 @@ impl AuthService {
                 taptime_pin: None,
                 school_data: None,
                 admin_permissions: None,
+                offer_status: None,
+                employee_id: None,
             });
         }
 
@@ -1031,6 +1035,8 @@ impl AuthService {
             taptime_pin: user.taptime_pin,
             school_data,
             admin_permissions,
+            offer_status: user.offer_status,
+            employee_id: user.employee_id.map(|id| id.to_string()),
         })
     }
 

@@ -327,7 +327,20 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions FROM users WHERE id = $1";
+        let query = r#"
+            SELECT u.id, u.school_id, u.first_name, u.last_name, u.email, u.role,
+                   COALESCE(u.is_verified, false) as is_verified,
+                   u.metadata->>'phone_number' as phone_number,
+                   u.taptime_employee_id, u.taptime_pin,
+                   u.created_at, COALESCE(u.permissions, '[]'::jsonb) as permissions,
+                   e.id AS employee_id,
+                   e.offer_status,
+                   ol.custom_fields AS offer_letter_custom_fields
+            FROM users u
+            LEFT JOIN employees e ON e.user_id = u.id AND e.school_id = u.school_id
+            LEFT JOIN offer_letters ol ON ol.employee_id = e.id AND ol.school_id = u.school_id AND ol.is_current = TRUE
+            WHERE u.id = $1
+        "#;
 
         match client.query_opt(query, &[&user_id]).await {
             Ok(Some(row)) => {
@@ -350,9 +363,9 @@ impl AuthDao {
                         let v: serde_json::Value = row.get("permissions");
                         serde_json::from_value(v).unwrap_or_default()
                     },
-                    employee_id: None,
-                    offer_status: None,
-                    offer_letter_custom_fields: None,
+                    employee_id: row.try_get("employee_id").ok(),
+                    offer_status: row.try_get("offer_status").ok().flatten(),
+                    offer_letter_custom_fields: row.try_get("offer_letter_custom_fields").ok().flatten(),
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found".to_string())),
@@ -400,7 +413,20 @@ impl AuthDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let query = "SELECT id, school_id, first_name, last_name, email, role, COALESCE(is_verified, false) as is_verified, metadata->>'phone_number' as phone_number, taptime_employee_id, taptime_pin, created_at, COALESCE(permissions, '[]'::jsonb) as permissions FROM users WHERE email = $1 AND (is_active = true OR is_active IS NULL) LIMIT 1";
+        let query = r#"
+            SELECT u.id, u.school_id, u.first_name, u.last_name, u.email, u.role,
+                   COALESCE(u.is_verified, false) as is_verified,
+                   u.metadata->>'phone_number' as phone_number,
+                   u.taptime_employee_id, u.taptime_pin,
+                   u.created_at, COALESCE(u.permissions, '[]'::jsonb) as permissions,
+                   e.id AS employee_id,
+                   e.offer_status,
+                   ol.custom_fields AS offer_letter_custom_fields
+            FROM users u
+            LEFT JOIN employees e ON e.user_id = u.id AND e.school_id = u.school_id
+            LEFT JOIN offer_letters ol ON ol.employee_id = e.id AND ol.school_id = u.school_id AND ol.is_current = TRUE
+            WHERE u.email = $1 AND (u.is_active = true OR u.is_active IS NULL) LIMIT 1
+        "#;
 
         match client.query_opt(query, &[&email]).await {
             Ok(Some(row)) => {
@@ -422,9 +448,9 @@ impl AuthDao {
                         let v: serde_json::Value = row.get("permissions");
                         serde_json::from_value(v).unwrap_or_default()
                     },
-                    employee_id: None,
-                    offer_status: None,
-                    offer_letter_custom_fields: None,
+                    employee_id: row.try_get("employee_id").ok(),
+                    offer_status: row.try_get("offer_status").ok().flatten(),
+                    offer_letter_custom_fields: row.try_get("offer_letter_custom_fields").ok().flatten(),
                 })
             },
             Ok(None) => Err(AppError::NotFound("User not found. Please enter correct email.".to_string())),

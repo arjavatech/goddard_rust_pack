@@ -102,6 +102,7 @@ impl SchoolService {
                 response.conference_enabled = features.conference_enabled;
                 response.survey_enabled = features.survey_enabled;
                 response.drive_enabled = features.drive_enabled;
+                response.offer_letter_enabled = features.offer_letter_enabled;
                 Ok(response)
             },
             Ok(Err(e)) => {
@@ -172,6 +173,7 @@ impl SchoolService {
         response.conference_enabled = features.conference_enabled;
         response.survey_enabled = features.survey_enabled;
         response.drive_enabled = features.drive_enabled;
+        response.offer_letter_enabled = features.offer_letter_enabled;
         Ok(response)
     }
 
@@ -187,6 +189,10 @@ impl SchoolService {
             message: "School successfully deleted".to_string(),
             school_id: *school_id,
         })
+    }
+
+    pub async fn update_offer_letter_config(&self, school_id: Uuid, fillout_form_id: &str) -> ApiResult<()> {
+        self.dao.update_offer_letter_config(school_id, fillout_form_id).await
     }
 
     pub async fn get_request_settings(&self, school_id: Uuid) -> ApiResult<SchoolRequestSettingsResponse> {
@@ -279,6 +285,7 @@ impl SchoolService {
             conference_enabled: request.school.conference_enabled,
             survey_enabled: request.school.survey_enabled,
             drive_enabled: request.school.drive_enabled,
+            offer_letter_enabled: request.school.offer_letter_enabled,
         };
 
         println!("[SchoolService] Creating school with 10s timeout");
@@ -362,6 +369,7 @@ impl SchoolService {
         school_response.conference_enabled = features.conference_enabled;
         school_response.survey_enabled = features.survey_enabled;
         school_response.drive_enabled = features.drive_enabled;
+        school_response.offer_letter_enabled = features.offer_letter_enabled;
         Ok(CreateSchoolWithOwnerResponse {
             school: school_response,
             owner: OwnerCreatedResponse {

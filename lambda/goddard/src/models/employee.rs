@@ -14,6 +14,7 @@ pub struct Employee {
     pub employee_type: Option<String>,
     pub joined_on: Option<NaiveDate>,
     pub is_active: Option<bool>,
+    pub offer_status: Option<String>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
@@ -32,6 +33,7 @@ pub struct EmployeeWithUser {
     pub joined_on: Option<NaiveDate>,
     pub is_active: Option<bool>,
     pub is_verified: Option<bool>,
+    pub offer_status: Option<String>,
     /// TapTime's employee identity is retained locally to route updates through
     /// the trusted server-to-server integration; it is never supplied by the browser.
     pub taptime_employee_id: Option<Uuid>,
@@ -162,6 +164,8 @@ pub struct EmployeeInviteResponse {
     pub invite_id: Uuid,
     pub email_sent: bool,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offer_letter_required: Option<bool>,
 }
 #[derive(Debug, Deserialize)]
 pub struct ResendEmployeeInviteRequest {

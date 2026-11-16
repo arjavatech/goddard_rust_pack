@@ -21,6 +21,7 @@ pub mod parent_details;
 pub mod requests;
 pub mod schema;
 pub mod school;
+pub mod offer_letter;
 pub mod student_form_assignment;
 pub mod student_form_assignment_review;
 pub mod student_form_assignment_revoke;

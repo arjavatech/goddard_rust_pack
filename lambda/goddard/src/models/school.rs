@@ -13,6 +13,7 @@ pub struct SchoolFeatures {
     pub conference_enabled: bool,
     pub survey_enabled: bool,
     pub drive_enabled: bool,
+    pub offer_letter_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,6 +25,7 @@ pub enum SchoolFeature {
     Conference,
     Survey,
     Drive,
+    OfferLetter,
 }
 
 impl SchoolFeature {
@@ -36,6 +38,7 @@ impl SchoolFeature {
             Self::Conference => features.conference_enabled,
             Self::Survey => features.survey_enabled,
             Self::Drive => features.drive_enabled,
+            Self::OfferLetter => features.offer_letter_enabled,
         }
     }
 
@@ -48,6 +51,7 @@ impl SchoolFeature {
             Self::Conference => "Conference",
             Self::Survey => "Survey",
             Self::Drive => "Drive",
+            Self::OfferLetter => "Offer Letter",
         }
     }
 }
@@ -64,6 +68,7 @@ pub struct School {
     pub is_active: Option<bool>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
+    pub offer_letter_fillout_form_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +84,7 @@ pub struct CreateSchoolRequest {
     pub conference_enabled: Option<bool>,
     pub survey_enabled: Option<bool>,
     pub drive_enabled: Option<bool>,
+    pub offer_letter_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +96,8 @@ pub struct UpdateSchoolRequest {
     pub settings: Option<Value>,
     pub conference_enabled: Option<bool>,
     pub survey_enabled: Option<bool>,
+    pub offer_letter_enabled: Option<bool>,
+    pub offer_letter_fillout_form_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -108,6 +116,8 @@ pub struct SchoolResponse {
     pub conference_enabled: bool,
     pub survey_enabled: bool,
     pub drive_enabled: bool,
+    pub offer_letter_enabled: bool,
+    pub offer_letter_fillout_form_id: Option<String>,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
 }
@@ -143,6 +153,8 @@ impl From<School> for SchoolResponse {
             conference_enabled: false,
             survey_enabled: false,
             drive_enabled: false,
+            offer_letter_enabled: false,
+            offer_letter_fillout_form_id: school.offer_letter_fillout_form_id.clone(),
             created_at: school.created_at,
             updated_at: school.updated_at,
         }
@@ -206,6 +218,7 @@ pub struct SchoolInfo {
     pub conference_enabled: Option<bool>,
     pub survey_enabled: Option<bool>,
     pub drive_enabled: Option<bool>,
+    pub offer_letter_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,6 +233,11 @@ pub struct OwnerInfo {
 pub struct CreateSchoolWithOwnerRequest {
     pub school: SchoolInfo,
     pub owner: OwnerInfo,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOfferLetterConfigRequest {
+    pub fillout_form_id: String,
 }
 
 #[derive(Debug, Serialize)]

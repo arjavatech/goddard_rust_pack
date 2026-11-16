@@ -486,6 +486,22 @@ impl EmailService {
     // Employee lifecycle notifications
     // =====================================================
 
+    pub async fn send_offer_letter_email(
+        &self,
+        email: &str,
+        first_name: &str,
+        last_name: &str,
+        school_name: &str,
+        invite_link: &str,
+        role: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("Your Offer Letter from {}", school_name);
+        let html = email_templates::offer_letter_invite_html(
+            first_name, last_name, school_name, invite_link, role,
+        );
+        self.dispatch(email, &subject, &html).await
+    }
+
     pub async fn send_employee_invite_email(
         &self,
         email: &str,

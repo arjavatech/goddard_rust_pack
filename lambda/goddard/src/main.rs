@@ -63,6 +63,11 @@ use controllers::{
         delete_employee_manual_pdf, upload_employee_manual_pdf,
         list_employee_form_assignments_by_template, get_school_members,
     },
+    offer_letter_controller::{
+        create_offer_letter, get_offer_letter, list_offer_letters,
+        offer_letter_webhook, resend_offer_letter, review_offer_letter, send_offer_letter,
+        update_offer_letter,
+    },
     enrollment_controller::{
         activate_invite, activate_parent, add_child, bulk_add_secondary_parents,
         bulk_import_families, bulk_promote_enrollments, create_parent_invite, deactivate_parent,
@@ -115,7 +120,7 @@ use controllers::{
     school_controller::{
         create_school, create_school_with_owner, delete_school, get_all_schools,
         get_all_schools_with_owners, get_request_settings, get_school_with_owner,
-        update_request_settings, update_school,
+        update_offer_letter_config, update_request_settings, update_school,
     },
     student_form_assignment_controller::{
         assign_form_to_class_students, assign_form_to_school_students,
@@ -139,8 +144,8 @@ use dao::{
     AdminDao, AdminPermissionDao, AuthDao, ClassFormOverrideDao, ClassroomDao, ConferenceDao,
     DeviceTokenDao, DocumentRequestDao, DriveDao, EmployeeDao, EmployeeFormAssignmentDao,
     EmployeeFormSubmissionDao, EmployeeFormTemplateDao, EnrollmentDao, FormSubmissionDao,
-    FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, OwnerDao, PortalDao,
-    RequestDao, SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
+    FormTemplateDao, HelpCenterDao, NavCountsDao, NotificationDao, OfferLetterDao, OwnerDao,
+    PortalDao, RequestDao, SchoolDao, StudentFormAssignmentDao, SurveyDao, TapTimeMappingDao,
 };
 use middleware::auth::{
     api_key_middleware, jwt_or_api_key_admin_only, jwt_or_api_key_middleware,
@@ -151,9 +156,9 @@ use services::{
     AdminService, AuthService, ClassFormOverrideService, ClassroomService, ConferenceService,
     DocumentRequestService, DriveService, EmailService, EmployeeService, EnrollmentService,
     FilloutService, FormSubmissionService, FormTemplateService, NotificationPushTrigger,
-    NotificationService, OwnerService, PortalService, RequestService, SchoolService,
-    StudentFormAssignmentService, SupabaseClient, SurveyService, TapTimeMappingService,
-    TapTimeService, UploadService,
+    NotificationService, OfferLetterService, OwnerService, PortalService, RequestService,
+    SchoolService, StudentFormAssignmentService, SupabaseClient, SurveyService,
+    TapTimeMappingService, TapTimeService, UploadService,
 };
 use std::sync::Arc;
 
@@ -361,6 +366,14 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         taptime_mapping_service.clone(),
     ));
 
+    let offer_letter_service = Arc::new(OfferLetterService::new(
+        OfferLetterDao::new(pool.clone()),
+        EmployeeDao::new(pool.clone()),
+        auth_dao.clone(),
+        school_dao.clone(),
+        email_service.clone(),
+    ));
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -543,6 +556,11 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/schools/:id/request-settings",
             patch(update_request_settings)
+                .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/schools/:id/offer-letter-config",
+            patch(update_offer_letter_config)
                 .layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .with_state(school_service)
@@ -1388,6 +1406,40 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
             delete(delete_owner).layer(axum_middleware::from_fn(jwt_or_api_key_superadmin_only)),
         )
         .with_state(owner_service)
+        // Offer Letter APIs
+        .route(
+            "/employees/:employee_id/offer-letter",
+            post(create_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter",
+            get(get_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter",
+            patch(update_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter/send",
+            post(send_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter/resend",
+            post(resend_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter/review",
+            post(review_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/offer-letters",
+            get(list_offer_letters).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/offer-letters/webhook",
+            post(offer_letter_webhook),
+        )
+        .with_state(offer_letter_service)
         .layer(axum_middleware::from_fn(request_id_middleware))
         .layer(axum_middleware::from_fn(add_cors_headers))
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)); // 10 MB

@@ -18,6 +18,7 @@ pub mod form_template_controller;
 pub mod hello_controller;
 pub mod nav_counts_controller;
 pub mod notification_controller;
+pub mod offer_letter_controller;
 pub mod parent_details_controller;
 pub mod portal_controller;
 pub mod request_controller;

@@ -941,6 +941,8 @@ impl AuthService {
                 conference_enabled: features.conference_enabled,
                 survey_enabled: features.survey_enabled,
                 drive_enabled: features.drive_enabled,
+                offer_letter_enabled: features.offer_letter_enabled,
+                offer_letter_fillout_form_id: school.offer_letter_fillout_form_id,
                 created_at: school.created_at,
                 updated_at: school.updated_at,
             }),

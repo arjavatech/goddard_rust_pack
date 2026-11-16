@@ -28,11 +28,59 @@ impl EmployeeDao {
         let row = client.query_one(
             "INSERT INTO employees (id, user_id, school_id, phone, address, employee_type, joined_on, is_active, created_at, updated_at)
              VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, true, NOW(), NOW())
-             RETURNING id, user_id, school_id, phone, address, employee_type, joined_on, is_active, created_at, updated_at",
+             RETURNING id, user_id, school_id, phone, address, employee_type, joined_on, is_active, offer_status, created_at, updated_at",
             &[&user_id, &school_id, &phone, &address, &employee_type, &joined_on],
         ).await.map_err(|e| AppError::Database(format!("Failed to create employee: {}", e)))?;
 
         Ok(self.row_to_employee(&row))
+    }
+
+    pub async fn create_employee_pending_offer(
+        &self,
+        user_id: Uuid,
+        school_id: Uuid,
+        phone: Option<&str>,
+        address: Option<&str>,
+        employee_type: Option<&str>,
+        joined_on: Option<chrono::NaiveDate>,
+    ) -> Result<Employee, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            "INSERT INTO employees (id, user_id, school_id, phone, address, employee_type, joined_on, is_active, offer_status, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, false, 'pending_offer', NOW(), NOW())
+             RETURNING id, user_id, school_id, phone, address, employee_type, joined_on, is_active, offer_status, created_at, updated_at",
+            &[&user_id, &school_id, &phone, &address, &employee_type, &joined_on],
+        ).await.map_err(|e| AppError::Database(format!("Failed to create employee (offer flow): {}", e)))?;
+
+        Ok(self.row_to_employee(&row))
+    }
+
+    pub async fn set_offer_status(&self, employee_id: Uuid, school_id: Uuid, status: &str) -> Result<(), AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let n = client.execute(
+            "UPDATE employees SET offer_status = $3, updated_at = NOW() WHERE id = $1 AND school_id = $2",
+            &[&employee_id, &school_id, &status],
+        ).await.map_err(|e| AppError::Database(format!("Failed to set offer_status: {}", e)))?;
+
+        if n == 0 { return Err(AppError::NotFound("Employee not found".to_string())); }
+        Ok(())
+    }
+
+    pub async fn activate_employee_offer_approved(&self, employee_id: Uuid, school_id: Uuid) -> Result<(), AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let n = client.execute(
+            "UPDATE employees SET is_active = true, offer_status = 'active', updated_at = NOW() WHERE id = $1 AND school_id = $2",
+            &[&employee_id, &school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to activate employee (offer approved): {}", e)))?;
+
+        if n == 0 { return Err(AppError::NotFound("Employee not found".to_string())); }
+        Ok(())
     }
 
     pub async fn create_employee_if_not_exists(
@@ -61,11 +109,11 @@ impl EmployeeDao {
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
                     e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
-                    u.taptime_employee_id, u.taptime_pin, e.created_at
+                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
-             WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL)
+             WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL OR e.offer_status IS NOT NULL)
              ORDER BY u.first_name ASC",
             &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employees: {}", e)))?;
@@ -81,7 +129,7 @@ impl EmployeeDao {
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
                     e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
-                    u.taptime_employee_id, u.taptime_pin, e.created_at
+                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
@@ -97,7 +145,7 @@ impl EmployeeDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let row = client.query_opt(
-            "SELECT id, user_id, school_id, phone, address, employee_type, joined_on, is_active, created_at, updated_at
+            "SELECT id, user_id, school_id, phone, address, employee_type, joined_on, is_active, offer_status, created_at, updated_at
              FROM employees WHERE user_id = $1 AND school_id = $2",
             &[&user_id, &school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employee by user_id: {}", e)))?;
@@ -113,7 +161,7 @@ impl EmployeeDao {
             "UPDATE employees SET phone = COALESCE($3, phone), address = COALESCE($4, address),
              employee_type = COALESCE($5, employee_type), joined_on = COALESCE($6, joined_on), updated_at = NOW()
              WHERE id = $1 AND school_id = $2
-             RETURNING id, user_id, school_id, phone, address, employee_type, joined_on, is_active, created_at, updated_at",
+             RETURNING id, user_id, school_id, phone, address, employee_type, joined_on, is_active, offer_status, created_at, updated_at",
             &[&employee_id, &school_id, &req.phone, &req.address, &req.employee_type, &req.joined_on],
         ).await.map_err(|e| AppError::Database(format!("Failed to update employee: {}", e)))?;
 
@@ -141,7 +189,7 @@ impl EmployeeDao {
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
                     e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
-                    u.taptime_employee_id, u.taptime_pin, e.created_at
+                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
@@ -157,7 +205,7 @@ impl EmployeeDao {
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let row = client.query_opt(
-            "SELECT e.id, e.user_id, e.school_id, e.phone, e.address, e.employee_type, e.joined_on, e.is_active, e.created_at, e.updated_at
+            "SELECT e.id, e.user_id, e.school_id, e.phone, e.address, e.employee_type, e.joined_on, e.is_active, e.offer_status, e.created_at, e.updated_at
              FROM employees e
              JOIN users u ON e.user_id = u.id
              WHERE u.email = $1 AND e.school_id = $2
@@ -216,6 +264,7 @@ impl EmployeeDao {
             employee_type: row.get("employee_type"),
             joined_on: row.get("joined_on"),
             is_active: row.get("is_active"),
+            offer_status: row.get("offer_status"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
         }
@@ -235,6 +284,7 @@ impl EmployeeDao {
             joined_on: row.get("joined_on"),
             is_active: row.get("is_active"),
             is_verified: row.get("is_verified"),
+            offer_status: row.get("offer_status"),
             taptime_employee_id: row.get("taptime_employee_id"),
             taptime_pin: row.get("taptime_pin"),
             created_at: row.get("created_at"),

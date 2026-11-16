@@ -105,6 +105,68 @@ impl EmployeeService {
             .await
             .map_err(|_| AppError::NotFound("School not found".to_string()))?;
 
+        // If the offer letter feature is enabled, create the employee in pending_offer state
+        // without sending an invite email. The offer letter service will handle the email.
+        let offer_letter_enabled = self.school_dao.get_features(req.school_id).await
+            .map(|f| f.offer_letter_enabled)
+            .unwrap_or(false);
+
+        if offer_letter_enabled {
+            let metadata = UserMetadata::new(
+                Some(req.school_id),
+                Some(req.first_name.clone()),
+                Some(req.last_name.clone()),
+                Some("Employee".to_string()),
+                req.phone.clone(),
+                Some(true),
+            )
+            .with_school_name(school_name.clone());
+
+            let user_id = match self.supabase_client
+                .create_user_only_in_supabase(&req.email, metadata)
+                .await
+            {
+                Ok(id_str) => Uuid::parse_str(&id_str)
+                    .map_err(|_| AppError::Internal("Invalid user ID from Supabase".to_string()))?,
+                Err(AppError::Conflict(_)) => {
+                    if self.employee_dao
+                        .get_employee_by_email_and_school(&req.email, req.school_id)
+                        .await?
+                        .is_some()
+                    {
+                        return Err(AppError::Conflict(format!(
+                            "Employee with email {} already exists in this school", req.email
+                        )));
+                    }
+                    self.auth_dao.get_user_id_by_email(&req.email).await?
+                }
+                Err(e) => return Err(e),
+            };
+
+            let employee = self
+                .employee_dao
+                .create_employee_pending_offer(
+                    user_id,
+                    req.school_id,
+                    req.phone.as_deref(),
+                    req.address.as_deref(),
+                    req.employee_type.as_deref(),
+                    req.joined_on,
+                )
+                .await?;
+
+            self.reconcile_taptime_user(req.school_id, user_id).await;
+
+            return Ok(EmployeeInviteResponse {
+                employee_id: employee.id,
+                user_id,
+                invite_id: Uuid::nil(),
+                email_sent: false,
+                offer_letter_required: Some(true),
+                message: "Employee added. Please create and send an offer letter to complete onboarding.".to_string(),
+            });
+        }
+
         // Create user in Supabase (no email sent at this stage)
         let metadata = UserMetadata::new(
             Some(req.school_id),
@@ -201,6 +263,7 @@ impl EmployeeService {
             user_id,
             invite_id,
             email_sent,
+            offer_letter_required: None,
             message: if email_sent {
                 "Employee invited successfully. Invitation email sent.".to_string()
             } else {

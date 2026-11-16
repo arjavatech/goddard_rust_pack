@@ -59,13 +59,14 @@ impl SchoolDao {
             is_active: row.get("is_active"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
+            offer_letter_fillout_form_id: None,
         }
     }
 
     pub async fn get_features(&self, school_id: Uuid) -> ApiResult<SchoolFeatures> {
         let client = self.get_connection().await?;
         client.query_opt(
-            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled, conference_enabled, survey_enabled, COALESCE(drive_enabled, false) AS drive_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
+            "SELECT parent_management_enabled, employee_management_enabled, expense_management_enabled, taptime_enabled, conference_enabled, survey_enabled, COALESCE(drive_enabled, false) AS drive_enabled, COALESCE(offer_letter_enabled, false) AS offer_letter_enabled FROM schools WHERE id = $1 AND (is_active = true OR is_active IS NULL)",
             &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to load school features: {e}")))?
             .map(|row| SchoolFeatures {
@@ -76,6 +77,7 @@ impl SchoolDao {
                 conference_enabled: row.get("conference_enabled"),
                 survey_enabled: row.get("survey_enabled"),
                 drive_enabled: row.get("drive_enabled"),
+                offer_letter_enabled: row.get("offer_letter_enabled"),
             })
             .ok_or_else(|| AppError::NotFound("School not found".into()))
     }
@@ -101,6 +103,7 @@ impl SchoolDao {
         let conference_enabled = request.conference_enabled.unwrap_or(false);
         let survey_enabled = request.survey_enabled.unwrap_or(false);
         let drive_enabled = request.drive_enabled.unwrap_or(false);
+        let offer_letter_enabled = request.offer_letter_enabled.unwrap_or(false);
 
         self.execute_with_connection(|client| async move {
 
@@ -113,8 +116,8 @@ impl SchoolDao {
                 r#"
                 INSERT INTO schools (id, name, subdomain, timezone, settings, is_active, created_at,
                     parent_management_enabled, employee_management_enabled, expense_management_enabled,
-                    taptime_enabled, conference_enabled, survey_enabled, drive_enabled)
-                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW(), {}, {}, {}, {}, {}, {}, {})
+                    taptime_enabled, conference_enabled, survey_enabled, drive_enabled, offer_letter_enabled)
+                VALUES (gen_random_uuid(), '{}', '{}', '{}', {}, true, NOW(), {}, {}, {}, {}, {}, {}, {}, {})
                 RETURNING id, name, subdomain, timezone, settings, NULL::jsonb AS request_categories, NULL::jsonb AS location, is_active, created_at, updated_at
                 "#,
                 name.replace('\'', "''"),
@@ -127,7 +130,8 @@ impl SchoolDao {
                 taptime_enabled,
                 conference_enabled,
                 survey_enabled,
-                drive_enabled
+                drive_enabled,
+                offer_letter_enabled
             );
 
             let result = client.simple_query(&query).await
@@ -160,6 +164,7 @@ impl SchoolDao {
                         is_active: row.get(7).and_then(|s| s.parse().ok()),
                         created_at: row.get(8).and_then(|s| s.parse().ok()),
                         updated_at: row.get(9).and_then(|s| s.parse().ok()),
+                        offer_letter_fillout_form_id: None,
                     };
                     return Ok(school);
                 }
@@ -195,6 +200,7 @@ impl SchoolDao {
                         is_active: row.get(7).and_then(|s| s.parse().ok()),
                         created_at: row.get(8).and_then(|s| s.parse().ok()),
                         updated_at: row.get(9).and_then(|s| s.parse().ok()),
+                        offer_letter_fillout_form_id: None,
                     };
                     schools.push(school);
                 }
@@ -209,7 +215,7 @@ impl SchoolDao {
         self.execute_with_connection(|client| async move {
             let query = format!(
                 r#"
-                SELECT id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at
+                SELECT id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at, offer_letter_fillout_form_id
                 FROM schools
                 WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
                 "#,
@@ -232,6 +238,7 @@ impl SchoolDao {
                         is_active: row.get(7).and_then(|s| s.parse().ok()),
                         created_at: row.get(8).and_then(|s| s.parse().ok()),
                         updated_at: row.get(9).and_then(|s| s.parse().ok()),
+                        offer_letter_fillout_form_id: row.get(10).map(|s: &str| s.to_string()),
                     };
                     return Ok(Some(school));
                 }
@@ -265,6 +272,18 @@ impl SchoolDao {
         let client = self.get_connection().await?;
 
         // Build the SQL query with escaped values to avoid prepared statement conflicts
+        let offer_letter_enabled_clause = if let Some(v) = request.offer_letter_enabled {
+            format!(", offer_letter_enabled = {}", v)
+        } else {
+            String::new()
+        };
+
+        let offer_letter_form_id_clause = if let Some(ref fid) = request.offer_letter_fillout_form_id {
+            format!(", offer_letter_fillout_form_id = '{}'", fid.replace('\'', "''"))
+        } else {
+            String::new()
+        };
+
         let query = format!(
             r#"
             UPDATE schools
@@ -273,10 +292,10 @@ impl SchoolDao {
                 timezone = '{}',
                 settings = jsonb_set(COALESCE(settings, '{{}}'::jsonb), '{{timezone}}', to_jsonb('{}'::text), true),
                 conference_enabled = {},
-                survey_enabled = {},
-                updated_at = NOW()
+                survey_enabled = {}{}{}
+                , updated_at = NOW()
             WHERE id = '{}' AND (is_active = true OR is_active IS NULL)
-            RETURNING id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at
+            RETURNING id, name, subdomain, timezone, settings, request_categories, location, is_active, created_at, updated_at, offer_letter_fillout_form_id
             "#,
             request.name.replace('\'', "''"),
             request.subdomain.replace('\'', "''"),
@@ -284,6 +303,8 @@ impl SchoolDao {
             request.timezone.clone().unwrap_or_else(|| "EST".to_string()).replace('\'', "''"),
             request.conference_enabled.unwrap_or(false),
             request.survey_enabled.unwrap_or(false),
+            offer_letter_enabled_clause,
+            offer_letter_form_id_clause,
             request.id
         );
 
@@ -319,11 +340,22 @@ impl SchoolDao {
                     is_active: row.get(7).and_then(|s| s.parse().ok()),
                     created_at: row.get(8).and_then(|s| s.parse().ok()),
                     updated_at: row.get(9).and_then(|s| s.parse().ok()),
+                    offer_letter_fillout_form_id: row.get(10).map(|s: &str| s.to_string()),
                 };
                 return Ok(school);
             }
         }
         Err(AppError::NotFound("School not found".to_string()))
+    }
+
+    pub async fn update_offer_letter_config(&self, school_id: Uuid, fillout_form_id: &str) -> ApiResult<()> {
+        let client = self.get_connection().await?;
+        let changed = client.execute(
+            "UPDATE schools SET offer_letter_fillout_form_id = $1, updated_at = NOW() WHERE id = $2 AND (is_active = true OR is_active IS NULL)",
+            &[&fillout_form_id, &school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to update offer letter config: {e}")))?;
+        if changed == 0 { return Err(AppError::NotFound("School not found".into())); }
+        Ok(())
     }
 
     pub async fn delete_school(&self, school_id: &Uuid) -> ApiResult<()> {

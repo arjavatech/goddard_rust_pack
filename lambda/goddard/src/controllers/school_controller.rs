@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::{
     services::SchoolService,
-    models::school::{CreateSchoolRequest, UpdateSchoolRequest, CreateSchoolWithOwnerRequest, SchoolWithOwnerResponse, UpdateRequestSettingsRequest},
+    models::school::{CreateSchoolRequest, UpdateSchoolRequest, CreateSchoolWithOwnerRequest, SchoolWithOwnerResponse, UpdateRequestSettingsRequest, UpdateOfferLetterConfigRequest},
     middleware::auth::{check_permission_admin_or_superadmin, AuthContext},
     utils::ResponseUtils,
     error::AppError,
@@ -105,4 +105,15 @@ pub async fn get_all_schools_with_owners(
 ) -> Result<impl IntoResponse, AppError> {
     let response = school_service.get_all_schools_with_owners().await?;
     Ok(ResponseUtils::success(response))
+}
+
+/// PATCH /schools/:id/offer-letter-config
+/// Set the school-level Fillout form ID used for all offer letters
+pub async fn update_offer_letter_config(
+    State(school_service): State<Arc<SchoolService>>,
+    Path(school_id): Path<Uuid>,
+    Json(payload): Json<UpdateOfferLetterConfigRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    school_service.update_offer_letter_config(school_id, &payload.fillout_form_id).await?;
+    Ok(ResponseUtils::success(serde_json::json!({ "message": "Offer letter config updated" })))
 }

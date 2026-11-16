@@ -659,6 +659,7 @@ impl AuthService {
                                                 &request.first_name,
                                                 &request.last_name,
                                                 &school_name,
+                                                "Admin",
                                                 &prefill_url,
                                             ).await;
                                         }

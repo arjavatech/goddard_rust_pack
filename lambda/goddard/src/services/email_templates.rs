@@ -595,32 +595,40 @@ pub fn offer_letter_invite_html(
     first_name: &str,
     last_name: &str,
     school_name: &str,
+    role: &str,
     login_url: &str,
 ) -> String {
     let accent = "#1a5276";
     let headline = format!("Your Offer Letter from {}", html_escape(school_name));
     let preheader = format!(
-        "You have received an offer letter from {}. Set up your account to review it.",
-        school_name
+        "You've been added as a Goddard {} at {}. Set up your account and sign your offer letter.",
+        role, school_name
     );
 
     let body = format!(
         r#"<p>Dear {first_name} {last_name},</p>
-          <p>Congratulations! You have received an offer letter from <strong>{school}</strong>.</p>
-          <p>Click the button below to set your account password and review your offer letter.
-          Once you log in, you will be able to open the offer form and complete your acceptance.</p>
+          <p>Congratulations! You have been added as a <strong>Goddard {role}</strong> at <strong>{school}</strong>.
+          An offer letter has been prepared for you to review and sign.</p>
+          <div style="background:#f8f9fa;padding:16px 20px;border-radius:6px;margin:20px 0;">
+            <p style="margin:0 0 10px 0;"><strong>To get started:</strong></p>
+            <ol style="margin:0;padding-left:20px;">
+              <li><strong>Set your password</strong> — click the button below, or sign in with Google using this email address</li>
+              <li><strong>Sign your offer letter</strong> — after logging in, your offer letter will be ready to review and sign</li>
+            </ol>
+          </div>
           <div style="background:#eaf4fb;padding:16px 20px;border-radius:6px;margin:20px 0;border-left:4px solid #1a5276;">
             <p style="margin:0;font-size:14px;color:#1a5276;"><strong>Important:</strong>
-            Please review and respond to your offer letter at your earliest convenience.</p>
+            Please complete your offer letter at your earliest convenience.</p>
           </div>
           <p style="color:#555;font-size:14px;">If you believe you received this in error, please contact
           <strong>{school}</strong> directly.</p>"#,
         first_name = html_escape(first_name),
         last_name = html_escape(last_name),
+        role = role,
         school = html_escape(school_name),
     );
 
-    let cta = cta_button("Review My Offer Letter", login_url, accent);
+    let cta = cta_button("Set Your Password & Sign Offer Letter", login_url, accent);
     render_shell(accent, &headline, &preheader, &body, &cta)
 }
 

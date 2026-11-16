@@ -492,11 +492,12 @@ impl EmailService {
         first_name: &str,
         last_name: &str,
         school_name: &str,
+        role: &str,
         invite_link: &str,
     ) -> Result<(), AppError> {
         let subject = format!("Your Offer Letter from {}", school_name);
         let html = email_templates::offer_letter_invite_html(
-            first_name, last_name, school_name, invite_link,
+            first_name, last_name, school_name, role, invite_link,
         );
         self.dispatch(email, &subject, &html).await
     }

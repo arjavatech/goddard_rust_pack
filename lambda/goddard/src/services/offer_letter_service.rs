@@ -155,6 +155,7 @@ impl OfferLetterService {
                 &offer.first_name,
                 &offer.last_name,
                 &school_name,
+                "Employee",
                 &invite_link,
             ).await.map_err(|e| {
                 tracing::warn!("Failed to send offer letter email to {}: {}", offer.email, e);
@@ -208,6 +209,7 @@ impl OfferLetterService {
                 &offer.first_name,
                 &offer.last_name,
                 &school_name,
+                "Employee",
                 &invite_link,
             ).await;
         }

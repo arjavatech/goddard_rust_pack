@@ -196,7 +196,7 @@ impl EmployeeService {
                 self.employee_dao.set_offer_status(employee.id, req.school_id, "offer_sent").await?;
                 if invite_token != Uuid::nil() {
                     let _ = self.email_service.send_offer_letter_email(
-                        &req.email, &req.first_name, &req.last_name, &school_name, &invite_link,
+                        &req.email, &req.first_name, &req.last_name, &school_name, "Employee", &invite_link,
                     ).await;
                 }
                 let body = format!("Your offer letter from {} is ready to review and sign.", school_name);

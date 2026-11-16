@@ -116,6 +116,7 @@ impl EmployeeDao {
              LEFT JOIN auth.users au ON au.id = u.id
              LEFT JOIN offer_letters ol ON ol.employee_id = e.id AND ol.school_id = e.school_id AND ol.is_current = TRUE
              WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL OR e.offer_status IS NOT NULL)
+               AND (u.role IS NULL OR u.role NOT IN ('Admin', 'SuperAdmin', 'Owner'))
              ORDER BY u.first_name ASC",
             &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employees: {}", e)))?;

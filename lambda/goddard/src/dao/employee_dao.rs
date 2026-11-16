@@ -109,10 +109,12 @@ impl EmployeeDao {
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
                     e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
-                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at
+                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at,
+                    ol.custom_fields AS offer_letter_custom_fields
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
+             LEFT JOIN offer_letters ol ON ol.employee_id = e.id AND ol.school_id = e.school_id AND ol.is_current = TRUE
              WHERE e.school_id = $1 AND (e.is_active = true OR e.is_active IS NULL OR e.offer_status IS NOT NULL)
              ORDER BY u.first_name ASC",
             &[&school_id],
@@ -129,10 +131,12 @@ impl EmployeeDao {
             "SELECT e.id, e.user_id, e.school_id, u.first_name, u.last_name, u.email,
                     e.phone, e.address, e.employee_type, e.joined_on,
                     e.is_active, CASE WHEN au.raw_user_meta_data->>'password_set' = 'true' THEN true ELSE false END as is_verified,
-                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at
+                    e.offer_status, u.taptime_employee_id, u.taptime_pin, e.created_at,
+                    ol.custom_fields AS offer_letter_custom_fields
              FROM employees e
              JOIN users u ON e.user_id = u.id
              LEFT JOIN auth.users au ON au.id = u.id
+             LEFT JOIN offer_letters ol ON ol.employee_id = e.id AND ol.school_id = e.school_id AND ol.is_current = TRUE
              WHERE e.id = $1 AND e.school_id = $2",
             &[&employee_id, &school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employee: {}", e)))?;
@@ -288,6 +292,7 @@ impl EmployeeDao {
             taptime_employee_id: row.get("taptime_employee_id"),
             taptime_pin: row.get("taptime_pin"),
             created_at: row.get("created_at"),
+            offer_letter_custom_fields: row.try_get("offer_letter_custom_fields").unwrap_or(None),
         }
     }
 }

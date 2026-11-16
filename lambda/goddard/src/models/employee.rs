@@ -40,6 +40,7 @@ pub struct EmployeeWithUser {
     /// Mirror of the PIN confirmed by TapTime. TapTime remains authoritative.
     pub taptime_pin: Option<String>,
     pub created_at: Option<NaiveDateTime>,
+    pub offer_letter_custom_fields: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

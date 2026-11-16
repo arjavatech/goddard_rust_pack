@@ -244,7 +244,7 @@ impl RequestDao {
             "UPDATE requests
              SET status = 'Completed', amount_spent = $2, payment_method = $3,
                  purchase_date = $4, payment_notes = $5,
-                 bill_images = $6::jsonb, expected_completion_date = NULL,
+                 bill_images = COALESCE(bill_images, '[]'::jsonb) || $6::jsonb, expected_completion_date = NULL,
                  paid_by_user_id = $7, paid_by_name = $8
              WHERE id = $1
              RETURNING id, school_id, requester_id, requester_name, requester_role,

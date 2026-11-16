@@ -5,7 +5,7 @@ use crate::models::school::SchoolFeature;
 use crate::middleware::auth::AuthContext;
 use crate::models::schema::UserRole;
 use crate::models::requests::{
-    CreateRequestBody, UpdateRequestStatusBody, UpdateExpectedCompletionDateBody, UpdateRequestBody, PayRequestBody, CreateExpenseBody,
+    CreateRequestBody, UpdateRequestStatusBody, UpdateExpectedCompletionDateBody, UpdateRequestBody, PayRequestBody, CreateExpenseBody, UpdateExpenseBody,
     BillImageUpload, ListRequestsParams, ListExpensesParams,
     RequestsListResponse, RequestStatusCounts, ExpensesListResponse, Request,
 };
@@ -338,6 +338,41 @@ impl RequestService {
             UserRole::Admin | UserRole::Owner => Err(AppError::Authorization("Cannot update a request from a different school".to_string())),
             _ => Err(AppError::Authorization("Only admin or superadmin can update requests".to_string())),
         }
+    }
+
+    pub async fn update_expense(
+        &self,
+        auth: &AuthContext,
+        id: Uuid,
+        mut body: UpdateExpenseBody,
+    ) -> Result<Request, AppError> {
+        let existing = self.authorize_admin_request(auth, id).await?;
+        self.ensure_enabled(existing.school_id).await?;
+        if existing.status != "Completed" {
+            return Err(AppError::Validation("Can only edit completed expense records".to_string()));
+        }
+        let new_bill_urls = self.upload_bill_images(std::mem::take(&mut body.bill_images)).await?;
+        let remaining_urls = body.bill_image_urls.clone();
+        let merged_bills: Option<serde_json::Value> = if remaining_urls.is_some() || !new_bill_urls.is_empty() {
+            let mut all = remaining_urls.clone().unwrap_or_default();
+            all.extend(new_bill_urls);
+            Some(serde_json::to_value(&all).unwrap_or(serde_json::json!([])))
+        } else {
+            None
+        };
+        let updated = self.dao.update_expense(id, &body, merged_bills).await?;
+        if let Some(remaining) = &remaining_urls {
+            for old_url in &existing.bill_images {
+                if !remaining.contains(old_url) {
+                    self.upload_service.delete_object_by_url(old_url).await;
+                }
+            }
+        }
+        Ok(updated)
+    }
+
+    pub async fn delete_expense(&self, auth: &AuthContext, id: Uuid) -> Result<(), AppError> {
+        self.delete_request(auth, id).await
     }
 
     // ── Expenses ──────────────────────────────────────────────────────────────

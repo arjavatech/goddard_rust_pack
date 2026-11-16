@@ -2,7 +2,7 @@ use deadpool_postgres::Pool;
 use uuid::Uuid;
 use chrono::NaiveDate;
 use crate::models::requests::{
-    Request, CreateRequestBody, CreateExpenseBody, UpdateRequestBody,
+    Request, CreateRequestBody, CreateExpenseBody, UpdateRequestBody, UpdateExpenseBody,
     ExpenseSummary, CategoryBreakdown, ScopeBreakdown,
 };
 use crate::models::school::RequestSettingOption;
@@ -315,6 +315,45 @@ impl RequestDao {
               &body.product_link, &body.product_image, &body.notes,
               &body.delete_product_image, &bill_images_json],
         ).await.map_err(|e| AppError::Database(format!("Failed to update request: {}", e)))?;
+        Ok(self.row_to_request(&row))
+    }
+
+    pub async fn update_expense(
+        &self,
+        id: Uuid,
+        body: &UpdateExpenseBody,
+        bill_images_json: Option<serde_json::Value>,
+    ) -> Result<Request, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let row = client.query_one(
+            "UPDATE requests
+             SET item           = COALESCE($2,  item),
+                 quantity       = COALESCE($3,  quantity),
+                 category       = $4,
+                 scope          = COALESCE($5,  scope),
+                 location       = $6,
+                 classroom_name = $7,
+                 teacher_name   = $8,
+                 product_link   = $9,
+                 notes          = $10,
+                 amount_spent   = COALESCE($11, amount_spent),
+                 payment_method = COALESCE($12, payment_method),
+                 purchase_date  = COALESCE($13, purchase_date),
+                 payment_notes  = $14,
+                 bill_images    = COALESCE($15, bill_images)
+             WHERE id = $1 AND status = 'Completed'
+             RETURNING id, school_id, requester_id, requester_name, requester_role,
+                       item, quantity, category, location, scope, classroom_id, classroom_name,
+                       teacher_id, teacher_name, product_link, product_image, notes,
+                       status, source, amount_spent, payment_method, purchase_date, payment_notes, bill_images, expected_completion_date, created_at,
+                       paid_by_user_id, paid_by_name",
+            &[&id, &body.item, &body.quantity, &body.category, &body.scope,
+              &body.location, &body.classroom_name, &body.teacher_name,
+              &body.product_link, &body.notes, &body.amount_spent,
+              &body.payment_method, &body.purchase_date, &body.payment_notes,
+              &bill_images_json],
+        ).await.map_err(|e| AppError::Database(format!("Failed to update expense: {}", e)))?;
         Ok(self.row_to_request(&row))
     }
 

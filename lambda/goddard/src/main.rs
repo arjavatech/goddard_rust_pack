@@ -75,7 +75,7 @@ use controllers::{
         get_enrollment_children_with_forms, get_parent_details_by_school, get_school_forms,
         promote_enrollment, resend_parent_confirmation, update_child_status,
     },
-    expense_controller::{create_expense, list_expenses},
+    expense_controller::{create_expense, delete_expense, list_expenses, update_expense},
     upload_controller::upload_image,
     conference_controller::{
         book_slot, cancel_booking, create_conference, delete_conference, get_conference,
@@ -1222,6 +1222,14 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/expenses",
             post(create_expense).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/expenses/:id",
+            patch(update_expense).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/expenses/:id",
+            delete(delete_expense).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
         )
         .with_state(request_service)
         // Surveys

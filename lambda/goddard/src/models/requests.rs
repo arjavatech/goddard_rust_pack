@@ -148,6 +148,27 @@ pub struct CreateExpenseBody {
     pub paid_by_user_id: Option<Uuid>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateExpenseBody {
+    pub item: Option<String>,
+    pub quantity: Option<i32>,
+    pub category: Option<String>,
+    pub scope: Option<String>,
+    pub location: Option<String>,
+    pub classroom_name: Option<String>,
+    pub teacher_name: Option<String>,
+    pub product_link: Option<String>,
+    pub notes: Option<String>,
+    pub amount_spent: Option<f64>,
+    pub payment_method: Option<String>,
+    pub purchase_date: Option<NaiveDate>,
+    pub payment_notes: Option<String>,
+    pub bill_image_urls: Option<Vec<String>>,
+    #[serde(default)]
+    pub bill_images: Vec<BillImageUpload>,
+}
+
 // ─── Query params ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

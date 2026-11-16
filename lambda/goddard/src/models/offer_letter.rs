@@ -17,6 +17,7 @@ pub struct OfferLetter {
     pub salary_currency: Option<String>,
     pub joining_date: Option<NaiveDate>,
     pub additional_notes: Option<String>,
+    pub custom_fields: Option<Value>,
     pub fillout_form_id: Option<String>,
     pub fillout_submission_id: Option<String>,
     pub fillout_edit_link: Option<String>,
@@ -46,6 +47,7 @@ pub struct CreateOfferLetterRequest {
     pub salary_currency: Option<String>,
     pub joining_date: Option<NaiveDate>,
     pub additional_notes: Option<String>,
+    pub custom_fields: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +60,7 @@ pub struct UpdateOfferLetterRequest {
     pub salary_currency: Option<String>,
     pub joining_date: Option<NaiveDate>,
     pub additional_notes: Option<String>,
+    pub custom_fields: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]

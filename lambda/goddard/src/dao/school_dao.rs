@@ -348,11 +348,17 @@ impl SchoolDao {
         Err(AppError::NotFound("School not found".to_string()))
     }
 
-    pub async fn update_offer_letter_config(&self, school_id: Uuid, fillout_form_id: &str) -> ApiResult<()> {
+    pub async fn update_offer_letter_config(&self, school_id: Uuid, fillout_form_id: Option<&str>, offer_letter_fields: Option<&serde_json::Value>) -> ApiResult<()> {
         let client = self.get_connection().await?;
         let changed = client.execute(
-            "UPDATE schools SET offer_letter_fillout_form_id = $1, updated_at = NOW() WHERE id = $2 AND (is_active = true OR is_active IS NULL)",
-            &[&fillout_form_id, &school_id],
+            "UPDATE schools
+             SET offer_letter_fillout_form_id = COALESCE($1, offer_letter_fillout_form_id),
+                 settings = CASE WHEN $2::jsonb IS NOT NULL
+                   THEN jsonb_set(COALESCE(settings, '{}'::jsonb), '{offer_letter_fields}', $2, true)
+                   ELSE settings END,
+                 updated_at = NOW()
+             WHERE id = $3 AND (is_active = true OR is_active IS NULL)",
+            &[&fillout_form_id, &offer_letter_fields, &school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to update offer letter config: {e}")))?;
         if changed == 0 { return Err(AppError::NotFound("School not found".into())); }
         Ok(())

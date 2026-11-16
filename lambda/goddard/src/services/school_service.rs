@@ -191,8 +191,8 @@ impl SchoolService {
         })
     }
 
-    pub async fn update_offer_letter_config(&self, school_id: Uuid, fillout_form_id: &str) -> ApiResult<()> {
-        self.dao.update_offer_letter_config(school_id, fillout_form_id).await
+    pub async fn update_offer_letter_config(&self, school_id: Uuid, req: &crate::models::school::UpdateOfferLetterConfigRequest) -> ApiResult<()> {
+        self.dao.update_offer_letter_config(school_id, req.fillout_form_id.as_deref(), req.offer_letter_fields.as_ref()).await
     }
 
     pub async fn get_request_settings(&self, school_id: Uuid) -> ApiResult<SchoolRequestSettingsResponse> {

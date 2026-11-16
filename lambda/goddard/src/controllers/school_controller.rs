@@ -114,6 +114,6 @@ pub async fn update_offer_letter_config(
     Path(school_id): Path<Uuid>,
     Json(payload): Json<UpdateOfferLetterConfigRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    school_service.update_offer_letter_config(school_id, &payload.fillout_form_id).await?;
+    school_service.update_offer_letter_config(school_id, &payload).await?;
     Ok(ResponseUtils::success(serde_json::json!({ "message": "Offer letter config updated" })))
 }

@@ -49,3 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_offer_letters_employee_id  ON offer_letters(emplo
 -- School-level Fillout form used for all offer letters at this school
 ALTER TABLE schools
   ADD COLUMN IF NOT EXISTS offer_letter_fillout_form_id VARCHAR(255) DEFAULT NULL;
+
+-- School-specific custom fields per offer letter (keyed by Fillout param name)
+ALTER TABLE offer_letters
+  ADD COLUMN IF NOT EXISTS custom_fields JSONB DEFAULT NULL;

@@ -237,7 +237,8 @@ pub struct CreateSchoolWithOwnerRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateOfferLetterConfigRequest {
-    pub fillout_form_id: String,
+    pub fillout_form_id: Option<String>,
+    pub offer_letter_fields: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]

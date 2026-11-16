@@ -84,6 +84,7 @@ impl OfferLetterService {
             req.joining_date,
             req.additional_notes.as_deref(),
             fillout_form_id.as_deref(),
+            req.custom_fields.as_ref(),
         ).await?;
 
         self.employee_dao.set_offer_status(employee_id, req.school_id, "draft").await?;
@@ -113,6 +114,7 @@ impl OfferLetterService {
             req.joining_date,
             req.additional_notes.as_deref(),
             None,
+            req.custom_fields.as_ref(),
         ).await
     }
 
@@ -299,6 +301,13 @@ impl OfferLetterService {
         }
         if let Some(ref date) = offer.joining_date {
             params.push(("joiningDate".to_string(), date.to_string()));
+        }
+
+        if let Some(serde_json::Value::Object(fields)) = &offer.custom_fields {
+            for (k, v) in fields {
+                let s = v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string());
+                params.push((k.clone(), s));
+            }
         }
 
         let query = params

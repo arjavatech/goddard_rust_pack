@@ -29,6 +29,7 @@ impl OfferLetterDao {
             salary_currency: row.get("salary_currency"),
             joining_date: row.get("joining_date"),
             additional_notes: row.get("additional_notes"),
+            custom_fields: row.get("custom_fields"),
             fillout_form_id: row.get("fillout_form_id"),
             fillout_submission_id: row.get("fillout_submission_id"),
             fillout_edit_link: row.get("fillout_edit_link"),
@@ -61,16 +62,17 @@ impl OfferLetterDao {
         joining_date: Option<chrono::NaiveDate>,
         additional_notes: Option<&str>,
         fillout_form_id: Option<&str>,
+        custom_fields: Option<&Value>,
     ) -> ApiResult<OfferLetter> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
         let row = client.query_one(
-            "INSERT INTO offer_letters (school_id, employee_id, first_name, last_name, email, phone, role, salary, salary_currency, joining_date, additional_notes, fillout_form_id, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'draft', NOW())
+            "INSERT INTO offer_letters (school_id, employee_id, first_name, last_name, email, phone, role, salary, salary_currency, joining_date, additional_notes, fillout_form_id, custom_fields, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'draft', NOW())
              RETURNING *",
             &[&school_id, &employee_id, &first_name, &last_name, &email, &phone, &role,
-              &salary, &salary_currency, &joining_date, &additional_notes, &fillout_form_id],
+              &salary, &salary_currency, &joining_date, &additional_notes, &fillout_form_id, &custom_fields],
         ).await.map_err(|e| AppError::Database(format!("Failed to create offer letter: {}", e)))?;
 
         Ok(Self::row_to_offer_letter(&row))
@@ -125,6 +127,7 @@ impl OfferLetterDao {
         joining_date: Option<chrono::NaiveDate>,
         additional_notes: Option<&str>,
         fillout_form_id: Option<&str>,
+        custom_fields: Option<&Value>,
     ) -> ApiResult<OfferLetter> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
@@ -140,11 +143,12 @@ impl OfferLetterDao {
                  joining_date = COALESCE($9, joining_date),
                  additional_notes = COALESCE($10, additional_notes),
                  fillout_form_id = COALESCE($11, fillout_form_id),
+                 custom_fields = COALESCE($12, custom_fields),
                  updated_at = NOW()
              WHERE employee_id = $1 AND school_id = $2 AND status = 'draft'
              RETURNING *",
             &[&employee_id, &school_id, &first_name, &last_name, &phone, &role,
-              &salary, &salary_currency, &joining_date, &additional_notes, &fillout_form_id],
+              &salary, &salary_currency, &joining_date, &additional_notes, &fillout_form_id, &custom_fields],
         ).await.map_err(|e| AppError::Database(format!("Failed to update offer letter: {}", e)))?;
 
         Ok(Self::row_to_offer_letter(&row))

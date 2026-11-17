@@ -241,6 +241,9 @@ impl OfferLetterService {
             return Ok(offer);
         }
 
+        // Form submission from Fillout always means accepted; explicit false only if sent
+        let accepted = payload.accepted.unwrap_or(true);
+
         let updated = self.offer_letter_dao.set_fillout_submission(
             payload.offer_letter_id,
             offer.school_id,
@@ -248,20 +251,20 @@ impl OfferLetterService {
             payload.pdf_link.as_deref(),
             payload.edit_link.as_deref(),
             payload.form_data.as_ref(),
-            payload.accepted,
+            accepted,
             payload.rejection_reason.as_deref(),
             payload.submitted_at,
         ).await?;
 
-        let new_status = if payload.accepted { "offer_accepted" } else { "offer_rejected" };
+        let new_status = if accepted { "offer_accepted" } else { "offer_rejected" };
         self.employee_dao.set_offer_status(offer.employee_id, offer.school_id, new_status).await?;
 
-        let (notif_type, notif_title) = if payload.accepted {
+        let (notif_type, notif_title) = if accepted {
             (notification_type::OFFER_LETTER_ACCEPTED, "Offer Letter Accepted")
         } else {
             (notification_type::OFFER_LETTER_REJECTED, "Offer Letter Rejected")
         };
-        let verb = if payload.accepted { "accepted" } else { "rejected" };
+        let verb = if accepted { "accepted" } else { "rejected" };
         let notif_body = format!("{} {} has {} their offer letter.", offer.first_name, offer.last_name, verb);
         self.notification_service.notify_school_admins(CreateNotification {
             school_id: offer.school_id,

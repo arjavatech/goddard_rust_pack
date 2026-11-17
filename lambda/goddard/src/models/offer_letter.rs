@@ -60,7 +60,8 @@ pub struct AdminReviewRequest {
 pub struct OfferLetterWebhookPayload {
     pub offer_letter_id: Uuid,
     pub fillout_submission_id: String,
-    pub accepted: bool,
+    pub accepted: Option<bool>,
+    pub form_status: Option<String>,
     pub form_data: Option<Value>,
     pub edit_link: Option<String>,
     pub pdf_link: Option<String>,

@@ -1175,6 +1175,10 @@ impl SupabaseClient {
         }
     }
 
+    pub fn activation_url(&self, token: uuid::Uuid) -> String {
+        format!("{}/enrollments/activate/{}", self.api_base_url, token)
+    }
+
     /// Create a Supabase user without sending any email (user creation only).
     pub async fn create_user_only_in_supabase(
         &self,

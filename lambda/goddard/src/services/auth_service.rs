@@ -610,7 +610,17 @@ impl AuthService {
                 uuid::Uuid::nil()
             });
 
-        let email_sent = if invite_token != uuid::Uuid::nil() {
+        // Fetch features once — determines which email to send.
+        let offer_letter_enabled = self.school_dao.get_features(school_uuid).await
+            .map(|f| f.offer_letter_enabled)
+            .unwrap_or(false);
+
+        // Skip the admin invite email when an offer letter email will replace it.
+        let will_send_offer_letter = offer_letter_enabled
+            && request.custom_fields.is_some()
+            && invite_token != uuid::Uuid::nil();
+
+        let email_sent = if !will_send_offer_letter && invite_token != uuid::Uuid::nil() {
             self.supabase_client
                 .send_admin_invite_email(&request.email, invite_token, &request.first_name, &request.last_name, &school_name, "Admin")
                 .await
@@ -635,48 +645,49 @@ impl AuthService {
 
         // If offer letters are enabled and custom fields were provided, create an offer letter for
         // this admin (Owners/SuperAdmins never reach create_invitation so no role check needed).
-        if let Some(ref cf) = request.custom_fields {
-            if let Ok(features) = self.school_dao.get_features(school_uuid).await {
-                if features.offer_letter_enabled {
-                    if let Ok(uid) = uuid::Uuid::parse_str(&user_id) {
-                        match self.employee_dao.create_employee_pending_offer(
-                            uid, school_uuid, request.phone_number.as_deref(), None, None, None,
-                        ).await {
-                            Ok(employee) => {
-                                let fillout_form_id = self.school_dao.get_school_by_id(&school_uuid).await
-                                    .ok().flatten()
-                                    .and_then(|s| s.offer_letter_fillout_form_id);
+        if offer_letter_enabled {
+            if let Some(ref cf) = request.custom_fields {
+                if let Ok(uid) = uuid::Uuid::parse_str(&user_id) {
+                    match self.employee_dao.create_employee_pending_offer(
+                        uid, school_uuid, request.phone_number.as_deref(), None, None, None,
+                    ).await {
+                        Ok(employee) => {
+                            let fillout_form_id = self.school_dao.get_school_by_id(&school_uuid).await
+                                .ok().flatten()
+                                .and_then(|s| s.offer_letter_fillout_form_id);
 
-                                match self.offer_letter_dao.create(
-                                    school_uuid,
-                                    employee.id,
-                                    &request.first_name,
-                                    &request.last_name,
-                                    &request.email,
-                                    request.phone_number.as_deref(),
-                                    fillout_form_id.as_deref(),
-                                    Some(cf),
-                                ).await {
-                                    Ok(offer) => {
-                                        if fillout_form_id.is_some() {
-                                            use crate::services::offer_letter_service::build_prefill_url;
-                                            let prefill_url = build_prefill_url(&offer, uuid::Uuid::nil());
-                                            let _ = self.offer_letter_dao.set_sent(employee.id, school_uuid, &prefill_url).await;
-                                            let _ = self.email_service.send_offer_letter_email(
-                                                &request.email,
-                                                &request.first_name,
-                                                &request.last_name,
-                                                &school_name,
-                                                "Admin",
-                                                &prefill_url,
-                                            ).await;
-                                        }
-                                    },
-                                    Err(e) => tracing::warn!("Failed to create offer letter for admin {}: {}", uid, e),
-                                }
-                            },
-                            Err(e) => tracing::warn!("Failed to create employee record for admin offer letter {}: {}", user_id, e),
-                        }
+                            match self.offer_letter_dao.create(
+                                school_uuid,
+                                employee.id,
+                                &request.first_name,
+                                &request.last_name,
+                                &request.email,
+                                request.phone_number.as_deref(),
+                                fillout_form_id.as_deref(),
+                                Some(cf),
+                            ).await {
+                                Ok(offer) => {
+                                    if fillout_form_id.is_some() {
+                                        use crate::services::offer_letter_service::build_prefill_url;
+                                        let prefill_url = build_prefill_url(&offer, uuid::Uuid::nil());
+                                        let _ = self.offer_letter_dao.set_sent(employee.id, school_uuid, &prefill_url).await;
+                                        // Use the activation URL so the invitee sets their password
+                                        // before accessing the offer letter in the app.
+                                        let activation_url = self.supabase_client.activation_url(invite_token);
+                                        let _ = self.email_service.send_offer_letter_email(
+                                            &request.email,
+                                            &request.first_name,
+                                            &request.last_name,
+                                            &school_name,
+                                            "Admin",
+                                            &activation_url,
+                                        ).await;
+                                    }
+                                },
+                                Err(e) => tracing::warn!("Failed to create offer letter for admin {}: {}", uid, e),
+                            }
+                        },
+                        Err(e) => tracing::warn!("Failed to create employee record for admin offer letter {}: {}", user_id, e),
                     }
                 }
             }

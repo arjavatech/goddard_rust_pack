@@ -236,8 +236,13 @@ impl OfferLetterService {
         let offer = self.offer_letter_dao.get_by_id_no_school(payload.offer_letter_id).await?
             .ok_or_else(|| AppError::NotFound("Offer letter not found".to_string()))?;
 
-        // Idempotency: skip re-processing if this submission was already stored
-        if offer.fillout_submission_id.as_deref() == Some(payload.fillout_submission_id.as_str()) {
+        // Idempotency: skip re-processing if this submission was already stored.
+        // Exception: allow re-processing when offer was rejected — employee re-fills using the
+        // same edit link, which Fillout may deliver with the same submission ID.
+        let is_same_submission = offer.fillout_submission_id.as_deref()
+            == Some(payload.fillout_submission_id.as_str());
+        let is_rejected = offer.status == "offer_rejected";
+        if is_same_submission && !is_rejected {
             return Ok(offer);
         }
 

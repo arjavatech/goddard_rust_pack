@@ -21,34 +21,60 @@ impl NavCountsDao {
         let row = client.query_one(
             r#"
             SELECT
-              (SELECT COUNT(*) FROM student_form_assignments
-               WHERE school_id = $1 AND status IN ('incomplete', 'rejected')
-                 AND COALESCE(is_active, true) = true)                              AS student_forms_due,
-              (SELECT COUNT(*) FROM student_form_assignments
-               WHERE school_id = $1 AND status IN ('in_progress', 'manually_uploaded')
-                 AND COALESCE(is_active, true) = true)                              AS student_forms_review,
-              (SELECT COUNT(*) FROM employee_form_assignments
-               WHERE school_id = $1 AND status = 'incomplete'
-                 AND COALESCE(is_active, true) = true)                              AS employee_forms_due,
-              (SELECT COUNT(*) FROM employee_form_assignments
-               WHERE school_id = $1 AND status IN ('in_progress', 'manually_uploaded')
-                 AND COALESCE(is_active, true) = true)                              AS employee_forms_review,
+              (SELECT COUNT(*) FROM student_form_assignments sfa
+               JOIN children c ON c.id = sfa.child_id
+               JOIN users u ON u.id = c.parent_id
+               WHERE sfa.school_id = $1 AND sfa.status IN ('incomplete', 'rejected')
+                 AND COALESCE(sfa.is_active, true) = true AND u.is_active = true)   AS student_forms_due,
+              (SELECT COUNT(*) FROM student_form_assignments sfa
+               JOIN children c ON c.id = sfa.child_id
+               JOIN users u ON u.id = c.parent_id
+               WHERE sfa.school_id = $1 AND sfa.status IN ('in_progress', 'manually_uploaded')
+                 AND COALESCE(sfa.is_active, true) = true AND u.is_active = true)   AS student_forms_review,
+              (SELECT COUNT(*) FROM employee_form_assignments efa
+               LEFT JOIN employees emp ON emp.id = efa.employee_id
+               LEFT JOIN users eu ON eu.id = emp.user_id
+               LEFT JOIN users au ON au.id = efa.user_id
+               WHERE efa.school_id = $1 AND efa.status = 'incomplete'
+                 AND COALESCE(efa.is_active, true) = true
+                 AND (
+                   (efa.employee_id IS NOT NULL AND eu.is_active = true)
+                   OR (efa.employee_id IS NULL AND au.is_active = true)
+                 ))                                                                  AS employee_forms_due,
+              (SELECT COUNT(*) FROM employee_form_assignments efa
+               LEFT JOIN employees emp ON emp.id = efa.employee_id
+               LEFT JOIN users eu ON eu.id = emp.user_id
+               LEFT JOIN users au ON au.id = efa.user_id
+               WHERE efa.school_id = $1 AND efa.status IN ('in_progress', 'manually_uploaded')
+                 AND COALESCE(efa.is_active, true) = true
+                 AND (
+                   (efa.employee_id IS NOT NULL AND eu.is_active = true)
+                   OR (efa.employee_id IS NULL AND au.is_active = true)
+                 ))                                                                  AS employee_forms_review,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
+               JOIN children c ON c.id = dra.child_id
+               JOIN users u ON u.id = c.parent_id
                WHERE dra.school_id = $1 AND dr.audience = 'student'
-                 AND dra.status IN ('pending', 'rejected'))                         AS student_docs_due,
+                 AND dra.status IN ('pending', 'rejected') AND u.is_active = true)  AS student_docs_due,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
+               JOIN children c ON c.id = dra.child_id
+               JOIN users u ON u.id = c.parent_id
                WHERE dra.school_id = $1 AND dr.audience = 'student'
-                 AND dra.status = 'submitted')                                      AS student_docs_review,
+                 AND dra.status = 'submitted' AND u.is_active = true)               AS student_docs_review,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
+               JOIN employees e ON e.id = dra.employee_id
+               JOIN users u ON u.id = e.user_id
                WHERE dra.school_id = $1 AND dr.audience = 'employee'
-                 AND dra.status IN ('pending', 'rejected'))                         AS employee_docs_due,
+                 AND dra.status IN ('pending', 'rejected') AND u.is_active = true)  AS employee_docs_due,
               (SELECT COUNT(*) FROM document_request_assignments dra
                JOIN document_requests dr ON dr.id = dra.document_request_id
+               JOIN employees e ON e.id = dra.employee_id
+               JOIN users u ON u.id = e.user_id
                WHERE dra.school_id = $1 AND dr.audience = 'employee'
-                 AND dra.status = 'submitted')                                      AS employee_docs_review,
+                 AND dra.status = 'submitted' AND u.is_active = true)               AS employee_docs_review,
               (SELECT COUNT(*) FROM surveys
                WHERE school_id = $1 AND status = 'published' AND is_template = false
                  AND audience IN ('all_staff', 'everyone')

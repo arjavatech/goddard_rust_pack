@@ -125,12 +125,12 @@ impl RequestDao {
                 id, school_id, requester_id, requester_name, requester_role,
                 item, quantity, category, location, scope, classroom_id, classroom_name,
                 teacher_id, teacher_name, product_link, product_image, notes,
-                status, source, created_at
+                status, source
              ) VALUES (
                 gen_random_uuid(), $1, $2, $3, $4,
                 $5, $6, $7, $8, $9, $10, $11,
                 $12, $13, $14, $15, $16,
-                'Pending', 'request', NOW()
+                'Pending', 'request'
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,
@@ -464,13 +464,13 @@ impl RequestDao {
                 item, quantity, category, location, scope,
                 classroom_id, classroom_name, teacher_id, teacher_name,
                 product_link, notes, bill_images,
-                status, source, amount_spent, payment_method, purchase_date, payment_notes, paid_by_user_id, paid_by_name, created_at
+                status, source, amount_spent, payment_method, purchase_date, payment_notes, paid_by_user_id, paid_by_name
              ) VALUES (
                 gen_random_uuid(), $1, $2, $3, $4,
                 $5, $6, $7, $8, $9,
                 $10, $11, $12, $13,
                 $14, $15, $16::jsonb,
-                'Completed', 'manual', $17, $18, $19, $20, $21, $22, NOW()
+                'Completed', 'manual', $17, $18, $19, $20, $21, $22
              ) RETURNING id, school_id, requester_id, requester_name, requester_role,
                          item, quantity, category, location, scope, classroom_id, classroom_name,
                          teacher_id, teacher_name, product_link, product_image, notes,

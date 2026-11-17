@@ -39,7 +39,7 @@ pub struct StudentFormReviewQueueItem {
 pub struct EmployeeFormReviewQueueItem {
     pub assignment_id: Uuid,
     pub school_id: Uuid,
-    pub employee_id: Uuid,
+    pub employee_id: Option<Uuid>,
     pub form_template_id: Uuid,
     pub form_name: String,
     pub fillout_form_id: Option<String>,

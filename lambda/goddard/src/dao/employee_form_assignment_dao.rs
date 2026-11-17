@@ -309,7 +309,7 @@ impl EmployeeFormAssignmentDao {
             &[&school_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to fetch employee review queue: {}", e)))?;
         Ok(rows.into_iter().map(|row| EmployeeFormReviewQueueItem {
-            assignment_id: row.get("assignment_id"), school_id: row.get("school_id"), employee_id: row.get("employee_id"),
+            assignment_id: row.get("assignment_id"), school_id: row.get("school_id"), employee_id: row.get::<_, Option<Uuid>>("employee_id"),
             form_template_id: row.get("form_template_id"), form_name: row.get("form_name"), fillout_form_id: row.get("fillout_form_id"),
             status: row.get("status"), submitted_at: row.get("submitted_at"), recent_edit_link: row.get("recent_edit_link"),
             recent_pdf_link: row.get("recent_pdf_link"), employee_first_name: row.get("employee_first_name"),

@@ -35,7 +35,7 @@ impl EmployeeFormSubmissionDao {
     pub async fn upsert_submission(
         &self,
         school_id: Uuid,
-        employee_id: Uuid,
+        employee_id: Option<Uuid>,
         assignment_id: Uuid,
         template_id: Uuid,
         fillout_submission_id: &str,

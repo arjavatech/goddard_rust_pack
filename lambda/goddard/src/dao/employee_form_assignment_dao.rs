@@ -370,7 +370,7 @@ impl EmployeeFormAssignmentDao {
         Ok(Self::row_to_assignment(&rows[0]))
     }
 
-    pub async fn get_assignment_details(&self, assignment_id: Uuid) -> Result<Option<(Uuid, Uuid, Uuid)>, AppError> {
+    pub async fn get_assignment_details(&self, assignment_id: Uuid) -> Result<Option<(Uuid, Option<Uuid>, Uuid)>, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
@@ -380,7 +380,7 @@ impl EmployeeFormAssignmentDao {
             &[&assignment_id],
         ).await.map_err(|e| AppError::Database(format!("Failed to get assignment details: {}", e)))?;
 
-        Ok(row.map(|r| (r.get("school_id"), r.get("employee_id"), r.get("employee_form_template_id"))))
+        Ok(row.map(|r| (r.get("school_id"), r.get::<_, Option<Uuid>>("employee_id"), r.get("employee_form_template_id"))))
     }
 
     pub async fn revoke_assignment(&self, req: &RevokeEmployeeFormAssignmentRequest) -> Result<EmployeeFormAssignment, AppError> {

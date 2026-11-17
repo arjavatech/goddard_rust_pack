@@ -1007,7 +1007,7 @@ impl EmployeeService {
         Ok(assignment)
     }
 
-    pub async fn get_assignment_details(&self, assignment_id: Uuid) -> ApiResult<(Uuid, Uuid, Uuid)> {
+    pub async fn get_assignment_details(&self, assignment_id: Uuid) -> ApiResult<(Uuid, Option<Uuid>, Uuid)> {
         self.employee_form_assignment_dao
             .get_assignment_details(assignment_id)
             .await?

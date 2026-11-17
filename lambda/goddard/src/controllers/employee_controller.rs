@@ -397,6 +397,13 @@ pub async fn get_employee_form_assignments(
     State(svc): State<Arc<EmployeeService>>,
     Query(params): Query<EmployeeFormAssignmentQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
+    if let Some(user_id) = params.user_id {
+        let assignments = svc.get_my_form_assignments(user_id).await?;
+        return Ok((
+            StatusCode::OK,
+            Json(serde_json::to_value(assignments).unwrap_or_default()),
+        ));
+    }
     if let Some(employee_id) = params.employee_id {
         let assignments = svc.get_assignments_by_employee(employee_id).await?;
         return Ok((
@@ -475,9 +482,17 @@ pub async fn update_employee_form_metadata(
 // ─── Employee Form Submission webhook ───────────────────────────────────────
 
 #[derive(Deserialize)]
+pub struct EmployeeFormWebhookQuery {
+    // May be absent when Advanced mode sends it in the JSON body instead
+    pub employee_form_assignment_id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
 pub struct EmployeeFormWebhookPayload {
-    pub employee_form_assignment_id: Uuid,
-    pub fillout_submission_id: String,
+    // Advanced webhook mode sends this in the body; Simple mode puts it in URL params
+    pub employee_form_assignment_id: Option<Uuid>,
+    // Fillout's simple/flat webhook mode doesn't include this — generated as fallback
+    pub fillout_submission_id: Option<String>,
     pub form_data: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
     pub edit_link: Option<String>,
@@ -490,6 +505,7 @@ pub struct EmployeeFormWebhookPayload {
 pub async fn employee_form_submission_webhook(
     State(svc): State<Arc<EmployeeService>>,
     headers: HeaderMap,
+    Query(query): Query<EmployeeFormWebhookQuery>,
     Json(payload): Json<EmployeeFormWebhookPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     let api_key = headers
@@ -504,10 +520,17 @@ pub async fn employee_form_submission_webhook(
         return Err(AppError::Authentication("Invalid API key".to_string()));
     }
 
+    let assignment_id = query.employee_form_assignment_id
+        .or(payload.employee_form_assignment_id)
+        .ok_or_else(|| AppError::Validation("employee_form_assignment_id is required".to_string()))?;
+
+    let submission_id = payload.fillout_submission_id
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
     let submission = svc
         .handle_form_webhook(
-            payload.employee_form_assignment_id,
-            &payload.fillout_submission_id,
+            assignment_id,
+            &submission_id,
             payload.form_data.as_ref(),
             payload.metadata.as_ref(),
             payload.edit_link.as_deref(),

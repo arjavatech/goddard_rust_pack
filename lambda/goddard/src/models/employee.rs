@@ -130,7 +130,7 @@ pub struct EmployeeFormAssignmentWithTemplate {
 pub struct EmployeeFormSubmission {
     pub id: Uuid,
     pub school_id: Uuid,
-    pub employee_id: Uuid,
+    pub employee_id: Option<Uuid>, // None for admin form submissions
     pub employee_form_assignment_id: Uuid,
     pub employee_form_template_id: Uuid,
     pub fillout_submission_id: String,
@@ -313,6 +313,7 @@ pub struct UpdateEmployeeFormMetadataRequest {
 pub struct EmployeeFormAssignmentQueryParams {
     pub school_id: Option<Uuid>,
     pub employee_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

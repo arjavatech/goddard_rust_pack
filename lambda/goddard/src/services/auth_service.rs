@@ -408,6 +408,10 @@ impl AuthService {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
 
+        if request.phone_number.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none() {
+            return Err(AppError::Validation("A phone number is required".into()));
+        }
+
         // Parse and validate school_id - NOW REQUIRED
         let school_uuid = if let Some(ref school_id) = request.school_id {
             ValidationUtils::validate_uuid(school_id)?;
@@ -527,6 +531,10 @@ impl AuthService {
     pub async fn create_invitation(&self, request: CreateInvitationRequest) -> ApiResult<CreateInvitationResponse> {
         // Validate email format
         ValidationUtils::validate_email(&request.email)?;
+
+        if request.phone_number.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none() {
+            return Err(AppError::Validation("A phone number is required".into()));
+        }
 
         // Validate and parse school_id (required field)
         ValidationUtils::validate_uuid(&request.school_id)?;
@@ -691,6 +699,10 @@ impl AuthService {
     pub async fn create_superadmin(&self, request: CreateSuperAdminRequest) -> ApiResult<CreateInvitationResponse> {
         // Step 1: Validate email format
         ValidationUtils::validate_email(&request.email)?;
+
+        if request.phone_number.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none() {
+            return Err(AppError::Validation("A phone number is required".into()));
+        }
 
         // Step 2: Validate and parse school_id (required)
         ValidationUtils::validate_uuid(&request.school_id)?;

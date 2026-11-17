@@ -111,6 +111,17 @@ pub async fn list_offer_letters(
     Ok((StatusCode::OK, Json(letters)))
 }
 
+// ─── Employee: mark offer letter as viewed ───────────────────────────────────
+
+pub async fn mark_offer_letter_viewed(
+    State(svc): State<Arc<OfferLetterService>>,
+    Path(employee_id): Path<Uuid>,
+    Query(params): Query<SchoolIdQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let offer = svc.mark_viewed(employee_id, params.school_id).await?;
+    Ok((StatusCode::OK, Json(offer)))
+}
+
 // ─── Fillout webhook (unauthenticated — API key validation in handler) ────────
 
 pub async fn offer_letter_webhook(

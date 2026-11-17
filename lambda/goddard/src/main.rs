@@ -65,8 +65,8 @@ use controllers::{
     },
     offer_letter_controller::{
         create_offer_letter, get_offer_letter, get_offer_letter_history, list_offer_letters,
-        offer_letter_webhook, resend_offer_letter, review_offer_letter, send_offer_letter,
-        update_offer_letter,
+        mark_offer_letter_viewed, offer_letter_webhook, resend_offer_letter, review_offer_letter,
+        send_offer_letter, update_offer_letter,
     },
     enrollment_controller::{
         activate_invite, activate_parent, add_child, bulk_add_secondary_parents,
@@ -1443,6 +1443,10 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         .route(
             "/employees/:employee_id/offer-letter/review",
             post(review_offer_letter).layer(axum_middleware::from_fn(jwt_or_api_key_admin_only)),
+        )
+        .route(
+            "/employees/:employee_id/offer-letter/view",
+            post(mark_offer_letter_viewed).layer(axum_middleware::from_fn(jwt_or_api_key_middleware)),
         )
         .route(
             "/employees/:employee_id/offer-letter/history",

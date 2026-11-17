@@ -157,6 +157,17 @@ impl OfferLetterDao {
         Ok(Self::row_to_offer_letter(&row))
     }
 
+    pub async fn set_viewed(&self, offer_letter_id: Uuid, school_id: Uuid) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        client.execute(
+            "UPDATE offer_letters SET status = 'viewed', updated_at = NOW()
+             WHERE id = $1 AND school_id = $2 AND status = 'offer_sent'",
+            &[&offer_letter_id, &school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to mark offer letter viewed: {}", e)))?;
+        Ok(())
+    }
+
     pub async fn set_fillout_submission(
         &self,
         offer_letter_id: Uuid,
@@ -172,7 +183,7 @@ impl OfferLetterDao {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
 
-        let new_status = if accepted { "offer_accepted" } else { "offer_rejected" };
+        let new_status = if accepted { "employee_signed" } else { "offer_rejected" };
 
         let source_ts = source_submitted_at.unwrap_or_else(chrono::Utc::now);
         let employee_submitted_at: NaiveDateTime = client.query_one(

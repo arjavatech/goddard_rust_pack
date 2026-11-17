@@ -241,7 +241,16 @@ impl OfferLetterService {
             return Ok(offer);
         }
 
-        // Form submission from Fillout always means accepted; explicit false only if sent
+        // IN_PROGRESS = employee opened the Fillout form → mark as viewed
+        let is_in_progress = payload.form_status.as_deref()
+            .map(|s| s.trim().eq_ignore_ascii_case("in_progress"))
+            .unwrap_or(false);
+
+        if is_in_progress {
+            return Ok(offer);
+        }
+
+        // COMPLETED = employee submitted the form = employee_signed
         let accepted = payload.accepted.unwrap_or(true);
 
         let updated = self.offer_letter_dao.set_fillout_submission(
@@ -256,15 +265,15 @@ impl OfferLetterService {
             payload.submitted_at,
         ).await?;
 
-        let new_status = if accepted { "offer_accepted" } else { "offer_rejected" };
+        let new_status = if accepted { "employee_signed" } else { "offer_rejected" };
         self.employee_dao.set_offer_status(offer.employee_id, offer.school_id, new_status).await?;
 
         let (notif_type, notif_title) = if accepted {
-            (notification_type::OFFER_LETTER_ACCEPTED, "Offer Letter Accepted")
+            (notification_type::OFFER_LETTER_ACCEPTED, "Offer Letter Signed")
         } else {
             (notification_type::OFFER_LETTER_REJECTED, "Offer Letter Rejected")
         };
-        let verb = if accepted { "accepted" } else { "rejected" };
+        let verb = if accepted { "signed" } else { "rejected" };
         let notif_body = format!("{} {} has {} their offer letter.", offer.first_name, offer.last_name, verb);
         self.notification_service.notify_school_admins(CreateNotification {
             school_id: offer.school_id,
@@ -305,6 +314,21 @@ impl OfferLetterService {
         }
 
         Ok(updated)
+    }
+
+    // ─── Mark viewed ─────────────────────────────────────────────────────────
+
+    pub async fn mark_viewed(&self, employee_id: Uuid, school_id: Uuid) -> ApiResult<OfferLetter> {
+        let offer = self.offer_letter_dao.get_by_employee_id(employee_id, school_id).await?
+            .ok_or_else(|| AppError::NotFound("Offer letter not found".to_string()))?;
+
+        if offer.status == "offer_sent" {
+            self.offer_letter_dao.set_viewed(offer.id, offer.school_id).await?;
+            let _ = self.employee_dao.set_offer_status(employee_id, school_id, "viewed").await;
+        }
+
+        self.offer_letter_dao.get_by_employee_id(employee_id, school_id).await?
+            .ok_or_else(|| AppError::NotFound("Offer letter not found".to_string()))
     }
 
     // ─── Get ──────────────────────────────────────────────────────────────────

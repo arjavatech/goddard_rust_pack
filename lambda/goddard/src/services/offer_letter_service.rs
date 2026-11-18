@@ -48,7 +48,7 @@ impl OfferLetterService {
     }
 
     fn app_url() -> String {
-        env::var("APP_URL").unwrap_or_else(|_| "https://app.goddard-app.com".to_string())
+        env::var("FRONTEND_URL").unwrap_or_else(|_| "https://app.goddard-app.com".to_string())
     }
 
     async fn ensure_feature_enabled(&self, school_id: Uuid) -> ApiResult<()> {

@@ -216,6 +216,8 @@ pub struct UpdateEmployeeRequest {
     pub address: Option<String>,
     pub employee_type: Option<String>,
     pub joined_on: Option<NaiveDate>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

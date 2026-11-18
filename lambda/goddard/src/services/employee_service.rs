@@ -576,6 +576,11 @@ impl EmployeeService {
         let employee = self.employee_dao
             .update_employee(employee_id, school_id, &req)
             .await?;
+        if req.first_name.is_some() || req.last_name.is_some() {
+            let first = req.first_name.as_deref().unwrap_or("");
+            let last = req.last_name.as_deref().unwrap_or("");
+            let _ = self.auth_dao.update_user_names(employee.user_id, first, last).await;
+        }
         self.reconcile_taptime_user(school_id, employee.user_id).await;
         Ok(employee)
     }

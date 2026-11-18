@@ -133,6 +133,8 @@ impl OfferLetterService {
                 address: None,
                 employee_type: None,
                 joined_on,
+                first_name: None,
+                last_name: None,
             };
             let _ = self.employee_dao.update_employee(employee_id, school_id, &emp_req).await;
         }

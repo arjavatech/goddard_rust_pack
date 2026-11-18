@@ -201,7 +201,18 @@ impl OfferLetterService {
         );
 
         let prefill_url = build_prefill_url(&offer, invite_token);
-        let updated_offer = self.offer_letter_dao.set_sent(employee_id, school_id, &prefill_url).await?;
+
+        let needs_reopen = matches!(
+            offer.status.as_str(),
+            "approved" | "active" | "employee_signed" | "offer_accepted"
+        );
+        let updated_offer = if needs_reopen {
+            self.offer_letter_dao.set_reopened(employee_id, school_id, &prefill_url).await?
+        } else {
+            self.offer_letter_dao.set_sent(employee_id, school_id, &prefill_url).await?
+        };
+
+        self.employee_dao.set_offer_status(employee_id, school_id, "offer_sent").await?;
 
         if invite_token != Uuid::nil() {
             let _ = self.email_service.send_offer_letter_email(

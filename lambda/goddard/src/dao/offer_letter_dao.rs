@@ -157,6 +157,30 @@ impl OfferLetterDao {
         Ok(Self::row_to_offer_letter(&row))
     }
 
+    pub async fn set_reopened(&self, employee_id: Uuid, school_id: Uuid, prefill_url: &str) -> ApiResult<OfferLetter> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+
+        let row = client.query_one(
+            "UPDATE offer_letters
+             SET status = 'offer_sent',
+                 prefill_url = $3,
+                 sent_at = NOW(),
+                 updated_at = NOW(),
+                 fillout_pdf_link = NULL,
+                 fillout_edit_link = NULL,
+                 fillout_submission_id = NULL,
+                 employee_responded_at = NULL,
+                 admin_rejection_reason = NULL,
+                 employee_rejection_reason = NULL
+             WHERE employee_id = $1 AND school_id = $2 AND is_current = TRUE
+             RETURNING *",
+            &[&employee_id, &school_id, &prefill_url],
+        ).await.map_err(|e| AppError::Database(format!("Failed to reopen offer letter: {}", e)))?;
+
+        Ok(Self::row_to_offer_letter(&row))
+    }
+
     pub async fn set_viewed(&self, offer_letter_id: Uuid, school_id: Uuid) -> ApiResult<()> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

@@ -302,6 +302,21 @@ impl AuthDao {
         }
     }
 
+    pub async fn update_user_names(
+        &self,
+        user_id: uuid::Uuid,
+        first_name: &str,
+        last_name: &str,
+    ) -> ApiResult<()> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        client.execute(
+            "UPDATE users SET first_name = $2, last_name = $3, updated_at = NOW() WHERE id = $1",
+            &[&user_id, &first_name, &last_name],
+        ).await.map_err(|e| AppError::Database(format!("Failed to update user names: {}", e)))?;
+        Ok(())
+    }
+
     /// Soft delete admin user (set is_active = false)
     pub async fn soft_delete_admin_user(&self, user_id: uuid::Uuid) -> ApiResult<()> {
         let client = self.pool.get().await

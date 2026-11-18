@@ -502,6 +502,21 @@ impl EmailService {
         self.dispatch(email, &subject, &html).await
     }
 
+    pub async fn send_offer_letter_resend_email(
+        &self,
+        email: &str,
+        first_name: &str,
+        last_name: &str,
+        school_name: &str,
+        login_url: &str,
+    ) -> Result<(), AppError> {
+        let subject = format!("Updated Offer Letter from {}", school_name);
+        let html = email_templates::offer_letter_resend_html(
+            first_name, last_name, school_name, login_url,
+        );
+        self.dispatch(email, &subject, &html).await
+    }
+
     pub async fn send_employee_invite_email(
         &self,
         email: &str,

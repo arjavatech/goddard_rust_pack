@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::{
     dao::{AuthDao, EmployeeDao, OfferLetterDao, SchoolDao},
     error::{ApiResult, AppError},
+    models::employee::UpdateEmployeeRequest,
     models::notification::{notification_type, CreateNotification},
     models::offer_letter::{
         AdminReviewRequest, CreateOfferLetterRequest, OfferLetter, OfferLetterWebhookPayload,
@@ -44,6 +45,10 @@ impl OfferLetterService {
 
     fn api_base_url() -> String {
         env::var("API_BASE_URL").unwrap_or_else(|_| "https://api.goddard-app.com".to_string())
+    }
+
+    fn app_url() -> String {
+        env::var("APP_URL").unwrap_or_else(|_| "https://app.goddard-app.com".to_string())
     }
 
     async fn ensure_feature_enabled(&self, school_id: Uuid) -> ApiResult<()> {
@@ -101,7 +106,7 @@ impl OfferLetterService {
     ) -> ApiResult<OfferLetter> {
         self.ensure_feature_enabled(school_id).await?;
 
-        self.offer_letter_dao.update(
+        let updated = self.offer_letter_dao.update(
             employee_id,
             school_id,
             req.first_name.as_deref(),
@@ -109,7 +114,30 @@ impl OfferLetterService {
             req.phone.as_deref(),
             None,
             req.custom_fields.as_ref(),
-        ).await
+        ).await?;
+
+        // Sync first_name / last_name back to users table
+        if req.first_name.is_some() || req.last_name.is_some() {
+            if let Ok(Some(emp)) = self.employee_dao.get_employee_by_id(employee_id, school_id).await {
+                let first = req.first_name.as_deref().unwrap_or(&updated.first_name);
+                let last = req.last_name.as_deref().unwrap_or(&updated.last_name);
+                let _ = self.auth_dao.update_user_names(emp.user_id, first, last).await;
+            }
+        }
+
+        // Sync phone + joined_on back to employees table
+        let joined_on = extract_joining_date(req.custom_fields.as_ref());
+        if req.phone.is_some() || joined_on.is_some() {
+            let emp_req = UpdateEmployeeRequest {
+                phone: req.phone.clone(),
+                address: None,
+                employee_type: None,
+                joined_on,
+            };
+            let _ = self.employee_dao.update_employee(employee_id, school_id, &emp_req).await;
+        }
+
+        Ok(updated)
     }
 
     // ─── Send ─────────────────────────────────────────────────────────────────
@@ -189,41 +217,19 @@ impl OfferLetterService {
         let school_name = self.school_dao.get_school_name(&school_id).await
             .map_err(|_| AppError::NotFound("School not found".to_string()))?;
 
-        let invite_token = self.auth_dao
-            .create_invite_token(&offer.email, "Employee", school_id)
-            .await
-            .unwrap_or(Uuid::nil());
+        let login_url = Self::app_url();
+        let prefill_url = build_prefill_url(&offer, Uuid::nil());
 
-        let invite_link = format!(
-            "{}/enrollments/activate/{}",
-            Self::api_base_url(),
-            invite_token
-        );
-
-        let prefill_url = build_prefill_url(&offer, invite_token);
-
-        let needs_reopen = matches!(
-            offer.status.as_str(),
-            "approved" | "active" | "employee_signed" | "offer_accepted"
-        );
-        let updated_offer = if needs_reopen {
-            self.offer_letter_dao.set_reopened(employee_id, school_id, &prefill_url).await?
-        } else {
-            self.offer_letter_dao.set_sent(employee_id, school_id, &prefill_url).await?
-        };
-
+        let updated_offer = self.offer_letter_dao.set_reopened(employee_id, school_id, &prefill_url).await?;
         self.employee_dao.set_offer_status(employee_id, school_id, "offer_sent").await?;
 
-        if invite_token != Uuid::nil() {
-            let _ = self.email_service.send_offer_letter_email(
-                &offer.email,
-                &offer.first_name,
-                &offer.last_name,
-                &school_name,
-                "Employee",
-                &invite_link,
-            ).await;
-        }
+        let _ = self.email_service.send_offer_letter_resend_email(
+            &offer.email,
+            &offer.first_name,
+            &offer.last_name,
+            &school_name,
+            &login_url,
+        ).await;
 
         if let Ok(Some(emp)) = self.employee_dao.get_employee_by_id(offer.employee_id, offer.school_id).await {
             let body = format!("Your offer letter from {} has been resent.", school_name);
@@ -401,6 +407,21 @@ pub fn build_prefill_url(offer: &OfferLetter, _invite_token: Uuid) -> String {
 
     let sep = if form_id.contains('?') { '&' } else { '?' };
     format!("{}{}{}", form_id, sep, query)
+}
+
+fn extract_joining_date(custom_fields: Option<&serde_json::Value>) -> Option<chrono::NaiveDate> {
+    let obj = custom_fields?.as_object()?;
+    let date_keys = ["joining_date", "joiningDate", "joined_on", "joinedOn", "start_date", "startDate"];
+    for key in &date_keys {
+        if let Some(val) = obj.get(*key) {
+            if let Some(s) = val.as_str() {
+                if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+                    return Some(d);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn urlencoding(s: &str) -> String {

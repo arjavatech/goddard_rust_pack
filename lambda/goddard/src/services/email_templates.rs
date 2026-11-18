@@ -653,17 +653,15 @@ pub fn offer_letter_resend_html(
             <p style="margin:0;font-size:14px;color:#1a5276;"><strong>Important:</strong>
             The previous version of your offer letter has been replaced. Please sign the new version to proceed.</p>
           </div>
-          <p>Log in to your account to view the updated offer letter:<br>
-          <a href="{login_url}" style="color:#1a5276;word-break:break-all;">{login_url}</a></p>
           <p style="color:#555;font-size:14px;">If you believe you received this in error, please contact
           <strong>{school}</strong> directly.</p>"#,
         first_name = html_escape(first_name),
         last_name = html_escape(last_name),
         school = html_escape(school_name),
-        login_url = login_url,
     );
 
-    render_shell(accent, &headline, &preheader, &body, "")
+    let cta = cta_button("Go to Login", login_url, accent);
+    render_shell(accent, &headline, &preheader, &body, &cta)
 }
 
 pub fn employee_invite_html(

@@ -84,21 +84,26 @@ impl NavCountsDao {
                  AND NOT EXISTS (
                    SELECT 1 FROM survey_responses
                    WHERE survey_id = surveys.id AND respondent_id = $2
-                 ))                                                                  AS surveys_pending
+                 ))                                                                  AS surveys_pending,
+              (SELECT CASE WHEN (SELECT offer_letter_enabled FROM schools WHERE id = $1)
+                THEN (SELECT COUNT(*) FROM offer_letters
+                      WHERE school_id = $1 AND status = 'employee_signed' AND is_current = true)
+                ELSE NULL END)                                                       AS offer_letters_review
             "#,
             &[&school_id, &user_id],
         ).await.map_err(|e: tokio_postgres::Error| AppError::Database(e.to_string()))?;
 
         Ok(AdminNavCounts {
-            student_forms_due:    row.get::<_, i64>(0),
-            student_forms_review: row.get::<_, i64>(1),
-            employee_forms_due:   row.get::<_, i64>(2),
+            student_forms_due:     row.get::<_, i64>(0),
+            student_forms_review:  row.get::<_, i64>(1),
+            employee_forms_due:    row.get::<_, i64>(2),
             employee_forms_review: row.get::<_, i64>(3),
-            student_docs_due:     row.get::<_, i64>(4),
-            student_docs_review:  row.get::<_, i64>(5),
-            employee_docs_due:    row.get::<_, i64>(6),
-            employee_docs_review: row.get::<_, i64>(7),
-            surveys_pending:      row.get::<_, i64>(8),
+            student_docs_due:      row.get::<_, i64>(4),
+            student_docs_review:   row.get::<_, i64>(5),
+            employee_docs_due:     row.get::<_, i64>(6),
+            employee_docs_review:  row.get::<_, i64>(7),
+            surveys_pending:       row.get::<_, i64>(8),
+            offer_letters_review:  row.get::<_, Option<i64>>(9),
         })
     }
 

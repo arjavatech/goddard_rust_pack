@@ -11,6 +11,7 @@ pub struct AdminNavCounts {
     pub employee_docs_due: i64,
     pub employee_docs_review: i64,
     pub surveys_pending: i64,
+    pub offer_letters_review: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

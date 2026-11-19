@@ -42,8 +42,11 @@ BEGIN
     UPDATE drive_items SET folder_id  = NULL WHERE school_id = _sid;
 
     -- ── 1. Document pipeline ──────────────────────────────────────────
-    -- Order: audit events → submissions → assignments → requests
-    -- (each child table has a CASCADE or non-CASCADE FK to its parent)
+    -- document_request_assignments.latest_submission_id → document_submissions(id)
+    -- is a circular non-CASCADE FK; null it first to break the cycle.
+    UPDATE document_request_assignments
+        SET latest_submission_id = NULL
+        WHERE school_id = _sid;
     DELETE FROM document_audit_events        WHERE school_id = _sid;
     DELETE FROM document_submissions         WHERE school_id = _sid;
     DELETE FROM document_request_assignments WHERE school_id = _sid;

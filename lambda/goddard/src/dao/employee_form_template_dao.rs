@@ -66,6 +66,21 @@ impl EmployeeFormTemplateDao {
         Ok(rows.iter().map(Self::row_to_template).collect())
     }
 
+    pub async fn get_school_default_templates(&self, school_id: Uuid) -> Result<Vec<EmployeeFormTemplate>, AppError> {
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        let rows = client.query(
+            "SELECT id, school_id, form_name, form_type, fillout_form_id, pdf_storage_key,
+                    pdf_file_name, pdf_content_type, pdf_file_size_bytes, pdf_uploaded_at,
+                    due_date, status, is_required, display_order, is_active, created_at, updated_at
+             FROM employee_form_templates
+             WHERE school_id = $1 AND is_active = true AND status = 'school_default'
+             ORDER BY form_name ASC",
+            &[&school_id],
+        ).await.map_err(|e| AppError::Database(format!("Failed to fetch default employee form templates: {}", e)))?;
+        Ok(rows.iter().map(Self::row_to_template).collect())
+    }
+
     pub async fn get_template_by_id(&self, id: Uuid, school_id: Uuid) -> Result<Option<EmployeeFormTemplate>, AppError> {
         let client = self.pool.get().await
             .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;

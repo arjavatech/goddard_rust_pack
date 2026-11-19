@@ -105,6 +105,31 @@ impl EmployeeFormAssignmentDao {
         Ok(Self::row_to_assignment(&row))
     }
 
+    pub async fn assign_default_templates_to_employee(
+        &self,
+        school_id: Uuid,
+        employee_id: Uuid,
+        user_id: Uuid,
+        templates: &[(Uuid, bool)], // (template_id, is_required)
+    ) -> Result<(), AppError> {
+        if templates.is_empty() {
+            return Ok(());
+        }
+        let client = self.pool.get().await
+            .map_err(|e| AppError::Database(format!("Failed to get connection: {}", e)))?;
+        for (template_id, is_required) in templates {
+            client.execute(
+                "INSERT INTO employee_form_assignments
+                 (id, school_id, employee_id, user_id, employee_form_template_id,
+                  assignment_source, status, is_required, assigned_at, is_active, created_at, updated_at)
+                 VALUES (gen_random_uuid(), $1, $2, $3, $4, 'school_default', 'incomplete', $5, NOW(), true, NOW(), NOW())
+                 ON CONFLICT (employee_id, employee_form_template_id) DO NOTHING",
+                &[&school_id, &employee_id, &user_id, template_id, is_required],
+            ).await.map_err(|e| AppError::Database(format!("Failed to auto-assign default employee form: {}", e)))?;
+        }
+        Ok(())
+    }
+
     pub async fn create_admin_assignment(
         &self,
         admin_user_id: Uuid,

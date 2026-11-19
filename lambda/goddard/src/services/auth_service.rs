@@ -1,5 +1,5 @@
 use crate::{
-    dao::{AuthDao, EmployeeDao, OfferLetterDao},
+    dao::{AuthDao, EmployeeDao, OfferLetterDao, employee_form_template_dao::EmployeeFormTemplateDao, employee_form_assignment_dao::EmployeeFormAssignmentDao},
     error::{AppError, ApiResult},
     utils::ValidationUtils,
     services::{SupabaseClient, TapTimeMappingService, supabase_client::UserMetadata, EmailService},
@@ -229,6 +229,8 @@ pub struct AuthService {
     employee_dao: EmployeeDao,
     offer_letter_dao: OfferLetterDao,
     email_service: std::sync::Arc<EmailService>,
+    employee_form_template_dao: EmployeeFormTemplateDao,
+    employee_form_assignment_dao: EmployeeFormAssignmentDao,
 }
 
 impl AuthService {
@@ -241,6 +243,8 @@ impl AuthService {
         employee_dao: EmployeeDao,
         offer_letter_dao: OfferLetterDao,
         email_service: std::sync::Arc<EmailService>,
+        employee_form_template_dao: EmployeeFormTemplateDao,
+        employee_form_assignment_dao: EmployeeFormAssignmentDao,
     ) -> Self {
         Self {
             dao,
@@ -250,6 +254,8 @@ impl AuthService {
             taptime_mapping_service,
             employee_dao,
             offer_letter_dao,
+            employee_form_template_dao,
+            employee_form_assignment_dao,
             email_service,
         }
     }
@@ -642,6 +648,21 @@ impl AuthService {
             "Admin",
             &school_name,
         ).await;
+
+        // Auto-assign school default employee forms to the new admin (non-fatal)
+        if let Ok(uid) = uuid::Uuid::parse_str(&user_id) {
+            if let Ok(templates) = self.employee_form_template_dao
+                .get_school_default_templates(school_uuid)
+                .await
+            {
+                for template in templates {
+                    let is_required = template.is_required.unwrap_or(false);
+                    let _ = self.employee_form_assignment_dao
+                        .create_admin_assignment(uid, school_uuid, template.id, uuid::Uuid::nil(), is_required)
+                        .await;
+                }
+            }
+        }
 
         // If offer letters are enabled and custom fields were provided, create an offer letter for
         // this admin (Owners/SuperAdmins never reach create_invitation so no role check needed).

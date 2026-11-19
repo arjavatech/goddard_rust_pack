@@ -164,6 +164,7 @@ impl EmployeeService {
                 .await?;
 
             self.reconcile_taptime_user(req.school_id, user_id).await;
+            self.auto_assign_default_forms(req.school_id, employee.id, user_id).await;
 
             // Always create invite token so user_invitations entry exists (required for activation)
             let invite_token = self.auth_dao
@@ -319,6 +320,7 @@ impl EmployeeService {
         };
 
         self.reconcile_taptime_user(req.school_id, user_id).await;
+        self.auto_assign_default_forms(req.school_id, employee.id, user_id).await;
 
         Ok(EmployeeInviteResponse {
             employee_id: employee.id,
@@ -505,6 +507,7 @@ impl EmployeeService {
                     return Err(error);
                 }
             };
+            self.auto_assign_default_forms(req.school_id, employee.id, user_id).await;
             created_employees.push(BulkCreatedEmployee {
                 employee_id: employee.id,
                 user_id,
@@ -517,6 +520,26 @@ impl EmployeeService {
             created_count: created_employees.len(),
             employees: created_employees,
         })
+    }
+
+    async fn auto_assign_default_forms(&self, school_id: Uuid, employee_id: Uuid, user_id: Uuid) {
+        let templates = match self.employee_form_template_dao.get_school_default_templates(school_id).await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!(%school_id, %employee_id, "Failed to fetch default employee forms: {}", e);
+                return;
+            }
+        };
+        if templates.is_empty() {
+            return;
+        }
+        let pairs: Vec<(Uuid, bool)> = templates.iter().map(|t| (t.id, t.is_required.unwrap_or(false))).collect();
+        if let Err(e) = self.employee_form_assignment_dao
+            .assign_default_templates_to_employee(school_id, employee_id, user_id, &pairs)
+            .await
+        {
+            tracing::warn!(%employee_id, "Failed to auto-assign default employee forms: {}", e);
+        }
     }
 
     async fn cleanup_bulk_users(&self, user_ids: &[Uuid]) {

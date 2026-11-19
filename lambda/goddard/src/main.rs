@@ -273,6 +273,8 @@ async fn create_app() -> Result<Router, Box<dyn std::error::Error>> {
         employee_dao.clone(),
         OfferLetterDao::new(pool.clone()),
         email_service.clone(),
+        EmployeeFormTemplateDao::new(pool.clone()),
+        EmployeeFormAssignmentDao::new(pool.clone()),
     ));
     let school_service = Arc::new(SchoolService::new(
         school_dao.clone(),

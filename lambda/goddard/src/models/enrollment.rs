@@ -568,19 +568,33 @@ pub struct TransitionInfo {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BulkImportCsvRow {
+    #[serde(rename = "Parent First Name")]
     pub primary_parent_first_name: String,
+    #[serde(rename = "Parent Last Name")]
     pub primary_parent_last_name: String,
+    #[serde(rename = "Parent Email")]
     pub primary_parent_email: String,
+    #[serde(rename = "Parent Phone Number")]
     pub primary_parent_phone: Option<String>,
+    #[serde(rename = "Primary Parent Address")]
     pub primary_parent_address: String,
+    #[serde(rename = "Secondary Parent First Name")]
     pub secondary_parent_first_name: Option<String>,
+    #[serde(rename = "Secondary Parent Last Name")]
     pub secondary_parent_last_name: Option<String>,
+    #[serde(rename = "Secondary Parent Email")]
     pub secondary_parent_email: Option<String>,
+    #[serde(rename = "Secondary Parent Phone Number")]
     pub secondary_parent_phone: Option<String>,
+    #[serde(rename = "Child First Name")]
     pub child_first_name: String,
+    #[serde(rename = "Child Last Name")]
     pub child_last_name: String,
+    #[serde(rename = "Child Gender")]
     pub child_gender: String,
+    #[serde(rename = "Child DOB")]
     pub child_dob: Option<String>,
+    #[serde(rename = "Classroom")]
     pub classroom: String,
 }
 

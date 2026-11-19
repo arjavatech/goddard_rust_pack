@@ -1725,15 +1725,7 @@ impl EnrollmentService {
                         first_row.primary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
                         None,
                     ).await {
-                        Ok(p) => {
-                            let _ = self.supabase_client.send_bulk_import_welcome_email(
-                                first_row.primary_parent_email.trim(),
-                                first_row.primary_parent_first_name.trim(),
-                                first_row.primary_parent_last_name.trim(),
-                                &school_name,
-                            ).await;
-                            p
-                        }
+                        Ok(p) => p,
                         Err(e) => {
                             for &idx in row_indices {
                                 runtime_errors.push(BulkImportRowError {
@@ -1782,15 +1774,7 @@ impl EnrollmentService {
                                     first_row.secondary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
                                     None,
                                 ).await {
-                                    Ok(p) => {
-                                        let _ = self.supabase_client.send_bulk_import_welcome_email(
-                                            sec_email.trim(),
-                                            sec_first.trim(),
-                                            sec_last.trim(),
-                                            &school_name,
-                                        ).await;
-                                        Some(p.id)
-                                    }
+                                    Ok(p) => Some(p.id),
                                     Err(_) => None,
                                 }
                             } else { None }

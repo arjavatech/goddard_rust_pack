@@ -776,10 +776,7 @@ impl AuthService {
         let invite_token = self.dao
             .create_invite_token(&request.email, "SuperAdmin", school_uuid)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
-                uuid::Uuid::nil()
-            });
+            .map_err(|e| AppError::Database(format!("Failed to create invite token: {}", e)))?;
 
         let email_sent = if invite_token != uuid::Uuid::nil() {
             self.supabase_client

@@ -140,10 +140,7 @@ impl OwnerService {
         let invite_token = self.auth_dao
             .create_invite_token(&request.email, "Owner", school_id)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("Failed to store invite token for {}: {}", request.email, e);
-                Uuid::nil()
-            });
+            .map_err(|e| AppError::Database(format!("Failed to create invite token: {}", e)))?;
 
         let email_sent = if invite_token != Uuid::nil() {
             self.supabase_client
@@ -256,10 +253,7 @@ impl OwnerService {
         let invite_token = self.auth_dao
             .create_invite_token(&owner.email, "Owner", auth.school_id)
             .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("Failed to store invite token for {}: {}", owner.email, e);
-                Uuid::nil()
-            });
+            .map_err(|e| AppError::Database(format!("Failed to create invite token: {}", e)))?;
 
         let email_sent = if invite_token != Uuid::nil() {
             self.supabase_client

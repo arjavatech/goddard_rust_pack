@@ -1714,26 +1714,29 @@ impl EnrollmentService {
                         }
                     };
 
-                    match self.enrollment_dao.create_parent(
-                        primary_auth_id,
-                        school_id,
-                        first_row.primary_parent_first_name.trim(),
-                        first_row.primary_parent_last_name.trim(),
-                        first_row.primary_parent_email.trim(),
-                        "Parent",
-                        if first_row.primary_parent_address.trim().is_empty() { None } else { Some(first_row.primary_parent_address.trim()) },
-                        first_row.primary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
-                        None,
-                    ).await {
-                        Ok(p) => p,
-                        Err(e) => {
-                            for &idx in row_indices {
-                                runtime_errors.push(BulkImportRowError {
-                                    row: idx + 1,
-                                    errors: vec![format!("Failed to create parent record: {}", e)],
-                                });
+                    match self.enrollment_dao.get_user_by_id(primary_auth_id).await {
+                        Ok(existing) => existing,
+                        Err(_) => match self.enrollment_dao.create_parent(
+                            primary_auth_id,
+                            school_id,
+                            first_row.primary_parent_first_name.trim(),
+                            first_row.primary_parent_last_name.trim(),
+                            first_row.primary_parent_email.trim(),
+                            "Parent",
+                            if first_row.primary_parent_address.trim().is_empty() { None } else { Some(first_row.primary_parent_address.trim()) },
+                            first_row.primary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
+                            None,
+                        ).await {
+                            Ok(p) => p,
+                            Err(e) => {
+                                for &idx in row_indices {
+                                    runtime_errors.push(BulkImportRowError {
+                                        row: idx + 1,
+                                        errors: vec![format!("Failed to create parent record: {}", e)],
+                                    });
+                                }
+                                continue;
                             }
-                            continue;
                         }
                     }
                 }
@@ -1767,15 +1770,18 @@ impl EnrollmentService {
                             .await
                         {
                             if let Ok(sec_uuid) = Uuid::parse_str(&sec_id_str) {
-                                match self.enrollment_dao.create_parent(
-                                    sec_uuid, school_id,
-                                    sec_first.trim(), sec_last.trim(),
-                                    sec_email.trim(), "secondary-parent", None,
-                                    first_row.secondary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
-                                    None,
-                                ).await {
-                                    Ok(p) => Some(p.id),
-                                    Err(_) => None,
+                                match self.enrollment_dao.get_user_by_id(sec_uuid).await {
+                                    Ok(existing) => Some(existing.id),
+                                    Err(_) => match self.enrollment_dao.create_parent(
+                                        sec_uuid, school_id,
+                                        sec_first.trim(), sec_last.trim(),
+                                        sec_email.trim(), "secondary-parent", None,
+                                        first_row.secondary_parent_phone.as_deref().filter(|s| !s.trim().is_empty()),
+                                        None,
+                                    ).await {
+                                        Ok(p) => Some(p.id),
+                                        Err(_) => None,
+                                    }
                                 }
                             } else { None }
                         } else { None }
